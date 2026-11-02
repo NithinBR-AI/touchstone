@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "New Adapter Scaffolder",
+      "trigger": "PostFileCreate",
+      "matcher": "adapters/**/comparator.py",
+      "action": {
+        "type": "agent",
+        "prompt": "A new domain adapter comparator was created. Read the triggering file path from the session context. The hook automates PLUMBING ONLY. Do exactly these five things:\n1. Create apps/<new-domain>/ with: main.py (imports core + new adapter; static mount uses Path(__file__).parent.parent / 'shared' / 'ui'), config.json (domain, accent, title), README.md, run.sh.\n2. Add a renderer stub to the RENDERERS registry in apps/shared/ui/app.js for the new domain. Do not modify the template layout.\n3. Create tests/test_comparator_<domain>.py against a small fixture emitting at least one Difference with fresh UUID and stable signature.\n4. Append a section to README.md under 'Supported applications'.\n5. Report what was created.\nDo not implement intended.py, actual.py, executor.py, or verifier.py. Do not modify core/. If any step requires a core/ change, stop and report the conflict."
+      }
+    }
+  ]
+}

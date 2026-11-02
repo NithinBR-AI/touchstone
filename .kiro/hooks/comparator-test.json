@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Comparator Test Runner",
+      "trigger": "PostFileSave",
+      "matcher": "adapters/**/comparator.py",
+      "action": {
+        "type": "command",
+        "command": "python scripts/run_comparator_test.py"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Demo Case Cache Builder",
+      "trigger": "PostFileSave",
+      "matcher": "demo/cases.json",
+      "action": {
+        "type": "agent",
+        "prompt": "The demo cases file changed. For each case in demo/cases.json without an entry in agents/cache.json, invoke the resolver against the case's difference and write the Resolution into agents/cache.json keyed by Difference.signature (NOT UUID). Each entry MUST include cache_version, validator_contract, and prompt_hash. For safe_fix=false or DECLARED_VERSION_MISMATCH, write review-only Resolution with proposed_change=None. Report added/cached cases. Do not modify core/, any adapter, or the resolver source."
+      }
+    }
+  ]
+}
