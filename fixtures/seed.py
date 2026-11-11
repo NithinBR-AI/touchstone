@@ -1,8 +1,8 @@
 """
-demo/seed.py — Seeds the Neon demo database with the ACTUAL live state.
+fixtures/seed.py — Seeds the Neon demo database with the ACTUAL live state.
 
 This creates the real schema that Touchstone will inspect, with intentional
-drift from the declared state in demo/models.py:
+drift from the declared state in touchstone-demo-target-repo/models.py:
 
   Live DB state (after seed):
     · users.email     VARCHAR(50)   — models.py declares VARCHAR(255)  → TYPE_CHANGED (widening)
@@ -10,9 +10,9 @@ drift from the declared state in demo/models.py:
     · ix_orders_user_id  MISSING    — models.py declares it             → INDEX_MISSING
 
 Usage:
-    python demo/seed.py <DATABASE_URL>
+    python fixtures/seed.py <DATABASE_URL>
     # or if DATABASE_URL is in .env:
-    python -c "import dotenv,os; dotenv.load_dotenv(); import demo.seed; demo.seed.main(os.environ['DATABASE_URL'])"
+    python -c "import dotenv,os; dotenv.load_dotenv(); import fixtures.seed; fixtures.seed.main(os.environ['DATABASE_URL'])"
 """
 
 from __future__ import annotations

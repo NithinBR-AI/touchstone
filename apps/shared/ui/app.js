@@ -359,10 +359,6 @@ async function apiApply(diffId) {
       body: JSON.stringify({ difference_id: diffId }),
     });
 
-    if (res.status === 403) {
-      showDemoBanner();
-      return;
-    }
     if (!res.ok) throw new Error(`/apply returned ${res.status}`);
 
     const outcome = await res.json();
@@ -391,7 +387,6 @@ async function apiRollback(diffId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ difference_id: diffId }),
     });
-    if (res.status === 403) { showDemoBanner(); return; }
     if (!res.ok) throw new Error(`/rollback returned ${res.status}`);
     // rollback doesn't change state — just re-fetch the report
     await loadLatestReport();
@@ -440,10 +435,29 @@ function hideDialog() {
   document.getElementById("dialog-backdrop").classList.add("hidden");
 }
 
-// ----- demo banner -------------------------------------------
-function showDemoBanner() {
-  const b = document.getElementById("demo-banner");
-  if (b) b.style.display = "block";
+// ----- demo reset --------------------------------------------
+async function apiReset() {
+  const btn = document.getElementById("btn-reset");
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Resetting…'; }
+
+  try {
+    const res = await fetch("/demo/reset", { method: "POST" });
+    if (!res.ok) throw new Error(`/demo/reset returned ${res.status}`);
+
+    REPORT = null;
+    renderCards(null);
+    updateHealthBar(null);
+
+    const banner = document.getElementById("reset-banner");
+    if (banner) {
+      banner.style.display = "block";
+      setTimeout(() => { banner.style.display = "none"; }, 4000);
+    }
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = "↺ Reset Demo"; }
+  }
 }
 
 // ----- error display -----------------------------------------
@@ -495,9 +509,31 @@ async function boot() {
   const domainEl = document.getElementById("app-domain");
   if (domainEl) domainEl.textContent = CONFIG.domain || "";
 
+  // populate repo selector
+  const repoSelect = document.getElementById("repo-select");
+  if (repoSelect && CONFIG.repos && CONFIG.repos.length > 0) {
+    repoSelect.innerHTML = CONFIG.repos.map(r =>
+      `<option value="${esc(r.id)}" ${r.id === CONFIG.active_repo ? "selected" : ""}>${esc(r.name)}</option>`
+    ).join("");
+    repoSelect.addEventListener("change", async () => {
+      await fetch("/repos/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo_id: repoSelect.value }),
+      });
+      REPORT = null;
+      renderCards(null);
+      updateHealthBar(null);
+    });
+  }
+
   // wire compare button
   const compareBtn = document.getElementById("btn-compare");
   if (compareBtn) compareBtn.addEventListener("click", apiCompare);
+
+  // wire reset button
+  const resetBtn = document.getElementById("btn-reset");
+  if (resetBtn) resetBtn.addEventListener("click", apiReset);
 
   // wire card grid clicks (delegation)
   const grid = document.getElementById("card-grid");

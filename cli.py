@@ -40,10 +40,12 @@ def cmd_compare(args: argparse.Namespace) -> int:
     target = args.target
     domain = args.domain
 
-    # Dynamically locate demo/models.py for the database domain
-    models_path = Path(__file__).parent / "demo" / "models.py"
+    # Locate models file — prefer MODELS_PATH env var, fall back to fixtures/models.py
+    import os
+    _default = Path(__file__).parent / "fixtures" / "models.py"
+    models_path = Path(os.environ["MODELS_PATH"]) if "MODELS_PATH" in os.environ else _default
     if not models_path.exists():
-        print(f"ERROR: demo/models.py not found at {models_path}", file=sys.stderr)
+        print(f"ERROR: models file not found at {models_path}\nSet MODELS_PATH env var.", file=sys.stderr)
         return 1
 
     from adapters.postgres.actual import load_actual_schema

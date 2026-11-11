@@ -32,8 +32,10 @@ touchstone/
 │   └── dependency-auditor/{main.py, config.json, README.md, run.sh}
 ├── scripts/
 │   └── run_comparator_test.py      # helper for hook command action
+├── repos.json
+├── adapters/remote_source.py
 ├── inputs/
-├── demo/
+├── fixtures/
 ├── tests/
 ├── .github/workflows/drift.yml
 ├── Dockerfile

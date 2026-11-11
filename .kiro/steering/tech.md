@@ -43,7 +43,7 @@ pytest -q
 ./apps/contract-observer/run.sh
 ./apps/dependency-auditor/run.sh    # optional
 touchstone compare --target users.email
-docker compose -f demo/docker-compose.yml up
+docker compose -f fixtures/docker-compose.yml up
 
 ```
 
@@ -64,7 +64,7 @@ docker compose -f demo/docker-compose.yml up
   verifier.py (plus normalize.py for Postgres; ssrf.py for openapi)
 - `apps/shared/ui/` — one template: index.html, app.js, style.css
 - `apps/<app-name>/` — main.py, config.json, README.md, run.sh
-- `demo/` — self-contained
+- `fixtures/` — seed.py, cases.json, docker-compose.yml
 - `.kiro/` — committed, never gitignored
 
 ## SQL operation matrix (the safety boundary)
@@ -107,15 +107,55 @@ The validator rejects SET statements outright.
 
 ## App phase implementation rules
 
-### Auth — demo-sandbox (all 3 apps)
+### Auth — Apply is OPEN (schema-drift app)
+No `_require_write()` guard. `/apply` calls `orch.apply_one(req.difference_id)`,
+`/rollback` calls `orch.rollback(req.difference_id)`. Both serialise their
+result via `_serialise_outcome()`. `/compare`, `/discover`, `/report/:id`,
+`/health`, `/config`, `/demo/reset` are all open.
+
+### Demo reset endpoint
 ```python
-from fastapi import HTTPException
-def _require_write():
-    raise HTTPException(403, detail="apply disabled in demo mode")
+@app.post("/demo/reset")
+def demo_reset():
+    from fixtures.seed import main as seed_main
+    seed_main(DB_URL)
+    global _latest_report_id
+    _latest_report_id = None
+    invalidate_remote()
+    return {"status": "reset", "message": "..."}
 ```
-Every `/apply` and `/rollback` handler calls `_require_write()` as its first
-line. `/compare`, `/discover`, `/report/:id`, `/health`, `/config` are open.
-All three apps use this same pattern — same function, different module.
+Calls `fixtures.seed.main()` which drops and recreates tables with intentional drift.
+Also calls `invalidate_remote()` so the next compare fetches a fresh copy of models.py.
+
+### repos.json + remote_source — how drift is checked
+Target repos are declared in `repos.json` at the project root. No env var needed.
+
+```json
+[
+  {
+    "id": "customer-service",
+    "name": "Customer Service API",
+    "github": "NithinBR-AI/touchstone-demo-target-repo",
+    "models_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/models.py",
+    "openapi_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/openapi.yaml",
+    "default": true
+  }
+]
+```
+
+`adapters/remote_source.py` fetches the file at `models_url` over HTTP (public GitHub raw URL,
+no PAT needed) and caches the result in a process-level dict keyed by URL. The app calls:
+
+```python
+def _models_path() -> Path:
+    return fetch_remote(_active_repo["models_url"])
+```
+
+`invalidate_remote()` clears the cache (called on `/demo/reset` and `/repos/select`).
+Adding a new target repo = one entry in `repos.json`; zero code changes required.
+
+The UI repo selector (populated from `/config.repos`) lets judges see that Touchstone
+is designed to monitor multiple repos, not just one hardcoded service.
 
 ### Orchestrator — module-level singleton
 ```python

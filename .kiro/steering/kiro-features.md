@@ -19,7 +19,7 @@ fired in the target Kiro version yet.
 - **comparator-test** (file edited in `adapters/**/comparator.py`) — runs
   matching test via a Python helper script (avoids shell quoting; receives
   event JSON on stdin).
-- **demo-case-cache** (file edited in `demo/cases.json`) — generates cache
+- **demo-case-cache** (file edited in `fixtures/cases.json`) — generates cache
   keyed by `Difference.signature`.
 
 **Day-1 verification task:** create a throwaway `adapters/test/comparator.py`,

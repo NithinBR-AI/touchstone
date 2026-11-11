@@ -2,11 +2,11 @@
 test_postgres_e2e.py — Task 2.19, Req 15, 19, 20, 23
 
 End-to-end: compare → resolve (mock) → validate → execute → verify against
-real Postgres seeded from demo/seed.py.
+real Postgres seeded from fixtures/seed.py.
 
 Run after seeding:
-    docker compose -f demo/docker-compose.yml up -d
-    python demo/seed.py postgresql://touchstone:touchstone@localhost:5432/touchstone_demo
+    docker compose -f fixtures/docker-compose.yml up -d
+    python fixtures/seed.py postgresql://touchstone:touchstone@localhost:5432/touchstone_demo
     DATABASE_URL=postgresql://touchstone:touchstone@localhost:5432/touchstone_demo pytest tests/test_postgres_e2e.py -v
 """
 

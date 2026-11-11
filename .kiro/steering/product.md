@@ -105,14 +105,24 @@ verifier.py) + a renderer registered in the shared UI. The Kiro hook
 scaffolds plumbing — CLI, config, test scaffold, README, renderer stub —
 but does NOT implement the adapter itself.
 
-## App phase decisions (locked 2026-11-11)
+## App phase decisions (updated 2026-11-11)
 
-### Authorization mode — demo-sandbox
-Auth mode is **demo-sandbox**: `/compare` and `GET` endpoints work freely;
-`/apply` and `/rollback` return HTTP 403 with body
-`{"detail": "apply disabled in demo mode"}`. Principal recorded in audit log
-as `"demo-sandbox"`. No bearer token. No token management. This is the mode
-for the Kiroween submission.
+### Authorization mode — Apply is OPEN
+Apply is fully open — no 403, no password. Judges can apply fixes directly in the UI.
+`/apply` calls `orch.apply_one()`, `/rollback` calls `orch.rollback()`.
+Principal recorded in audit log as `"demo-sandbox"`. No bearer token.
+
+### Demo-target repo — `touchstone-demo-target`
+The declared schema lives in a separate repo:
+[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)
+containing `models.py`, `openapi.yaml`, `requirements.txt`. Touchstone fetches the declared
+schema from the configured GitHub raw URL (via `adapters/remote_source.py`); no env var
+or local file needed — repos are configured in `repos.json` at the project root.
+
+### Demo reset — `POST /demo/reset`
+After a judge applies fixes, they can click **↺ Reset Demo** to re-seed the Neon DB
+with drift and start over. The endpoint calls `fixtures.seed.main(DB_URL)`, clears
+`_latest_report_id`, and calls `invalidate_remote()`. A 4-second banner confirms the reset in the UI.
 
 ### Orchestrator lifecycle — module-level singleton
 Each app process holds **one orchestrator instance** at module level (not

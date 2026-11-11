@@ -12,10 +12,9 @@
 </head>
 <body>
 
-<!-- demo-mode banner (hidden until 403 received) -->
-<div id="demo-banner" class="demo-banner" style="display:none">
-  Demo mode — compare is live, apply is disabled.
-  To enable apply: deploy with bearer-token auth.
+<!-- reset confirmation banner (shown after /demo/reset) -->
+<div id="reset-banner" class="demo-banner" style="display:none">
+  Demo reset — drift re-seeded. Click <strong>Hunt Ghosts</strong> to scan again.
 </div>
 
 <div id="app">
@@ -28,9 +27,15 @@
         <span class="brand-sep">/</span>
         <span class="app-title" id="app-title">The Crypt</span>
       </div>
-      <span class="app-domain" id="app-domain"></span>
+      <div class="repo-selector-wrap">
+        <label class="repo-label" for="repo-select">Scanning</label>
+        <select id="repo-select" class="repo-select">
+          <!-- populated by app.js from /config -->
+        </select>
+      </div>
       <div class="header-actions">
         <button id="btn-compare" class="btn btn-compare">Hunt Ghosts</button>
+        <button id="btn-reset" class="btn btn-ghost" title="Re-seed demo drift">↺ Reset Demo</button>
       </div>
     </div>
 

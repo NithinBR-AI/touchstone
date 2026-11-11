@@ -69,18 +69,28 @@ Anything not in the matrix fails closed. The validator enforces this from the SQ
 
 ## Demo — real Neon DB
 
-The `demo/` directory ships two intentional drift cases visible in the Schema Drift app today:
+Target repos are declared in **`repos.json`** at the repo root. No env var, no cloning.
+Touchstone fetches `models.py` from the configured GitHub raw URL at runtime.
+
+The demo ships pre-configured pointing at:
+**[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**
+— a public repo with `models.py`, `openapi.yaml`, `requirements.txt`.
+
+The UI shows a **repo selector** in the header — judges can see that Touchstone is built to monitor multiple repos; in the demo it defaults to the one pre-configured repo.
+
+Three intentional drift cases are visible in the Schema Drift app:
 
 | Case | Ghost | Policy | UI badge |
 |---|---|---|---|
 | `users.age` declared `INTEGER`, live `BIGINT` | `TYPE_CHANGED` (narrowing) | REVIEW_REQUIRED | 🕯 SÉANCE NEEDED |
-| `ix_users_email` in live DB but not declared | `INDEX_EXTRA` | BLOCKED | ⛓ BOUND |
+| `ix_orders_user_id` declared, missing from live DB | `INDEX_MISSING` | AUTO-FIX | 👻 HAUNTING |
+| `users.email` declared `VARCHAR(255)`, live `VARCHAR(50)` | `TYPE_CHANGED` (widening) | AUTO-FIX | 🕯 SÉANCE NEEDED |
 
-The full seed (`demo/seed.py`) also wires up `ix_orders_user_id` (INDEX_MISSING) and `users.email` widening for the end-to-end Postgres test suite — those appear in `test_postgres_e2e.py` but are consumed by the first run, so seed before each test run.
+**Apply is open** — judges can click **Exorcise** to apply auto-fixable drifts. After applying, click **↺ Reset Demo** to re-seed the DB and start over.
 
 ```bash
-# Restore drift state
-python demo/seed.py $DATABASE_URL
+# Restore drift state manually (or use the Reset Demo button in the UI)
+python fixtures/seed.py $DATABASE_URL
 
 # Run end-to-end against Neon
 DATABASE_URL=<neon-url> python -m pytest tests/test_postgres_e2e.py tests/test_sql_execution.py -v
@@ -144,7 +154,7 @@ When a new domain adapter comparator is created, Kiro automatically scaffolds th
 **`comparator-test`** (trigger: `FileSave` on `adapters/**/comparator.py`)
 Runs the matching comparator test suite on every save via `scripts/run_comparator_test.py`. The hook receives the event JSON on stdin and resolves the test file name from the domain folder name — `adapters/postgres/comparator.py` triggers `tests/test_comparator_pg.py`. Using a Python helper instead of a raw shell command avoids cross-platform quoting issues.
 
-**`demo-case-cache`** (trigger: `FileSave` on `demo/cases.json`)
+**`demo-case-cache`** (trigger: `FileSave` on `fixtures/cases.json`)
 When the demo cases file changes, Kiro invokes the resolver against each new case and writes the resolution into `agents/cache.json` keyed by `Difference.signature` (not UUID). Each cache entry is required to include `cache_version`, `validator_contract`, and `prompt_hash` — the same provenance keys the cache lookup verifies before returning a hit.
 
 ### MCP — Context7
@@ -234,7 +244,9 @@ touchstone/
 │   ├── cache.py
 │   ├── persistence.py
 │   └── orchestrator.py
+├── repos.json                            # target repos registry (id, name, models_url, openapi_url)
 ├── adapters/
+│   ├── remote_source.py                  # fetches files from GitHub raw URLs; process-level cache
 │   ├── postgres/                         # schema-drift domain (complete)
 │   │   ├── normalize.py
 │   │   ├── intended.py
@@ -258,9 +270,8 @@ touchstone/
 │   │   ├── README.md
 │   │   └── run.sh
 │   └── contract-observer/               # mandatory app 2 — The Séance (task 5.9)
-├── demo/
-│   ├── models.py                         # Neon demo schema (users / orders / products)
-│   ├── seed.py                           # seeds live Neon DB with drift cases
+├── fixtures/                             # demo setup — schema declarations → NithinBR-AI/touchstone-demo-target-repo
+│   ├── seed.py                           # seeds live Neon DB with drift cases (also called by /demo/reset)
 │   ├── cases.json                        # drift cases for demo + cache seeding
 │   └── docker-compose.yml               # local Postgres 16 alternative
 ├── scripts/
@@ -324,7 +335,7 @@ python -m pytest tests/ -q
 
 ```bash
 # Restore demo drift state
-python demo/seed.py $DATABASE_URL
+python fixtures/seed.py $DATABASE_URL
 
 # Run Postgres tests
 DATABASE_URL=<neon-url> python -m pytest tests/test_postgres_e2e.py tests/test_sql_execution.py -v

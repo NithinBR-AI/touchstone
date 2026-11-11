@@ -50,7 +50,7 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
 - [x] 1.0f Resolver in loop — mock resolver works end-to-end (fake infra; real Postgres pending task 2.19)
       (test_orchestrator_mock.py: 5 tests — full loop resolves both ghosts, apply without effect
        is STILL_PRESENT, second apply refused, resolver failure blocks, second run hits cache;
-       all pass; real Postgres path requires demo/ fixtures from task 2.18)
+       all pass; real Postgres path requires fixtures/ from task 2.18)
 - [x] 1.0g Scope and claims — audit submission copy
       Findings (as of 2026-11-11):
 
@@ -199,7 +199,7 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       VERIFIED: 15 tests: exact 7 files, no subdirs, 7×no-external-imports, 6×importable.
       All 15 pass. PASS.
   - _Req 1, 38_
-- [x] 2.18 demo/models.py, docker-compose.yml, seed.py, cases.json
+- [x] 2.18 fixtures/docker-compose.yml, seed.py, cases.json (models.py moved to touchstone-demo-target-repo)
       VERIFIED DONE: All 4 files created and updated to match real Neon schema
       (users/orders/products). models.py declares 3 tables + ix_orders_user_id.
       seed.py creates live DB state: email VARCHAR(50), age ALTERed to BIGINT,
@@ -221,7 +221,7 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
         · test_statement_timeout_is_enforced         PASS
         · test_connect_failure_recorded_without_raw_text PASS
         · test_set_statement_refused_without_connecting  PASS
-      Note: tests share live DB — seed with demo/seed.py before each full run to
+      Note: tests share live DB — seed with fixtures/seed.py before each full run to
       restore drift state. Without DATABASE_URL set, all 10 skip cleanly. PASS.
   - _Req 15, 19, 20, 23_
 - [x] 2.20 Fix orchestrator `apply_one` / `rollback`
@@ -261,9 +261,13 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
 
 ### 4. App 1 — Schema Drift (Week 2–3)
 
-**App phase decisions (locked 2026-11-11):**
-- **Auth**: demo-sandbox — `/apply` + `/rollback` return 403; all 3 apps use
-  the same `_require_write()` guard. No bearer token.
+**App phase decisions (updated 2026-11-11):**
+- **Auth**: Apply is OPEN — no password, no 403. Judges can apply fixes directly.
+- **Demo-target repo**: declared schema lives in
+  [touchstone-demo-target](https://github.com/NithinBR-AI/touchstone-demo-target-repo)
+  (models.py, openapi.yaml, requirements.txt). Target repos are configured in
+  `repos.json` at the project root; `adapters/remote_source.py` fetches files via
+  GitHub raw URLs. No MODELS_PATH env var needed.
 - **Orchestrator lifecycle**: module-level singleton per app process. One
   `orch` instance created at import time. If extended to multiple concurrent
   users, replace with a dict keyed by session ID in `main.py` — do not touch
@@ -271,6 +275,9 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
 - **Page-refresh recovery**: `/config` response includes `latest_report_id`
   (null until first `/compare`). UI reads it on load and fetches
   `GET /report/{id}` to restore state. No separate `/report/latest` route.
+- **Demo reset**: `POST /demo/reset` re-seeds Neon DB with drift so judges can
+  replay the experience. Reset Demo button in shared UI clears the report and
+  fires the endpoint.
 
 - [x] 4.1 apps/shared/ui/ — one template with renderer registry
       DONE: index.html + app.js + style.css in apps/shared/ui/.
@@ -315,8 +322,30 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       + Phantom Index), roaming ghost emojis animate on compare, full-width cards.
   - _Req 28, 30_
 - [x] 4.5 Deploy mode decision: bearer-token OR isolated demo. Implement.
-      DECISION: demo-sandbox mode for all 3 apps. /apply and /rollback return HTTP 403.
-      _require_write() guard in every main.py. No bearer token required to run.
+      REVISED DECISION (2026-11-11): Apply is OPEN — no 403, no password.
+      Judges can apply fixes and replay via Reset Demo button.
+      _require_write() guard removed from schema-drift/main.py.
+  - _Req 28, 30_
+- [x] 4.6 Demo-target repo + open Apply + Reset Demo
+      DONE 2026-11-11:
+      · Created touchstone-demo-target repo at NithinBR-AI/touchstone-demo-target-repo
+        with models.py, openapi.yaml, requirements.txt, README.md.
+      · repos.json at repo root: single source of truth for target repos (id, name,
+        github, models_url, openapi_url). Adding a new repo = one JSON entry, no code change.
+      · adapters/remote_source.py: fetches files from GitHub raw URLs, process-level cache,
+        invalidate() called on reset/repo switch.
+      · apps/schema-drift/main.py: loads repos.json, _active_repo module-level state,
+        /repos GET + /repos/select POST endpoints, removed _require_write() 403 block,
+        /apply and /rollback now call orch.apply_one() and orch.rollback() directly,
+        /demo/reset calls fixtures.seed.main() + invalidate_remote().
+      · apps/shared/ui/index.html: added repo selector dropdown in header, Reset Demo button,
+        changed demo-banner to reset-banner (shows 4s after reset, then hides).
+      · apps/shared/ui/app.js: added apiReset(), repo selector from /config.repos,
+        /repos/select on dropdown change, wired Reset Demo button in boot(),
+        removed showDemoBanner() and 403 handling from apiApply/apiRollback.
+      · apps/schema-drift/README.md: updated endpoints table, config table, drift cases.
+      · demo/ folder removed; renamed to fixtures/ (seed.py, cases.json, docker-compose.yml).
+  - _Req 28, 30, 37_
   - _Req 26_
 
 ### 5. App 2 — Contract Observer (Week 3)
@@ -376,6 +405,8 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
 - [ ] 8.1 Three hooks per Req 35 (files exist in `.kiro/hooks/`; add the
       missing `scripts/run_comparator_test.py` helper that comparator-test
       invokes, then verify via task 0.4)
+      NOTE: demo-case-cache hook matcher updated from `demo/cases.json` →
+      `fixtures/cases.json` (2026-11-11, folder renamed to fixtures/).
   - _Req 35_
 - [ ] 8.2 .kiro/settings/mcp.json — pinned version (see 0.7)
   - _Req 16_
@@ -443,7 +474,7 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
   no DATABASE_URL). All 1.0a–1.0f and 2.1–2.23 green.
 - Real Neon run (2026-11-11): test_postgres_e2e + test_sql_execution → **9 passed, 1 skipped**
   (cache test skips when drift already applied by earlier tests in same run — expected).
-  Seed with `demo/seed.py` before each full Neon run to restore drift state.
+  Seed with `fixtures/seed.py` before each full Neon run to restore drift state.
 - .venv at project root (Python 3.12). git safe.directory configured for CORP domain.
 - Items 2.20–2.23 were added from this verification pass.
 - `git log core/` could not be read (git "dubious ownership" error); verify

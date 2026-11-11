@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Start the Schema Drift app.
-# Run from the repo root or any directory — script resolves paths.
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,13 +12,19 @@ fi
 
 PORT="${SCHEMA_DRIFT_PORT:-8001}"
 
-export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+# Add repo root to PYTHONPATH so core/, adapters/, fixtures/ are importable
+export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:$PYTHONPATH}"
+
+# Use venv python if available
+PYTHON="${REPO_ROOT}/.venv/Scripts/python.exe"
+if [ ! -f "$PYTHON" ]; then
+  PYTHON="python"
+fi
 
 cd "$SCRIPT_DIR"
 
 echo "Starting Schema Drift on http://localhost:${PORT}"
-exec python -m uvicorn main:app \
+exec "$PYTHON" -m uvicorn main:app \
   --host 0.0.0.0 \
   --port "$PORT" \
-  --reload \
-  --reload-dir "$REPO_ROOT"
+  --reload

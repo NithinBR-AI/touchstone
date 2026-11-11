@@ -169,7 +169,52 @@ header {
   border-radius: 4px;
 }
 
-.header-actions { margin-left: auto; }
+/* repo selector */
+.repo-selector-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.repo-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.repo-select {
+  background: var(--bg-card);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 10px 4px 8px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239b8fa8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+  transition: border-color 0.2s;
+}
+
+.repo-select:hover, .repo-select:focus {
+  border-color: var(--accent);
+}
+
+.repo-select option {
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+.header-actions { margin-left: 12px; }
 
 /* health bar */
 .health-bar-wrap {

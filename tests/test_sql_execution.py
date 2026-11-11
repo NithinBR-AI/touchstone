@@ -4,8 +4,8 @@ test_sql_execution.py — Task 2.14, Req 17
 Real Postgres SQL execution tests. Skipped automatically when DATABASE_URL
 is not set. Run after seeding the demo DB:
 
-    docker compose -f demo/docker-compose.yml up -d
-    python demo/seed.py postgresql://touchstone:touchstone@localhost:5432/touchstone_demo
+    docker compose -f fixtures/docker-compose.yml up -d
+    python fixtures/seed.py postgresql://touchstone:touchstone@localhost:5432/touchstone_demo
     DATABASE_URL=postgresql://touchstone:touchstone@localhost:5432/touchstone_demo pytest tests/test_sql_execution.py -v
 """
 
