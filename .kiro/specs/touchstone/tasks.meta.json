@@ -78,6 +78,18 @@
         "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
         "timestamp": 1794390057737
       }
+    ],
+    "2.14 test_sql_execution.py — real Postgres": [
+      {
+        "executionId": "a6be2492-ad9e-42bf-a371-20bb98983095",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794423509926
+      },
+      {
+        "executionId": "7a2815b4-c28f-45b5-b2fc-b1a32f651991",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794423539601
+      }
     ]
   }
 }

@@ -175,9 +175,9 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       cases, injection, SET, forbidden nodes, UNIQUE, expression/partial index, target
       binding, identifier canonicalization. All 33 pass. PASS.
   - _Req 17_
-- [ ] 2.14 test_sql_execution.py — real Postgres
-      VERIFIED NOT DONE: File exists but 5 tests are skipped (no DB connection).
-      This is correct — awaiting real Postgres. Marked appropriately.
+- [x] 2.14 test_sql_execution.py — real Postgres
+      VERIFIED: 5 passed against Neon DB — CREATE INDEX, ALTER COLUMN TYPE widening,
+      statement timeout enforcement, connect failure redaction, SET refusal. PASS.
   - _Req 17_
 - [x] 2.15 test_state_transitions.py — 56 cells + invariants + persisted
       VERIFIED: 66 tests total — 32 matrix cells (PENDING×8 + non-PENDING×5×6 events),
