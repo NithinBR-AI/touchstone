@@ -13,213 +13,89 @@ Two states exist for every system: what the code declares, and what the system a
 | Domain | Declared | Actual |
 |---|---|---|
 | Database | SQLAlchemy models | Live Postgres schema |
-| API Contracts | `openapi.yaml` | One live request per endpoint |
+| API contracts | `openapi.yaml` | One live response per endpoint |
 | Dependencies | `pyproject.toml` / `requirements.txt` | Installed package versions |
 
 Touchstone detects each ghost, proposes a validated fix, and — on human approval — applies it atomically and verifies the result.
 
-**The skeleton is exactly 7 files.** Two mandatory applications (`schema-drift` and `contract-observer`) run on top of it. That is the Skeleton Crew entry.
+**The skeleton is exactly 7 files.** Two mandatory applications (`schema-drift` and `contract-observer`) run on top of it without modifying any skeleton file. That is the Skeleton Crew entry.
 
 ---
 
-## Flow
+## The apps
 
-```
-1. Read targets
-2. Read both sides, normalize into State
-3. Compare → classify each Difference
-4. LLM Resolver proposes one fix per ghost (via Context7 MCP for doc-grounded SQL)
-5. Validator independently enforces the operation matrix (SQL AST + path confinement + hash locks)
-6. Validator Reviewer custom agent gives an advisory opinion
-7. Human approves → Executor applies atomically (connection-level timeout, no SET statements)
-8. Verifier re-reads live state → RESOLVED, STILL_PRESENT, or EXECUTION_FAILED
-```
+### App 1 — Schema Drift · *The Crypt* · port 8001
 
-LLM proposes. Validator decides. Human authorizes. That order never changes.
+Compares SQLAlchemy model declarations against a live Postgres schema. Ghosts are columns, tables, indexes, and type mismatches that exist in one side but not the other.
 
----
+**Demo drift cases (pre-seeded in Neon DB):**
 
-## Ghost classification
-
-| Ghost kind | Auto-fix | Policy |
-|---|---|---|
-| `INDEX_MISSING` | `CREATE INDEX` | Auto-fixable |
-| `TYPE_CHANGED` (widening) | `ALTER COLUMN TYPE` | Auto-fixable |
-| `TYPE_CHANGED` (narrowing) | — | REVIEW_REQUIRED |
-| `COLUMN_MISSING` | `ADD COLUMN` | REVIEW_REQUIRED |
-| `FIELD_EXTRA` | `FILE_PATCH` to openapi.yaml | BLOCKED (PR-based) |
-| `TABLE_MISSING`, `COLUMN_EXTRA`, `TABLE_EXTRA`, `INDEX_EXTRA` | — | BLOCKED |
-
-Anything not in the matrix fails closed. The validator enforces this from the SQL AST — not keyword matching.
-
----
-
-## Safety boundaries
-
-- **Operation matrix** — only 9 operation kinds recognized; every other SQL node is blocked
-- **Target binding** — validator extracts table/column/index from the AST and compares against `Difference.target`; a mismatch blocks regardless of resolver confidence
-- **Widening table** — `TYPE_CHANGED` only auto-fixes `smallint→integer`, `integer→bigint`, `real→double precision`, `varchar(n)→varchar(m) where m>n`, `varchar(n)→text`
-- **USING clause / expression index / partial index** — structurally rejected
-- **Connection-level timeout** — 30s via `options="-c statement_timeout=30000"` at connect time, never `SET`
-- **File patches** — hash-locked (`before_sha256` verified before apply, `after_sha256` verified after), symlink check before resolve, path confined to project root
-- **SSRF protection** — all outbound HTTP (Contract Observer) blocks loopback, private, link-local, reserved, and IPv4-mapped-IPv6 destinations; redirects re-validated and re-pinned at each hop; `trust_env=False`
-- **Redaction** — token-based, applied before persistence and before the resolver sees the data; errors stored as code/class/summary — never raw exception text
-
----
-
-## Demo — real Neon DB
-
-Target repos are declared in **`repos.json`** at the repo root. No env var, no cloning.
-Touchstone fetches `models.py` from the configured GitHub raw URL at runtime.
-
-The demo ships pre-configured pointing at:
-**[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**
-— a public repo with `models.py`, `openapi.yaml`, `requirements.txt`.
-
-The UI shows a **repo selector** in the header — judges can see that Touchstone is built to monitor multiple repos; in the demo it defaults to the one pre-configured repo.
-
-**Schema Drift app** — three intentional drift cases:
-
-| Case | Ghost | Policy | UI badge |
+| Ghost | Kind | Policy | Badge |
 |---|---|---|---|
 | `users.age` declared `INTEGER`, live `BIGINT` | `TYPE_CHANGED` (narrowing) | REVIEW_REQUIRED | 🕯 SÉANCE NEEDED |
 | `ix_orders_user_id` declared, missing from live DB | `INDEX_MISSING` | AUTO-FIX | 👻 HAUNTING |
 | `users.email` declared `VARCHAR(255)`, live `VARCHAR(50)` | `TYPE_CHANGED` (widening) | AUTO-FIX | 🕯 SÉANCE NEEDED |
 
-**Contract Observer app** — three intentional API contract drift cases:
-
-| Case | Ghost | UI label | Action |
-|---|---|---|---|
-| `account_status` returned by `/users`, not in spec | Shadow Field | ⛓ BOUND | Opens PR on `openapi.yaml` |
-| `sku` returned by `/products`, not in spec | Shadow Field | ⛓ BOUND | Opens PR on `openapi.yaml` |
-| `loyalty_tier` declared in spec, not returned by `/users` | Vanished Field | 🕯 SÉANCE NEEDED | Opens PR on `main.py` |
-
-**Apply is open** — judges can click **Exorcise** on any ghost. Schema drifts apply directly to the Neon DB. API contract drifts open a GitHub PR on the demo target repo. After applying schema fixes, click **↺ Reset Demo** to re-seed the DB.
-
-```bash
-# Restore drift state manually (or use the Reset Demo button in the UI)
-python fixtures/seed.py $DATABASE_URL
-
-# Run end-to-end against Neon
-DATABASE_URL=<neon-url> python -m pytest tests/test_postgres_e2e.py tests/test_sql_execution.py -v
-```
-
-Result: **9 passed, 1 skipped** (cache test skips when drift is consumed by earlier tests in the same run — passes when seeded and run in isolation).
+Judges can click **Exorcise** to apply a fix directly to the Neon DB. Click **↺ Reset Demo** to re-seed drift and start over.
 
 ---
 
-## How Kiro was used
+### App 2 — Contract Observer · *The Séance* · port 8002
 
-### Spec-driven development
+Probes a live API and compares each response against the declared `openapi.yaml`. Ghosts are fields that appear in the live response but not the spec (Shadow Fields), and fields declared in the spec that the live API no longer returns (Vanished Fields).
 
-The entire project was driven from a single spec written before any code existed:
+**Demo drift cases (live on Render):**
 
-- `.kiro/specs/touchstone/requirements.md` — 38 numbered requirements across four categories: core skeleton, database domain, API domain, deps domain
-- `.kiro/specs/touchstone/design.md` — state machine diagram, 56-cell transition table (7 states × 8 events), operation matrix, cache key design, SSRF rules
-- `.kiro/specs/touchstone/tasks.md` — phased implementation plan: week 1 acceptance criteria (1.0a–1.0g), 23 section-2 tasks, freeze gate at task 3.2
+| Ghost | Kind | Badge | Action |
+|---|---|---|---|
+| `account_status` returned by `/users`, not in spec | `FIELD_EXTRA` → Shadow Field | ⛓ BOUND | Opens PR on `openapi.yaml` |
+| `sku` returned by `/products`, not in spec | `FIELD_EXTRA` → Shadow Field | ⛓ BOUND | Opens PR on `openapi.yaml` |
+| `loyalty_tier` declared in spec, not returned by `/users` | `FIELD_MISSING` → Vanished Field | 🕯 SÉANCE NEEDED | Opens PR on `main.py` |
 
-The difference from vibe coding was structural: the spec forced resolution of ambiguous cases before implementation began. For example, the question "what happens when a narrowing type change is proposed?" was answered in the requirements doc (`REVIEW_REQUIRED`, `proposed_change=None`) before the resolver or validator were written. That made the 56-cell state machine test suite mechanically derivable from the spec — no test needed to guess behavior.
+The live API is deployed at **[touchstone-demo-target-repo.onrender.com](https://touchstone-demo-target-repo.onrender.com)** (Render free tier — warms up automatically on first Hunt Ghosts). The declared spec lives in **[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**.
 
-The tasks file became a living verification log: each task entry was updated with a `VERIFIED:` note showing test counts and specific findings, not just a checkbox. Judges can read it as a correctness audit.
+Judges can click **Exorcise** to open a GitHub PR proposing the spec change.
 
-### Steering docs
+---
 
-Three steering docs guided every Kiro response throughout the build:
+### App 3 — Dependency Auditor · *The Manifest* · port 8003 *(optional — cut if behind)*
 
-- **`product.md`** — 13 non-negotiable principles written on day 1. The most consequential: "LLM proposes; validator decides; human authorizes" and "Core frozen at end of week 2." These prevented scope creep in both directions — Kiro never suggested adding a feature that required touching `core/` after the freeze.
-- **`tech.md`** — stack, operation matrix, SSRF rules, redaction contract, type widening table. Having the widening pairs spelled out here meant the validator implementation required no judgment calls: the table was the code.
-- **`kiro-features.md`** — documented which Kiro features to use and how, including the PBT strategy, the custom agent contract, and what the submission write-up must cover.
+Compares declared dependency versions in `pyproject.toml` / `requirements.txt` against installed package versions. Ghosts are version mismatches and missing packages.
 
-The biggest single impact: writing `product.md` before writing any code forced the product boundary to be explicit. When implementation revealed a tension (e.g., "should rollback generate an inverse SQL statement?"), the steering doc had already answered it ("NO — preserve the observed state; no inverse generated").
-
-### Custom agent — Validator Reviewer
-
-`.kiro/agents/validator-reviewer.md` defines an independent SQL safety auditor with a strict input contract:
-
-```json
-{
-  "difference_kind": "TYPE_CHANGED | INDEX_MISSING | ...",
-  "difference_target": "users.email",
-  "proposed_sql": "ALTER TABLE ...",
-  "old_type": "varchar(100)",
-  "new_type": "varchar(255)"
-}
-```
-
-The agent receives no resolver rationale, no confidence score, and no context that could bias its evaluation. It re-derives its verdict from the operation matrix independently — the same rules as the deterministic validator, applied by a different mechanism.
-
-**Advisory only**: the deterministic validator in `core/validator.py` is authoritative. The agent's verdict is recorded alongside the validator's status. Disagreements are surfaced in the report and escalate to human review — the agent cannot approve what the matrix blocks, and can flag concerns the matrix cannot express.
-
-This dual-review architecture catches two distinct failure classes: the validator catches structural violations (wrong SQL node type, wrong target, missing widening pair), and the agent catches semantic concerns the matrix cannot enumerate (e.g., "this widening is technically valid but the column size 32767 is suspiciously large for a typical identifier column").
-
-### Agent hooks
-
-Three hooks automate the most repetitive parts of the development cycle:
-
-**`new-adapter`** (trigger: `FileCreate` on `adapters/**/comparator.py`)
-When a new domain adapter comparator is created, Kiro automatically scaffolds the full application plumbing: `apps/<domain>/main.py`, `config.json`, `README.md`, `run.sh`, a renderer stub in the shared UI `RENDERERS` registry, and a comparator test file. The hook prompt explicitly prohibits modifying `core/` — if any step requires a core change, the agent stops and reports the conflict. This enforces the architecture rule at the tool level, not just in steering text.
-
-**`comparator-test`** (trigger: `FileSave` on `adapters/**/comparator.py`)
-Runs the matching comparator test suite on every save via `scripts/run_comparator_test.py`. The hook receives the event JSON on stdin and resolves the test file name from the domain folder name — `adapters/postgres/comparator.py` triggers `tests/test_comparator_pg.py`. Using a Python helper instead of a raw shell command avoids cross-platform quoting issues.
-
-**`demo-case-cache`** (trigger: `FileSave` on `fixtures/cases.json`)
-When the demo cases file changes, Kiro invokes the resolver against each new case and writes the resolution into `agents/cache.json` keyed by `Difference.signature` (not UUID). Each cache entry is required to include `cache_version`, `validator_contract`, and `prompt_hash` — the same provenance keys the cache lookup verifies before returning a hit.
-
-### MCP — Context7
-
-The resolver fetches library documentation from Context7 MCP before proposing a SQL fix. For a `TYPE_CHANGED` difference, the resolver looks up Postgres type widening semantics before generating the `ALTER COLUMN TYPE` statement — grounding the SQL in documented behavior rather than training data recall.
-
-If Context7 is unreachable, the resolver proceeds without docs and forces `confidence: LOW`. MCP improves proposal quality; the validator enforces safety independently. The MCP server version is pinned in `.kiro/settings/mcp.json` — `@latest` is explicitly avoided.
-
-### Property-based testing (PBT)
-
-`tests/test_properties.py` uses Hypothesis to verify invariants that unit tests cannot enumerate:
-
-- **Type normalizer** — round-trip property: every supported Postgres type name normalizes to a canonical string that is non-empty and stable across repeated calls
-- **SQL validator** — positive generator: for every auto-fixable row in the operation matrix, generate a valid SQL statement targeting a matching identifier → must be accepted. Negative generator: mutate any part of the valid SQL → must be rejected. The generator produces SQL that would execute against real Postgres, ensuring the test population is realistic
-- **State machine** — enumerate all 56 cells (7 states × 8 events), assert every transition matches the documented table. Invariant: no sequence can reach `PENDING` from `BLOCKED` or `REVIEW_REQUIRED`. Rollback never transitions state to `PENDING`. Persisted state always matches in-memory state
-- **Redaction** — token boundary coverage: `authorization`, `Authorization`, `client_secret`, `clientSecret`, `CLIENTSECRET`, `private_key`, `privateKey`, `privatekey` all trigger redaction. `monkey`, `accessibility`, `author` do not
-
-PBT caught one real defect: the initial state machine implementation allowed a `REVIEW_REQUIRED → PENDING` transition via a specific event sequence that unit tests (which only tested one event at a time) missed. The Hypothesis shrinking showed the minimal two-step sequence that triggered it.
-
-### Kiro IDE
-
-Built entirely in Kiro IDE. The spec editor was used throughout — viewing requirements.md and design.md side-by-side with implementation files kept the connection between requirement numbers and code explicit. Kiro's ability to reference spec requirement IDs in task comments (`_Req 17_`, `_Req 20_`) meant every task had a traceable link back to the original requirement without duplicating text.
+> **Status:** Placeholder — implementation in progress (task 6.x). Two apps satisfy the Skeleton Crew requirement.
 
 ---
 
 ## Architecture — the skeleton
 
-```
-core/                    ← 7 files, frozen after week 2
-├── interfaces.py        ← 6 protocols: InputSource, SourceAdapter, Comparator,
-│                           Resolver, Executor, Verifier
-├── models.py            ← GhostState (7), Difference, Resolution, SQLChange,
-│                           FilePatch, ExecutionResult, VerificationResult,
-│                           ApplyOutcome, RollbackEvent, Report
-├── validator.py         ← SQLValidator (matrix + AST binding + widening table)
-│                           FilePatchValidator (symlink + hash + key confinement)
-├── cache.py             ← JSON-backed resolution cache; lookup verifies
-│                           cache_version + validator_contract + prompt_hash
-├── persistence.py       ← atomic report store (temp + fsync + rename)
-└── orchestrator.py      ← state machine: run() / apply_one() / rollback()
-```
-
-The skeleton has no knowledge of Postgres, OpenAPI, or `pyproject.toml`. It operates on `State` objects (dicts of normalized facts) and `Difference` objects (kind + target + context). Adding a domain requires a comparator + adapter code; it never requires touching `core/`.
+The skeleton is `core/` — 7 files, frozen after week 2. It implements the 10-step compare-verify workflow and knows nothing about any specific domain.
 
 ```
-adapters/postgres/       ← Schema Drift domain (complete)
-├── normalize.py         ← SQLAlchemy ↔ Postgres type canonicaliser
-├── intended.py          ← reads SQLAlchemy Base.metadata via importlib
-├── actual.py            ← queries information_schema (connection-level timeout)
-├── comparator.py        ← diffs intended vs actual → 8 Difference kinds
-├── executor.py          ← applies SQL (precheck → connect → execute → commit/rollback)
-└── verifier.py          ← re-reads schema after apply
-
-apps/schema-drift/       ← mandatory app 1 — The Crypt (complete)
-apps/contract-observer/  ← mandatory app 2 — The Séance (task 5.x)
-apps/shared/ui/          ← one Halloween-themed template + RENDERERS registry
+core/
+├── interfaces.py    ← 6 protocols: InputSource, SourceAdapter, Comparator,
+│                       Resolver, Executor, Verifier
+├── models.py        ← GhostState (7 states), Difference, Resolution,
+│                       SQLChange, FilePatch, ExecutionResult,
+│                       VerificationResult, ApplyOutcome, RollbackEvent, Report
+├── validator.py     ← domain validator (operation matrix + safety rules)
+├── cache.py         ← JSON-backed resolution cache; provenance-verified lookup
+├── persistence.py   ← atomic report store (temp + fsync + rename)
+└── orchestrator.py  ← state machine: run() / apply_one() / rollback()
 ```
+
+Each domain adapter implements the 6 protocols. The skeleton calls the protocols; it never imports from adapters.
+
+```
+adapters/postgres/    ← Schema Drift (complete)
+adapters/openapi/     ← Contract Observer (complete)
+adapters/deps/        ← Dependency Auditor (task 6.x, optional)
+
+apps/schema-drift/    ← mandatory app 1 — The Crypt
+apps/contract-observer/ ← mandatory app 2 — The Séance
+apps/shared/ui/       ← one Halloween-themed template + RENDERERS registry
+```
+
+Adding a domain requires implementing the adapter protocols. It never requires touching `core/`.
 
 ---
 
@@ -239,12 +115,150 @@ Seven states × eight events = 56 cells. Every cell is explicitly defined and te
 
 ---
 
+## Flow
+
+```
+1. Read targets         (repo config → declared source URL + live environment URL)
+2. Read both sides      (SourceAdapter normalizes each into a State)
+3. Compare              (domain Comparator classifies each gap as a Difference)
+4. Resolve              (LLM Resolver proposes one fix per ghost)
+5. Validate             (Validator enforces domain safety rules; rejects if violated)
+6. Authorize            (human reviews → approves or dismisses)
+7. Execute              (Executor applies the fix atomically)
+8. Verify               (Verifier re-reads live state → RESOLVED / STILL_PRESENT / EXECUTION_FAILED)
+```
+
+**LLM proposes. Validator decides. Human authorizes. That order never changes.**
+
+---
+
+## Ghost classification
+
+### Database (Schema Drift)
+
+| Kind | Auto-fix | Policy |
+|---|---|---|
+| `INDEX_MISSING` | `CREATE INDEX` | AUTO-FIX |
+| `TYPE_CHANGED` (widening only) | `ALTER COLUMN TYPE` | AUTO-FIX |
+| `TYPE_CHANGED` (narrowing) | — | REVIEW_REQUIRED |
+| `COLUMN_MISSING` | `ADD COLUMN` | REVIEW_REQUIRED |
+| `TABLE_MISSING`, `COLUMN_EXTRA`, `TABLE_EXTRA`, `INDEX_EXTRA` | — | BLOCKED |
+
+Widening pairs: `smallint→integer`, `integer→bigint`, `real→double precision`, `varchar(n)→varchar(m) where m>n`, `varchar(n)→text`. Everything else is narrowing and fails closed.
+
+### API contracts (Contract Observer)
+
+| Kind | UI label | Policy |
+|---|---|---|
+| `FIELD_EXTRA` | Shadow Field | BLOCKED — PR-based fix to `openapi.yaml` |
+| `FIELD_MISSING` | Vanished Field | REVIEW_REQUIRED — PR-based fix |
+| `PATH_MISSING` | Lost Endpoint | BLOCKED |
+| `PATH_EXTRA` | Phantom Endpoint | BLOCKED |
+
+API contract changes are never auto-applied to a live system. The executor opens a GitHub PR.
+
+---
+
+## Safety boundaries
+
+### All domains
+- **Validator is the safety boundary** — not the LLM, not keyword matching. The domain validator enforces the operation matrix structurally.
+- **Redaction** — token-based, applied before persistence and before the resolver sees the data. Errors stored as code/class/summary — never raw exception text.
+- **Atomic writes** — executor uses temp file + fsync + rename within the same directory fd. File patches are hash-locked (`before_sha256` verified before apply, `after_sha256` verified after).
+
+### Schema Drift (database)
+- **Operation matrix** — only 9 operation kinds recognized; every other SQL node is blocked.
+- **Target binding** — validator extracts table/column/index from the SQL AST and compares against `Difference.target`; a mismatch blocks regardless of resolver confidence.
+- **Connection-level timeout** — 30s via `options="-c statement_timeout=30000"` at connect time; never via `SET`.
+- **USING clause / expression index / partial index** — structurally rejected.
+
+### Contract Observer (API)
+- **SSRF protection** — all outbound HTTP blocks loopback, private, link-local, reserved, and IPv4-mapped-IPv6 destinations. Validated before every request.
+- **`follow_redirects=False`** — redirects are not auto-followed. Same-host redirects are manually followed (max 5 hops) with SSRF revalidation on each hop.
+- **`trust_env=False`** — no proxy env vars.
+- **No live mutations** — the executor opens a GitHub PR; it never patches the live API.
+
+---
+
+## How Kiro was used
+
+### Spec-driven development
+
+The entire project was driven from a single spec written before any code existed:
+
+- `.kiro/specs/touchstone/requirements.md` — 40 numbered requirements across four categories: core skeleton, database domain, API domain, deps domain
+- `.kiro/specs/touchstone/design.md` — state machine diagram, 56-cell transition table (7 states × 8 events), operation matrix, cache key design, SSRF rules
+- `.kiro/specs/touchstone/tasks.md` — phased implementation plan with a freeze gate at task 3.2; each completed task updated with a `VERIFIED:` note showing test counts
+
+The difference from vibe coding was structural: the spec forced resolution of ambiguous cases before implementation began. For example, "what happens when a narrowing type change is proposed?" was answered in requirements (`REVIEW_REQUIRED`, `proposed_change=None`) before the resolver or validator were written.
+
+### Steering docs
+
+Three steering docs guided every Kiro response throughout the build:
+
+- **`product.md`** — 13 non-negotiable principles written on day 1. The most consequential: "LLM proposes; validator decides; human authorizes" and "Core frozen at end of week 2." These prevented scope creep in both directions.
+- **`tech.md`** — stack, operation matrix, SSRF rules, redaction contract, type widening table. The widening pairs spelled out here meant the validator implementation required no judgment calls.
+- **`kiro-features.md`** — documented which Kiro features to use and how, including the PBT strategy, the custom agent contract, and what the submission write-up must cover.
+
+The biggest single impact: writing `product.md` before writing any code forced the product boundary to be explicit. When implementation revealed a tension (e.g., "should rollback generate an inverse SQL statement?"), the steering doc had already answered it ("NO — preserve the observed state; no inverse generated").
+
+### Custom agent — Validator Reviewer
+
+`.kiro/agents/validator-reviewer.md` defines an independent safety auditor with a strict input contract. The agent receives no resolver rationale, no confidence score, and no context that could bias its evaluation. It re-derives its verdict from the operation matrix independently.
+
+**Advisory only**: the deterministic validator in `core/validator.py` is authoritative. The agent's verdict is recorded alongside the validator result. Disagreements escalate to human review — the agent cannot approve what the matrix blocks, and can flag concerns the matrix cannot express (e.g., a widening that is technically valid but suspiciously large for a typical identifier column).
+
+### Agent hooks
+
+**`new-adapter`** (trigger: `FileCreate` on `adapters/**/comparator.py`)  
+Scaffolds the full application plumbing when a new domain comparator is created: `apps/<domain>/main.py`, `config.json`, `README.md`, `run.sh`, a renderer stub in the shared UI `RENDERERS` registry, and a comparator test file. The hook prompt explicitly prohibits modifying `core/`.
+
+**`comparator-test`** (trigger: `FileSave` on `adapters/**/comparator.py`)  
+Runs the matching comparator test suite on every save. Resolves the test file from the domain folder name — `adapters/postgres/comparator.py` triggers `tests/test_comparator_pg.py`.
+
+**`demo-case-cache`** (trigger: `FileSave` on `fixtures/cases.json`)  
+Invokes the resolver against each new demo case and writes the resolution into `agents/cache.json` keyed by `Difference.signature`. Each entry includes `cache_version`, `validator_contract`, and `prompt_hash`.
+
+### MCP — Context7
+
+The resolver fetches library documentation from Context7 MCP before proposing a fix — grounding proposals in documented behavior rather than training data recall. If Context7 is unreachable, the resolver proceeds without docs and forces `confidence: LOW`. MCP improves proposal quality; the validator enforces safety independently.
+
+### Property-based testing (PBT)
+
+`tests/test_properties.py` uses Hypothesis to verify invariants that unit tests cannot enumerate:
+
+- **Type normalizer** — round-trip: every supported Postgres type normalizes to a canonical string that is stable across repeated calls
+- **SQL validator** — positive generator (every auto-fixable matrix row → must be accepted) + negative generator (mutate any part of valid SQL → must be rejected)
+- **State machine** — enumerate all 56 cells; invariant: no sequence can reach `PENDING` from `BLOCKED` or `REVIEW_REQUIRED`
+- **Redaction** — token boundary coverage across case variants (`authorization`, `Authorization`, `AUTHORIZATION`, etc.)
+
+PBT caught one real defect: the initial state machine allowed a `REVIEW_REQUIRED → PENDING` transition via a specific two-step event sequence that unit tests (which only tested one event at a time) missed.
+
+---
+
+## Demo
+
+Target repos are declared in **`repos.json`** at the repo root. No env var, no cloning. Touchstone fetches declared sources from configured GitHub raw URLs at runtime. The UI shows a **repo selector** in the header — judges can see that Touchstone is built to monitor multiple repos.
+
+```bash
+# Restore Schema Drift demo state (or use the Reset Demo button in the UI)
+python fixtures/seed.py $DATABASE_URL
+
+# Run offline tests (no DB needed)
+python -m pytest tests/ -q
+# 373 passed, 11 skipped
+
+# Run Postgres integration tests
+DATABASE_URL=<neon-url> python -m pytest tests/test_postgres_e2e.py tests/test_sql_execution.py -v
+# 9 passed, 1 skipped
+```
+
+---
+
 ## Project structure
 
 ```
 touchstone/
-├── cli.py                                # CLI: touchstone compare / touchstone report
-├── pyproject.toml                        # pinned dependencies, editable install
 ├── core/                                 # frozen — 7 files
 │   ├── interfaces.py
 │   ├── models.py
@@ -252,9 +266,9 @@ touchstone/
 │   ├── cache.py
 │   ├── persistence.py
 │   └── orchestrator.py
-├── repos.json                            # target repos registry (id, name, models_url, openapi_url)
+├── repos.json                            # target repos registry
 ├── adapters/
-│   ├── remote_source.py                  # fetches files from GitHub raw URLs; process-level cache
+│   ├── remote_source.py                  # fetches files from GitHub raw URLs
 │   ├── postgres/                         # schema-drift domain (complete)
 │   │   ├── normalize.py
 │   │   ├── intended.py
@@ -275,7 +289,7 @@ touchstone/
 │   ├── redaction.py                      # token-based redaction + SafeError
 │   └── prompts.py
 ├── apps/
-│   ├── shared/ui/                        # one shared template + RENDERERS registry
+│   ├── shared/ui/                        # one shared Halloween-themed template
 │   │   ├── index.html
 │   │   ├── app.js
 │   │   └── style.css
@@ -284,21 +298,22 @@ touchstone/
 │   │   ├── config.json
 │   │   ├── README.md
 │   │   └── run.sh
-│   └── contract-observer/               # mandatory app 2 — The Séance (complete)
-│       ├── main.py
-│       ├── config.json
-│       ├── README.md
-│       └── run.sh
-├── fixtures/                             # demo setup — schema declarations → NithinBR-AI/touchstone-demo-target-repo
-│   ├── seed.py                           # seeds live Neon DB with drift cases (also called by /demo/reset)
+│   ├── contract-observer/               # mandatory app 2 — The Séance (complete)
+│   │   ├── main.py
+│   │   ├── config.json
+│   │   ├── README.md
+│   │   └── run.sh
+│   └── dependency-auditor/              # optional app 3 — The Manifest (task 6.x)
+├── fixtures/
+│   ├── seed.py                           # seeds Neon DB with drift cases
 │   ├── cases.json                        # drift cases for demo + cache seeding
 │   └── docker-compose.yml               # local Postgres 16 alternative
-├── scripts/
-│   └── run_comparator_test.py            # helper for comparator-test hook
+├── cli.py                                # CLI: touchstone compare / touchstone report
+├── pyproject.toml
 ├── tests/
 │   ├── test_skeleton.py                  # 7 files, no external imports (15 tests)
 │   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes (23 tests)
-│   ├── test_normalize.py                 # type normaliser triples (91 tests)
+│   ├── test_normalize.py                 # type normaliser (91 tests)
 │   ├── test_validator_sql.py             # matrix + binding + widening (33 tests)
 │   ├── test_validator_file.py            # symlink / hash / key / traversal (12 tests)
 │   ├── test_state_transitions.py         # 56-cell state machine (66 tests)
@@ -306,9 +321,9 @@ touchstone/
 │   ├── test_cache_reproducibility.py     # cache hit / miss / provenance (8 tests)
 │   ├── test_orchestrator_mock.py         # end-to-end with fake infrastructure (5 tests)
 │   ├── test_resolver.py                  # MockResolver + canned resolutions (9 tests)
-│   ├── test_ssrf.py                      # SSRF guard — all blocked/allowed cases (13 tests)
+│   ├── test_ssrf.py                      # SSRF guard (13 tests)
 │   ├── test_comparator_api.py            # OpenAPI comparator (8 tests)
-│   ├── test_redaction.py                 # Token-based redaction + SafeError (49 tests)
+│   ├── test_redaction.py                 # token-based redaction (49 tests)
 │   ├── test_comparator_pg.py             # Postgres comparator (requires DATABASE_URL)
 │   ├── test_executor_pg.py               # Postgres executor (requires DATABASE_URL)
 │   ├── test_verifier_pg.py               # Postgres verifier (requires DATABASE_URL)
@@ -322,7 +337,7 @@ touchstone/
 │   ├── hooks/                            # new-adapter, comparator-test, demo-case-cache
 │   ├── agents/                           # validator-reviewer.md
 │   └── settings/mcp.json                # Context7 MCP (pinned version)
-└── .github/workflows/                    # drift.yml CI (task 10.1)
+└── .github/workflows/                    # drift.yml CI
 ```
 
 ---
@@ -346,27 +361,17 @@ Copy `.env_sample` to `.env` and fill in your Neon connection string:
 DATABASE_URL=postgresql://neondb_owner:<password>@<host>/neondb?sslmode=require
 ```
 
-### Run tests (offline — no DB needed)
+### Start the apps
 
 ```bash
-python -m pytest tests/ -q
-# 373 passed, 11 skipped
-```
+# Schema Drift — The Crypt (port 8001)
+bash apps/schema-drift/run.sh
 
-### Run against real Postgres
-
-```bash
-# Restore demo drift state
-python fixtures/seed.py $DATABASE_URL
-
-# Run Postgres tests
-DATABASE_URL=<neon-url> python -m pytest tests/test_postgres_e2e.py tests/test_sql_execution.py -v
-# 9 passed, 1 skipped
+# Contract Observer — The Séance (port 8002)
+bash apps/contract-observer/run.sh
 ```
 
 ### CLI
-
-Target repo is read from `repos.json` automatically — no env var needed.
 
 ```bash
 touchstone compare --target ix_orders_user_id
@@ -378,7 +383,7 @@ touchstone report
 
 ## Skeleton proof
 
-The skeleton is `core/` — 7 files, frozen after week 2. Two mandatory applications (`schema-drift`, `contract-observer`) run on top of it without touching `core/`. That is the Skeleton Crew entry.
+The skeleton is `core/` — 7 files, frozen after week 2. Two mandatory applications run on top of it without modifying any skeleton file.
 
 **What the skeleton is:** `core/interfaces.py` defines six protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Executor`, `Verifier`). The remaining six files implement the 10-step compare-verify workflow and know nothing about Postgres, OpenAPI, or `pyproject.toml`.
 
@@ -387,17 +392,17 @@ The skeleton is `core/` — 7 files, frozen after week 2. Two mandatory applicat
 **Verification commands:**
 
 ```bash
-# 1. Confirm the freeze commit discipline — exactly one freeze commit after the week-1 initial
+# 1. Confirm core/ has not changed since the freeze commit
 git log --oneline core/
 
-# 2. Confirm core/ has not drifted since the freeze
+# 2. Confirm core/ has no uncommitted changes
 git diff core/
 
-# 3. Assert 7 files and no external imports into core/
+# 3. Assert 7 files and no imports from outside core/
 python -m pytest tests/test_skeleton.py -v
 ```
 
-`git log` proves commit discipline, NOT architectural completeness. The import rule is enforced structurally by `test_skeleton.py`, which walks every module in `core/` and asserts no import resolves to a module outside `core/`.
+`git log` proves commit discipline. The import rule is enforced structurally by `test_skeleton.py`, which walks every module in `core/` and asserts no import resolves to a module outside `core/`.
 
 ---
 
