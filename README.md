@@ -344,6 +344,8 @@ DATABASE_URL=<neon-url> python -m pytest tests/test_postgres_e2e.py tests/test_s
 
 ### CLI
 
+Target repo is read from `repos.json` automatically — no env var needed.
+
 ```bash
 touchstone compare --target ix_orders_user_id
 touchstone compare --target users.email

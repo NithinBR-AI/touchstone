@@ -6,11 +6,11 @@ Declared in pyproject.toml as:
     touchstone = "cli:main"
 
 Usage:
-    touchstone compare --target <target>
-    touchstone compare --target users.email --domain database
-    touchstone compare --target ix_orders_user_id --domain database
-    touchstone apply --id <difference-id>
+    touchstone compare --target ix_orders_user_id
+    touchstone compare --target users.email
     touchstone report
+
+Target repo is read from repos.json (default entry). Override with MODELS_PATH env var.
 """
 
 from __future__ import annotations
@@ -40,13 +40,26 @@ def cmd_compare(args: argparse.Namespace) -> int:
     target = args.target
     domain = args.domain
 
-    # Locate models file — prefer MODELS_PATH env var, fall back to fixtures/models.py
-    import os
-    _default = Path(__file__).parent / "fixtures" / "models.py"
-    models_path = Path(os.environ["MODELS_PATH"]) if "MODELS_PATH" in os.environ else _default
-    if not models_path.exists():
-        print(f"ERROR: models file not found at {models_path}\nSet MODELS_PATH env var.", file=sys.stderr)
-        return 1
+    # Locate models file — prefer MODELS_PATH env var, then repos.json default repo
+    import json as _json
+    if "MODELS_PATH" in os.environ:
+        models_path = Path(os.environ["MODELS_PATH"])
+        if not models_path.exists():
+            print(f"ERROR: models file not found at {models_path}", file=sys.stderr)
+            return 1
+    else:
+        _repos_file = Path(__file__).parent / "repos.json"
+        if not _repos_file.exists():
+            print("ERROR: repos.json not found. Set MODELS_PATH or add repos.json.", file=sys.stderr)
+            return 1
+        _repos = _json.loads(_repos_file.read_text())
+        _repo = next((r for r in _repos if r.get("default")), _repos[0])
+        _url = _repo.get("models_url", "")
+        if not _url:
+            print("ERROR: no models_url in repos.json default repo.", file=sys.stderr)
+            return 1
+        from adapters.remote_source import fetch as _fetch_remote
+        models_path = _fetch_remote(_url)
 
     from adapters.postgres.actual import load_actual_schema
     from adapters.postgres.comparator import SchemaComparator
