@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Crypt — Touchstone</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- demo-mode banner (hidden until 403 received) -->
+<div id="demo-banner" class="demo-banner" style="display:none">
+  Demo mode — compare is live, apply is disabled.
+  To enable apply: deploy with bearer-token auth.
+</div>
+
+<div id="app">
+
+  <!-- ── header ── -->
+  <header>
+    <div class="header-top">
+      <div class="brand-lockup">
+        <span class="brand-mark">Touchstone</span>
+        <span class="brand-sep">/</span>
+        <span class="app-title" id="app-title">The Crypt</span>
+      </div>
+      <span class="app-domain" id="app-domain"></span>
+      <div class="header-actions">
+        <button id="btn-compare" class="btn btn-compare">Hunt Ghosts</button>
+      </div>
+    </div>
+
+    <!-- health bar -->
+    <div class="health-bar-wrap">
+      <div class="health-stats" id="health-stats">
+        No report yet.
+      </div>
+      <div class="health-track">
+        <div class="health-fill" id="health-fill"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- atmospheric mist -->
+  <div class="mist-strip" aria-hidden="true"></div>
+
+  <!-- ── main content ── -->
+  <main>
+    <div id="card-grid" class="card-grid">
+      <!-- cards injected by app.js -->
+      <div class="state-loading">
+        <span class="spinner"></span>Loading…
+      </div>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <span>◈ TOUCHSTONE</span>
+    <span id="footer-domain"></span>
+    <span>Skeleton Crew · Kiroween 2026</span>
+  </footer>
+
+</div><!-- /#app -->
+
+<!-- ── confirm apply dialog ── -->
+<div id="dialog-backdrop" class="dialog-backdrop hidden" role="dialog" aria-modal="true">
+  <div class="dialog">
+    <h3 id="dialog-title">Apply fix</h3>
+    <div class="dialog-body">
+      <div>Proposed change:</div>
+      <pre id="dialog-change"></pre>
+    </div>
+    <div class="dialog-warn" id="dialog-warn"></div>
+    <div class="dialog-actions">
+      <button id="dialog-cancel" class="btn btn-ghost">Cancel</button>
+      <button id="dialog-confirm" class="btn btn-primary">Confirm Apply</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

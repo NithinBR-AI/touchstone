@@ -18,7 +18,7 @@ Two states exist for every system: what the code declares, and what the system a
 
 Touchstone detects each ghost, proposes a validated fix, and — on human approval — applies it atomically and verifies the result.
 
-**The skeleton is exactly 7 files.** Two mandatory applications (`schema-drift`, `contract-observer`) run on top of it, each a ~30-line wrapper. That is the Skeleton Crew entry.
+**The skeleton is exactly 7 files.** Two mandatory applications (`schema-drift` — live, `contract-observer` — in progress) will run on top of it, each a ~30-line wrapper. That is the Skeleton Crew entry.
 
 ---
 
@@ -69,13 +69,14 @@ Anything not in the matrix fails closed. The validator enforces this from the SQ
 
 ## Demo — real Neon DB
 
-The `demo/` directory contains a real Neon Postgres 18 database with three intentional drift cases:
+The `demo/` directory ships two intentional drift cases visible in the Schema Drift app today:
 
-| Case | Ghost | Policy |
-|---|---|---|
-| `ix_orders_user_id` absent | `INDEX_MISSING` | Auto-fix → `CREATE INDEX` |
-| `users.email` is `VARCHAR(50)`, declared `VARCHAR(255)` | `TYPE_CHANGED` (widening) | Auto-fix → `ALTER COLUMN TYPE` |
-| `users.age` is `BIGINT`, declared `INTEGER` | `TYPE_CHANGED` (narrowing) | REVIEW_REQUIRED |
+| Case | Ghost | Policy | UI badge |
+|---|---|---|---|
+| `users.age` declared `INTEGER`, live `BIGINT` | `TYPE_CHANGED` (narrowing) | REVIEW_REQUIRED | 🕯 SÉANCE NEEDED |
+| `ix_users_email` in live DB but not declared | `INDEX_EXTRA` | BLOCKED | ⛓ BOUND |
+
+The full seed (`demo/seed.py`) also wires up `ix_orders_user_id` (INDEX_MISSING) and `users.email` widening for the end-to-end Postgres test suite — those appear in `test_postgres_e2e.py` but are consumed by the first run, so seed before each test run.
 
 ```bash
 # Restore drift state
@@ -189,7 +190,7 @@ core/                    ← 7 files, frozen after week 2
 The skeleton has no knowledge of Postgres, OpenAPI, or `pyproject.toml`. It operates on `State` objects (dicts of normalized facts) and `Difference` objects (kind + target + context). Adding a domain requires a comparator + adapter code; it never requires touching `core/`.
 
 ```
-adapters/postgres/       ← Schema Drift domain
+adapters/postgres/       ← Schema Drift domain (complete)
 ├── normalize.py         ← SQLAlchemy ↔ Postgres type canonicaliser
 ├── intended.py          ← reads SQLAlchemy Base.metadata via importlib
 ├── actual.py            ← queries information_schema (connection-level timeout)
@@ -197,9 +198,9 @@ adapters/postgres/       ← Schema Drift domain
 ├── executor.py          ← applies SQL (precheck → connect → execute → commit/rollback)
 └── verifier.py          ← re-reads schema after apply
 
-apps/schema-drift/       ← mandatory app 1 (~30 lines)
-apps/contract-observer/  ← mandatory app 2 (~30 lines)
-apps/shared/ui/          ← one HTML template + RENDERERS registry
+apps/schema-drift/       ← mandatory app 1 — The Crypt (complete)
+apps/contract-observer/  ← mandatory app 2 — The Séance (task 5.x)
+apps/shared/ui/          ← one Halloween-themed template + RENDERERS registry
 ```
 
 ---
@@ -227,35 +228,60 @@ touchstone/
 ├── cli.py                                # CLI: touchstone compare / touchstone report
 ├── pyproject.toml                        # pinned dependencies, editable install
 ├── core/                                 # frozen — 7 files
+│   ├── interfaces.py
+│   ├── models.py
+│   ├── validator.py
+│   ├── cache.py
+│   ├── persistence.py
+│   └── orchestrator.py
 ├── adapters/
-│   ├── postgres/                         # schema-drift domain
-│   ├── openapi/                          # contract-observer domain
-│   └── deps/                             # dependency-auditor domain (optional)
+│   ├── postgres/                         # schema-drift domain (complete)
+│   │   ├── normalize.py
+│   │   ├── intended.py
+│   │   ├── actual.py
+│   │   ├── comparator.py
+│   │   ├── executor.py
+│   │   └── verifier.py
+│   ├── openapi/                          # contract-observer domain (task 5.x)
+│   └── deps/                             # dependency-auditor domain (task 6.x, optional)
 ├── agents/
-│   ├── resolver.py                       # LLM resolver (MockResolver in week 1)
-│   ├── prompts.py
-│   └── cache.json                        # pre-recorded demo resolutions
+│   ├── resolver.py                       # MockResolver (real Bedrock resolver: task 7.1)
+│   └── prompts.py
 ├── apps/
 │   ├── shared/ui/                        # one shared template + RENDERERS registry
-│   ├── schema-drift/                     # mandatory
-│   └── contract-observer/               # mandatory
+│   │   ├── index.html
+│   │   ├── app.js
+│   │   └── style.css
+│   ├── schema-drift/                     # mandatory app 1 — The Crypt (complete)
+│   │   ├── main.py
+│   │   ├── config.json
+│   │   ├── README.md
+│   │   └── run.sh
+│   └── contract-observer/               # mandatory app 2 — The Séance (task 5.9)
 ├── demo/
 │   ├── models.py                         # Neon demo schema (users / orders / products)
-│   ├── seed.py                           # seeds live Neon DB with 3 drift cases
-│   ├── cases.json                        # 3 drift cases: INDEX_MISSING + 2× TYPE_CHANGED
+│   ├── seed.py                           # seeds live Neon DB with drift cases
+│   ├── cases.json                        # drift cases for demo + cache seeding
 │   └── docker-compose.yml               # local Postgres 16 alternative
+├── scripts/
+│   └── run_comparator_test.py            # helper for comparator-test hook
 ├── tests/
 │   ├── test_skeleton.py                  # 7 files, no external imports (15 tests)
-│   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes (25 tests)
+│   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes (23 tests)
 │   ├── test_normalize.py                 # type normaliser triples (91 tests)
 │   ├── test_validator_sql.py             # matrix + binding + widening (33 tests)
 │   ├── test_validator_file.py            # symlink / hash / key / traversal (12 tests)
 │   ├── test_state_transitions.py         # 56-cell state machine (66 tests)
 │   ├── test_rollback.py                  # file rollback + DB refusal (10 tests)
 │   ├── test_cache_reproducibility.py     # cache hit / miss / provenance (8 tests)
-│   ├── test_orchestrator_mock.py         # end-to-end with fake infrastructure
-│   ├── test_postgres_e2e.py              # real Postgres (requires DATABASE_URL)
+│   ├── test_orchestrator_mock.py         # end-to-end with fake infrastructure (5 tests)
+│   ├── test_resolver.py                  # MockResolver + canned resolutions (9 tests)
+│   ├── test_comparator_pg.py             # Postgres comparator (requires DATABASE_URL)
+│   ├── test_executor_pg.py               # Postgres executor (requires DATABASE_URL)
+│   ├── test_verifier_pg.py               # Postgres verifier (requires DATABASE_URL)
+│   ├── test_postgres_e2e.py              # full end-to-end (requires DATABASE_URL)
 │   ├── test_sql_execution.py             # real Postgres SQL execution
+│   ├── test_apps_structure.py            # Skeleton Crew proof: 2+ apps, 4 files each
 │   └── test_properties.py               # Hypothesis PBT
 ├── .kiro/
 │   ├── specs/touchstone/                 # requirements.md, design.md, tasks.md
@@ -263,8 +289,7 @@ touchstone/
 │   ├── hooks/                            # new-adapter, comparator-test, demo-case-cache
 │   ├── agents/                           # validator-reviewer.md
 │   └── settings/mcp.json                # Context7 MCP (pinned version)
-└── .github/workflows/
-    └── drift.yml                         # CI: compare on models.py / openapi.yaml change
+└── .github/workflows/                    # drift.yml CI (task 10.1)
 ```
 
 ---
@@ -292,7 +317,7 @@ DATABASE_URL=postgresql://neondb_owner:<password>@<host>/neondb?sslmode=require
 
 ```bash
 python -m pytest tests/ -q
-# 295 passed, 11 skipped
+# 300 passed, 11 skipped, 3 failed (contract-observer not yet built — expected)
 ```
 
 ### Run against real Postgres
@@ -313,16 +338,6 @@ touchstone compare --target ix_orders_user_id
 touchstone compare --target users.email
 touchstone report
 ```
-
----
-
-## What's next
-
-- **Freeze `core/`** — one commit, no further changes (requires 2.22 + 2.23 green ✅)
-- **App 1 — Schema Drift** — FastAPI wrapper around the Postgres adapter; shared UI with live ghost table
-- **App 2 — Contract Observer** — OpenAPI spec vs live response; SSRF-protected outbound HTTP
-- **Real LLM resolver** — replace `MockResolver` with Bedrock-backed resolver; Context7 MCP already wired
-- **App 3 — Dependency Auditor** — optional; `pyproject.toml` vs installed versions
 
 ---
 

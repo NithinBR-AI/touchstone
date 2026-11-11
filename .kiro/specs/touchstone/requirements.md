@@ -336,9 +336,19 @@ Requirement 30: Applications in Separate Folders
 
 Requirement 31: Haunted Console Visuals
 
-Dark slate background, monospace values, subtle radial gradient. Scan line
-once on Run (<1s). Ghost flicker on PENDING. Seven visual states. Three
-animations total. 50ms stagger.
+Full Halloween theme (implemented — supersedes plain-console original):
+- Void black bg (#0a0a0f), pumpkin orange accent (#f97316), blood red blocked (#ef4444),
+  spirit green resolved (#4ade80), amber review (#fbbf24).
+- Ghost vocabulary: drift kinds shown as Halloween names (Type Wraith, Phantom Index, etc.).
+- State badges with emoji + Halloween text (👻 HAUNTING, ⛓ BOUND, ✝ LAID TO REST, etc.).
+- Atmospheric page: 3-layer radial fog + corner vignettes + mist strip header separator.
+- Ghost name displayed large (28px bold) with state-colored glow text-shadow.
+- Card top-bar: 2px glowing accent line per state color.
+- Per-state card background: dark tinted gradient, single CSS rule via --state-bg-tint var.
+- Roaming ghost sprites: 👻🕷️🦇💀 drift across screen on compare (proportional to unresolved count).
+- Idle state: floating ghost + tombstone divider + "The crypt is quiet… for now."
+- Scan-line animation fires once on load (animation-iteration-count: 1; forwards fill).
+- Ghost flicker on PENDING cards. 50ms card entrance stagger. Five+ animations total.
 
 Requirement 32: Health Bar and Cascade
 

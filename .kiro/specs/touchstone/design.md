@@ -205,6 +205,61 @@ test_skeleton.py 7 files, no external imports
 test_properties.py Reference round-trip, SQL positive+negative, state machine, redaction variants
 test_apps_structure.py 2 or 3 apps; each has 4 files; shared UI has 3 files
 
+Shared UI — Halloween theme (implemented, deviates from plain-console original spec)
+
+The original spec said "dark slate, monospace values, subtle radial gradient."
+After implementation the theme was evolved to full Halloween aesthetic. These are
+now the canonical UI decisions:
+
+**Color palette (apps/shared/ui/style.css :root)**
+- bg: #0a0a0f (void black), bg-card: #12111a
+- accent: #f97316 (pumpkin orange) — injected per-app via /config
+- pending: #f97316, review: #fbbf24 (amber), blocked: #ef4444 (blood red)
+- resolved: #4ade80 (spirit green), superseded: #3d3550 (shadow)
+
+**Ghost vocabulary (KIND_LABELS in app.js)**
+Maps technical drift kind names to Halloween names for card display:
+- TYPE_CHANGED → "Type Wraith", INDEX_MISSING → "Missing Specter"
+- INDEX_EXTRA → "Phantom Index", COLUMN_MISSING → "Vanished Column"
+- TABLE_MISSING → "Lost Table", NULLABLE_CHANGED → "Null Shade"
+- CONSTRAINT_MISSING → "Broken Ward", CONSTRAINT_EXTRA → "Phantom Ward"
+- DEFAULT_CHANGED → "Altered Omen"
+
+**State badge text (stateBadge in app.js)**
+- PENDING → "👻 HAUNTING", REVIEW_REQUIRED → "🕯 SÉANCE NEEDED"
+- BLOCKED → "⛓ BOUND", RESOLVED → "✝ LAID TO REST"
+- STILL_PRESENT → "😱 STILL HAUNTING", EXECUTION_FAILED → "💀 RITUAL FAILED"
+- SUPERSEDED → "🌫 FADED"
+
+**Per-app names**
+- schema-drift → title "The Crypt", accent #f97316
+- contract-observer → title "The Séance", accent #8b5cf6 (violet)
+- dependency-auditor → title "The Haunting", accent #f97316
+
+**Card state theming (CSS)**
+Per-state: declare --state-color + --state-bg-tint. Single shared rule:
+  .ghost-card[data-state] { background: linear-gradient(160deg, var(--state-bg-tint) 0%, var(--bg-card) 60%) }
+No duplicated gradient rule per state.
+
+**Roaming ghosts**
+On compare, ghost emoji sprites (👻🕷️🦇💀☠️🫥) spawn and drift via CSS keyframes.
+Swarm count = unresolved_count + 1. Sprites auto-remove on animationend.
+Ghosts cleared (stopGhosts) when all drifts resolved.
+
+**Atmospheric effects**
+- 3-layer radial fog: body::before with orange top + purple corners
+- Corner vignettes: body::after
+- Mist strip: 48px gradient band between header and main
+- Ghost name glow: text-shadow using color-mix per state color
+- Card top bar: 2px glowing border per state color
+
+**Code reuse architecture**
+- 1 set of UI files (apps/shared/ui/) serves all 3 apps — no per-app copies
+- Each app's main.py mounts shared/ui via StaticFiles at "/"
+- Domain rendering isolated to RENDERERS registry — adding a 4th domain = 1 function
+- Card layout, badges, dialog, health bar, idle state all in shared template
+- Apps differ only in config.json (domain, accent, title)
+
 Out of scope (v1)
 
 Node/TS, MySQL/SQLite/MongoDB/Redis, data/row-level drift, multi-schema,

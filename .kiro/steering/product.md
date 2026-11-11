@@ -105,6 +105,29 @@ verifier.py) + a renderer registered in the shared UI. The Kiro hook
 scaffolds plumbing — CLI, config, test scaffold, README, renderer stub —
 but does NOT implement the adapter itself.
 
+## App phase decisions (locked 2026-11-11)
+
+### Authorization mode — demo-sandbox
+Auth mode is **demo-sandbox**: `/compare` and `GET` endpoints work freely;
+`/apply` and `/rollback` return HTTP 403 with body
+`{"detail": "apply disabled in demo mode"}`. Principal recorded in audit log
+as `"demo-sandbox"`. No bearer token. No token management. This is the mode
+for the Kiroween submission.
+
+### Orchestrator lifecycle — module-level singleton
+Each app process holds **one orchestrator instance** at module level (not
+per-request). The instance is created at import time with the app's adapter
+wiring. `orch.run()` replaces `orch._report` in-place; callers use
+`orch.report` to read the latest. This means a single concurrent user is the
+target — correct for demo.
+
+### Page-refresh recovery — `latest_report_id` in `/config`
+`/config` response includes `latest_report_id: str | null`. After every
+`POST /compare` the server updates this field. On page load the UI reads
+`/config`, and if `latest_report_id` is set, fetches `GET /report/{id}` to
+restore state without re-running compare. No separate `/report/latest` route
+needed.
+
 ## Tone
 Restrained and atmospheric. A serious instrument with a haunting narrative —
 not a Halloween costume.

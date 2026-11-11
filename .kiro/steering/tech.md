@@ -105,6 +105,47 @@ conn = psycopg.connect(dsn, options="-c statement_timeout=30000")
 
 The validator rejects SET statements outright.
 
+## App phase implementation rules
+
+### Auth — demo-sandbox (all 3 apps)
+```python
+from fastapi import HTTPException
+def _require_write():
+    raise HTTPException(403, detail="apply disabled in demo mode")
+```
+Every `/apply` and `/rollback` handler calls `_require_write()` as its first
+line. `/compare`, `/discover`, `/report/:id`, `/health`, `/config` are open.
+All three apps use this same pattern — same function, different module.
+
+### Orchestrator — module-level singleton
+```python
+# at module level in each main.py
+orch = Orchestrator(...)          # created once at import
+_latest_report_id: str | None = None   # updated after each /compare
+```
+One instance per app process. Correct for single-user demo. If extended to
+support multiple concurrent users or a persistent server, replace with a
+dict keyed by session ID or report ID. Do not refactor core/ to accommodate
+this — keep the dict in main.py.
+
+### `/config` response — includes `latest_report_id`
+```python
+@app.get("/config")
+def get_config():
+    return {**CONFIG, "latest_report_id": _latest_report_id}
+```
+`CONFIG` comes from `config.json` (domain, accent, title). `latest_report_id`
+is `null` until the first `/compare` call. The UI uses it to restore state
+on page refresh via `GET /report/{id}`.
+
+### Scan line animation — fires once only
+```css
+.scan-line { animation: scanline 0.8s ease-out 1 forwards; }
+```
+`animation-iteration-count: 1` and `fill-mode: forwards`. Added to `<body>`
+via JS on `DOMContentLoaded`, removed after the animation ends via
+`animationend` listener. Never loops.
+
 Frontend rules
 
 · ONE shared UI template in apps/shared/ui/

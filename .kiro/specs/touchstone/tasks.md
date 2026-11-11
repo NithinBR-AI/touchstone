@@ -261,17 +261,62 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
 
 ### 4. App 1 — Schema Drift (Week 2–3)
 
-- [ ] 4.1 apps/shared/ui/ — one template with renderer registry
-      (only `.gitkeep` present; create index.html, app.js, style.css)
-  - _Req 29_
-- [ ] 4.2 apps/schema-drift/{main.py, config.json, README.md, run.sh}
+**App phase decisions (locked 2026-11-11):**
+- **Auth**: demo-sandbox — `/apply` + `/rollback` return 403; all 3 apps use
+  the same `_require_write()` guard. No bearer token.
+- **Orchestrator lifecycle**: module-level singleton per app process. One
+  `orch` instance created at import time. If extended to multiple concurrent
+  users, replace with a dict keyed by session ID in `main.py` — do not touch
+  `core/`.
+- **Page-refresh recovery**: `/config` response includes `latest_report_id`
+  (null until first `/compare`). UI reads it on load and fetches
+  `GET /report/{id}` to restore state. No separate `/report/latest` route.
+
+- [x] 4.1 apps/shared/ui/ — one template with renderer registry
+      DONE: index.html + app.js + style.css in apps/shared/ui/.
+      **Halloween theme applied** (overrides original plain design spec):
+      - Dark palette (#0a0a0f bg, #f97316 pumpkin orange accent, #ef4444 blood red blocked,
+        #4ade80 spirit green resolved, #fbbf24 amber review/still-present).
+      - Ghost vocabulary: KIND_LABELS maps technical kind names to Halloween names
+        (Type Wraith, Phantom Index, Vanished Column, etc.).
+      - State badges use Halloween text (👻 HAUNTING, 🕯 SÉANCE NEEDED, ⛓ BOUND, etc.).
+      - Card-state theming via CSS custom properties: --state-color + --state-bg-tint
+        per [data-state] selector; single gradient rule — no duplicated rules per state.
+      - Atmospheric page: 3-layer radial fog body::before; corner vignettes body::after;
+        mist-strip between header and main.
+      - Idle state: floating ghost + tombstone divider + "The crypt is quiet… for now."
+      - Roaming ghosts: when drift found, ghost emoji sprites (👻🕷️🦇💀) spawn and drift
+        across the screen via CSS keyframes (--gx1/gy1/gx2/gy2/gx3/gy3 CSS vars per sprite);
+        swarm size proportional to unresolved count; cleared when all resolved.
+      - App title injected from /config: schema-drift = "The Crypt"; contract-observer
+        will be "The Séance"; dependency-auditor will be "The Haunting".
+      - Branding lockup: "◈ Touchstone / <App Title>" inline in header.
+      - RENDERERS registry (database/api/deps) decouples domain evidence from card layout —
+        new domains add one renderer, nothing else.
+      - Scan-line animation fires once on load (animation-iteration-count: 1; forwards).
+  - _Req 29, 31_
+- [x] 4.2 apps/schema-drift/{main.py, config.json, README.md, run.sh}
+      DONE: all 4 files present and verified.
+      - config.json: {"domain":"database","accent":"#f97316","title":"The Crypt"}
+      - run.sh: cd to script dir + PYTHONPATH=REPO_ROOT + python -m uvicorn main:app
+        (hyphenated folder workaround — Python can't dotted-import apps/schema-drift).
+      - main.py: module-level orch singleton; /config returns {**CONFIG, latest_report_id};
+        /apply + /rollback return 403 via _require_write() (demo-sandbox mode).
+      - StaticFiles mounted at "/" pointing to HERE.parent/"shared"/"ui".
   - _Req 28, 30_
-- [ ] 4.3 test_apps_structure.py — 2 or 3 apps; each has 4 files; shared
+- [x] 4.3 test_apps_structure.py — 2 or 3 apps; each has 4 files; shared
       UI has 3
+      DONE: tests/test_apps_structure.py written and running.
+      Current: 5 pass (shared UI, schema-drift, shared_ui_mounts_check),
+      3 fail (contract-observer missing — expected; will pass after task 5.9).
   - _Req 30_
-- [ ] 4.4 Verify Schema Drift works via `./apps/schema-drift/run.sh`
+- [x] 4.4 Verify Schema Drift works via `./apps/schema-drift/run.sh`
+      DONE: server runs on port 8001, UI loads, 2 drift ghosts appear (Type Wraith
+      + Phantom Index), roaming ghost emojis animate on compare, full-width cards.
   - _Req 28, 30_
-- [ ] 4.5 Deploy mode decision: bearer-token OR isolated demo. Implement.
+- [x] 4.5 Deploy mode decision: bearer-token OR isolated demo. Implement.
+      DECISION: demo-sandbox mode for all 3 apps. /apply and /rollback return HTTP 403.
+      _require_write() guard in every main.py. No bearer token required to run.
   - _Req 26_
 
 ### 5. App 2 — Contract Observer (Week 3)
