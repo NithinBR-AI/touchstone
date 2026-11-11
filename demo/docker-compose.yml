@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: touchstone
+      POSTGRES_PASSWORD: touchstone
+      POSTGRES_DB: touchstone_demo
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U touchstone -d touchstone_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+# Usage:
+#   docker compose -f demo/docker-compose.yml up -d
+#   python demo/seed.py postgresql://touchstone:touchstone@localhost:5432/touchstone_demo
+#
+# This starts Postgres only. App services (schema-drift, contract-observer)
+# are added in task 11.1 once apps/ are implemented.

@@ -1,11 +1,1 @@
-{
-  "mcpServers": {
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@PIN_VERSION_HERE"],
-      "env": {},
-      "disabled": false,
-      "autoApprove": ["resolve-library-id", "get-library-docs"]
-    }
-  }
-}
+{"mcpServers":{"context7":{"command":"npx","args":["-y","@upstash/context7-mcp@4.6.0"],"disabled":false,"autoApprove":["resolve-library-id","query-docs"]}}}

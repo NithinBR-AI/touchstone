@@ -1,0 +1,83 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "0.7 Install and pin Context7 MCP version in `.kiro/settings/mcp.json`": [
+      {
+        "executionId": "ea5850c0-7097-419e-bd8c-4b830335c7b9",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794388410394
+      },
+      {
+        "executionId": "ea5850c0-7097-419e-bd8c-4b830635c7b9",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794388565542
+      },
+      {
+        "executionId": "fbcbecf7-b219-4202-9f41-355a98d588b8",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794388966947
+      }
+    ],
+    "0.4 **Verify hook schema** by creating `adapters/test/comparator.py`": [
+      {
+        "executionId": "ea5850c0-7097-419e-bd8c-4b830335c7b9",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794388410499
+      },
+      {
+        "executionId": "fbcbecf7-b219-4202-9f41-355a98d588b8",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794388966457
+      },
+      {
+        "executionId": "3d2f15d8-12fd-46b5-9c22-7c3c22baf5eb",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794390343704
+      },
+      {
+        "executionId": "3d2f15d8-12fd-46b5-9c22-7c3c22baf5eb",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794390361541
+      },
+      {
+        "executionId": "7931885e-1fea-44b7-8968-94b206afcfe6",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794391047215
+      },
+      {
+        "executionId": "afb19da7-8ba0-426c-af22-3528af2cb234",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794391113429
+      },
+      {
+        "executionId": "edcc614e-55c1-4411-8e24-c24d4068cae6",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794395857275
+      },
+      {
+        "executionId": "4eb3fde4-d41a-45cd-bb49-b5e9037bd55f",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794395889240
+      }
+    ],
+    "0.5 **Verify custom agent** loads in Kiro: `.kiro/agents/validator-reviewer.md`": [
+      {
+        "executionId": "ea5850c0-7097-419e-bd8c-4b830335c7b9",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794388410872
+      },
+      {
+        "executionId": "fbcbecf7-b219-4202-9f41-355a98d588b8",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794388967417
+      }
+    ],
+    "2.20 Fix orchestrator `apply_one` / `rollback` so the 6 failing tests in": [
+      {
+        "executionId": "cc1805c3-8b80-465c-bda5-5946180585fa",
+        "chatSessionId": "sess_702be6f2-a274-4b1a-98c0-45376ffbdde5",
+        "timestamp": 1794390057737
+      }
+    ]
+  }
+}

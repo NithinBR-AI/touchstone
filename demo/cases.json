@@ -1,0 +1,52 @@
+[
+  {
+    "id": "case-01",
+    "description": "Missing index on orders.user_id",
+    "domain": "database",
+    "kind": "INDEX_MISSING",
+    "target": "ix_orders_user_id",
+    "context": {
+      "table": "orders",
+      "columns": ["user_id"],
+      "unique": false,
+      "safe_fix": true,
+      "policy": "auto_fixable"
+    },
+    "expected_operation": "CREATE_INDEX",
+    "expected_state": "RESOLVED"
+  },
+  {
+    "id": "case-02",
+    "description": "users.email is varchar(50) in DB but declared as varchar(255)",
+    "domain": "database",
+    "kind": "TYPE_CHANGED",
+    "target": "users.email",
+    "context": {
+      "table": "users",
+      "column": "email",
+      "original_actual_type": "varchar(50)",
+      "intended_type": "varchar(255)",
+      "safe_fix": true,
+      "policy": "auto_fixable"
+    },
+    "expected_operation": "ALTER_COLUMN_TYPE",
+    "expected_state": "RESOLVED"
+  },
+  {
+    "id": "case-03",
+    "description": "users.age is BIGINT in DB but declared as INTEGER (narrowing — review required)",
+    "domain": "database",
+    "kind": "TYPE_CHANGED",
+    "target": "users.age",
+    "context": {
+      "table": "users",
+      "column": "age",
+      "original_actual_type": "bigint",
+      "intended_type": "integer",
+      "safe_fix": false,
+      "policy": "review_required"
+    },
+    "expected_operation": "ALTER_COLUMN_TYPE",
+    "expected_state": "REVIEW_REQUIRED"
+  }
+]
