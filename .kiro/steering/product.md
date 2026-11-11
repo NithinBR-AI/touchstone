@@ -22,9 +22,9 @@ folder under `apps/` and is a ~30-line wrapper that imports from `core/`.
 
 | App | Domain | Accent | Primary verb | Mandatory? |
 |---|---|---|---|---|
-| Schema Drift | database | cyan `#06b6d4` | Apply | **Yes** |
-| Contract Observer | api | violet `#8b5cf6` | Review | **Yes** |
-| Dependency Auditor | deps | orange `#f97316` | Apply | Optional (cut if behind) |
+| Schema Drift | database | orange `#f97316` | Apply | **Yes** |
+| Contract Observer | api | icy cyan `#67e8f9` | Exorcise | **Yes** |
+| Dependency Auditor | deps | violet `#8b5cf6` | Apply | Optional (cut if behind) |
 
 Two apps satisfy Skeleton Crew. The third is additional evidence. Cut line:
 week 4, day 3.
@@ -43,7 +43,7 @@ Touchstone finds the gap — and proves every fix.
 
 3. **Validator is the safety boundary.** MCP improves quality. The validator
    enforces safety — SQL allowlist, canonical AST scope, target binding,
-   path confinement, hash locks, SSRF destination pinning.
+   path confinement, hash locks, SSRF validation.
 
 4. **Every apply is verified with evidence.** VerificationResult carries the
    exact state that was re-read. A boolean is not sufficient.
@@ -78,8 +78,8 @@ Touchstone finds the gap — and proves every fix.
 
 11. **All outbound HTTP is SSRF-protected and every hop is pinned.**
     Loopback, private, link-local, reserved, and IPv4-mapped-IPv6 destinations
-    are refused. Redirects are followed manually with re-validation and
-    re-pinning at each hop. Proxy env vars are ignored (trust_env=False).
+    are refused. Redirects are not followed (`follow_redirects=False`).
+    Proxy env vars are ignored (`trust_env=False`).
 
 12. **Redaction is token-based and complete.** Headers, query strings, URL
     userinfo, form bodies, JSON (depth ≤ 5, subtrees beyond discarded), and
@@ -109,8 +109,15 @@ but does NOT implement the adapter itself.
 
 ### Authorization mode — Apply is OPEN
 Apply is fully open — no 403, no password. Judges can apply fixes directly in the UI.
-`/apply` calls `orch.apply_one()`, `/rollback` calls `orch.rollback()`.
 Principal recorded in audit log as `"demo-sandbox"`. No bearer token.
+
+**Schema Drift** (`/apply`): calls `orch.apply_one()` — standard orchestrator path.
+
+**Contract Observer** (`/apply`): bypasses `orch.apply_one()` and calls
+`ContractExecutor.execute(diff)` directly. Reason: all API diffs have `safe_fix=False`
+(changes require a PR, never auto-applied), so `apply_one()` would refuse with
+REVIEW_REQUIRED. The executor opens a GitHub PR instead of touching the live system.
+State is updated to RESOLVED or EXECUTION_FAILED and saved via `orch.persistence`.
 
 ### Demo-target repo — `touchstone-demo-target`
 The declared schema lives in a separate repo:

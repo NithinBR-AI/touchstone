@@ -108,7 +108,107 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
+const RITUAL_STAGES = {
+  api: [
+    "Awakening the server…",
+    "Reaching into the API…",
+    "Listening for echoes…",
+    "Ghosts identified",
+  ],
+  database: [
+    "Opening the crypt…",
+    "Reading the schema…",
+    "Comparing declarations…",
+    "Ghosts identified",
+  ],
+  deps: [
+    "Unsealing the manifest…",
+    "Checking installed versions…",
+    "Measuring the drift…",
+    "Ghosts identified",
+  ],
+};
+
+// Stage timing (seconds): stage advances at these elapsed thresholds
+const RITUAL_THRESHOLDS = [0, 20, 45, 65];
+
+let _ritualTimer   = null;
+let _ritualElapsed = 0;
+
+function showRitual() {
+  const grid = document.getElementById("card-grid");
+  if (!grid) return;
+  const stages = RITUAL_STAGES[CONFIG.domain] || RITUAL_STAGES.database;
+
+  grid.innerHTML = `
+    <div class="ritual-wrap" id="ritual-wrap">
+      <div class="ritual-candles">
+        <span class="ritual-candle">🕯️</span>
+        <span class="ritual-planchette" id="ritual-planchette">✦</span>
+        <span class="ritual-candle">🕯️</span>
+      </div>
+      <div class="ritual-board">
+        ${stages.map((s, i) => `<div class="ritual-stage" id="ritual-stage-${i}">${esc(s)}</div>`).join("")}
+      </div>
+      <div class="ritual-timer" id="ritual-timer">0s</div>
+    </div>`;
+
+  _ritualElapsed = 0;
+  _activateRitualStage(0);
+
+  _ritualTimer = setInterval(() => {
+    _ritualElapsed++;
+    const el = document.getElementById("ritual-timer");
+    if (el) el.textContent = `${_ritualElapsed}s`;
+    // advance stage based on elapsed thresholds
+    for (let i = RITUAL_THRESHOLDS.length - 1; i >= 0; i--) {
+      if (_ritualElapsed >= RITUAL_THRESHOLDS[i]) {
+        _activateRitualStage(i);
+        break;
+      }
+    }
+  }, 1000);
+}
+
+function _activateRitualStage(idx) {
+  const stages = RITUAL_STAGES[CONFIG.domain] || RITUAL_STAGES.database;
+  for (let i = 0; i < stages.length; i++) {
+    const el = document.getElementById(`ritual-stage-${i}`);
+    if (!el) continue;
+    el.classList.toggle("ritual-stage-active",    i === idx);
+    el.classList.toggle("ritual-stage-done",      i < idx);
+    el.classList.toggle("ritual-stage-pending",   i > idx);
+  }
+  // slide planchette to current stage
+  const pct = stages.length > 1 ? (idx / (stages.length - 1)) * 100 : 0;
+  const p = document.getElementById("ritual-planchette");
+  if (p) p.style.left = `calc(${pct}% - 12px)`;
+}
+
+function stopRitual() {
+  if (_ritualTimer) { clearInterval(_ritualTimer); _ritualTimer = null; }
+}
+
+const IDLE_COPY = {
+  database: {
+    headline: "The crypt is quiet… for now.",
+    tombstone: "R.I.P. undeclared drift",
+    sub: "scan your database schema",
+  },
+  api: {
+    headline: "The spirits are silent… for now.",
+    tombstone: "R.I.P. undeclared contract drift",
+    sub: "probe your API contracts",
+  },
+  deps: {
+    headline: "The shadows hold nothing… yet.",
+    tombstone: "R.I.P. unpinned dependencies",
+    sub: "audit your dependencies",
+  },
+};
+
 const KIND_LABELS = {
+  // Database domain
   TYPE_CHANGED:       "Type Wraith",
   INDEX_MISSING:      "Missing Specter",
   INDEX_EXTRA:        "Phantom Index",
@@ -118,6 +218,11 @@ const KIND_LABELS = {
   CONSTRAINT_MISSING: "Broken Ward",
   CONSTRAINT_EXTRA:   "Phantom Ward",
   DEFAULT_CHANGED:    "Altered Omen",
+  // API contract domain
+  FIELD_EXTRA:        "Shadow Field",
+  FIELD_MISSING:      "Vanished Field",
+  PATH_MISSING:       "Lost Endpoint",
+  PATH_EXTRA:         "Phantom Endpoint",
 };
 
 function ghostKind(kind) {
@@ -154,7 +259,9 @@ function renderCard(diff, report, index) {
   const renderer     = RENDERERS[CONFIG.domain] || renderDatabaseEvidence;
   const evidenceHtml = renderer(diff, resolution);
 
-  const canApply    = state === "PENDING" && resolution && resolution.proposed_change;
+  // API domain: executor handles everything — Apply is always available for non-resolved ghosts
+  const canApply    = (state === "PENDING" || state === "REVIEW_REQUIRED" || state === "BLOCKED") &&
+    (CONFIG.domain === "api" || (resolution && resolution.proposed_change));
   const canRollback = (state === "RESOLVED" || state === "STILL_PRESENT") && CONFIG.domain !== "database";
 
   const applyBtn = canApply
@@ -332,6 +439,8 @@ async function apiCompare() {
   const btn = document.getElementById("btn-compare");
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Hunting…'; }
 
+  showRitual();
+
   try {
     const res = await fetch("/compare", { method: "POST" });
     if (!res.ok) throw new Error(`/compare returned ${res.status}`);
@@ -344,6 +453,7 @@ async function apiCompare() {
   } catch (err) {
     showError(err.message);
   } finally {
+    stopRitual();
     if (btn) { btn.disabled = false; btn.innerHTML = "Hunt Ghosts"; }
   }
 }
@@ -560,10 +670,10 @@ async function boot() {
     if (grid2) grid2.innerHTML = `
       <div class="state-empty">
         <span class="idle-ghost">👻</span>
-        <div class="idle-headline">The crypt is quiet… for now.</div>
-        <div class="idle-tombstone">R.I.P. undeclared drift</div>
+        <div class="idle-headline">${IDLE_COPY[CONFIG.domain]?.headline || "The crypt is quiet… for now."}</div>
+        <div class="idle-tombstone">${IDLE_COPY[CONFIG.domain]?.tombstone || "R.I.P. undeclared drift"}</div>
         <p class="idle-sub">
-          Press <em>Hunt Ghosts</em> to scan your database schema<br>
+          Press <em>Hunt Ghosts</em> to ${IDLE_COPY[CONFIG.domain]?.sub || "scan your database schema"}<br>
           and reveal what lurks in the shadows.
         </p>
       </div>`;

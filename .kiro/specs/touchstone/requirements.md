@@ -96,26 +96,23 @@ Emit Difference per Req 7 of tech.md operation matrix. Severity per rules.
 Parse spec, resolve local `$ref`, extract status codes and 200-schema
 properties. Skip `x-` keys.
 
-### Requirement 10: Actual API Contract with SSRF and Hop Pinning
+### Requirement 10: Actual API Contract with SSRF Protection
 1. Send one request per operation with configured path-parameter placeholder.
-2. **Before every request AND every redirect hop:**
+2. **Before every request:**
    - Reject non-http(s) schemes.
    - Resolve hostname via `socket.getaddrinfo`.
    - Convert IPv4-mapped IPv6 to IPv4.
    - Check every resolved IP against blocked CIDR ranges (see tech.md).
    - Reject non-global addresses (unless `--allow-local` and IP is
      `127.0.0.1`/`::1`).
-3. **Pin the validated IP for the connection.** Connect to pinned IP
-   preserving original hostname for TLS SNI and `Host` header, original port,
-   IPv6 bracketing.
-4. **Disable automatic redirect following.** Handle redirects manually with
-   revalidation and repinning at every hop. Max 5 hops.
-5. **Disable environment-derived proxies** (`trust_env=False`).
-6. `--allow-local` flag permits `127.0.0.1` and `::1` only. Off by default.
-7. Record `status_code`, top-level keys, fully redacted raw request, fully
+3. **Disable automatic redirect following** (`follow_redirects=False`). Redirects
+   are treated as non-2xx; the path is skipped.
+4. **Disable environment-derived proxies** (`trust_env=False`).
+5. `--allow-local` flag permits `127.0.0.1` and `::1` only. Off by default.
+6. Record `status_code`, top-level keys, fully redacted raw request, fully
    redacted raw response body (8KB post-redaction). Timeout 10s → `UNREACHABLE`.
-8. Never send mutating requests without `--allow-mutating`.
-9. Observation is a sample, not a proof. Report displays the evidence.
+7. Never send mutating requests without `--allow-mutating`.
+8. Observation is a sample, not a proof. Report displays the evidence.
 
 ### Requirement 11: API Comparison and Redaction
 1. Emit differences: endpoint missing, field missing, field undocumented,

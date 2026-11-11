@@ -689,6 +689,113 @@ main {
   letter-spacing: .02em;
 }
 
+/* ----- ritual scanning séance ----- */
+.ritual-wrap {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: 56px 24px 48px;
+  animation: fadeIn .4s ease;
+}
+
+.ritual-candles {
+  position: relative;
+  width: 320px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ritual-candle {
+  font-size: 36px;
+  animation: candleFlicker 1.6s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 8px rgba(249,115,22,.7));
+}
+.ritual-candle:nth-child(3) {
+  animation-delay: .7s;
+}
+
+.ritual-planchette {
+  position: absolute;
+  font-size: 22px;
+  color: var(--accent);
+  top: 50%;
+  transform: translateY(-50%);
+  transition: left .8s cubic-bezier(.4,0,.2,1);
+  filter: drop-shadow(0 0 6px var(--accent));
+  animation: planchettePulse 2s ease-in-out infinite;
+}
+
+.ritual-board {
+  display: flex;
+  gap: 0;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px;
+  overflow: hidden;
+  width: 100%;
+  max-width: 560px;
+}
+
+.ritual-stage {
+  flex: 1;
+  padding: 10px 8px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--fg-dim);
+  border-right: 1px solid rgba(255,255,255,.06);
+  transition: all .5s ease;
+  background: rgba(255,255,255,.02);
+}
+.ritual-stage:last-child { border-right: none; }
+
+.ritual-stage-active {
+  color: var(--accent);
+  background: rgba(103,232,249,.07);
+  text-shadow: 0 0 12px var(--accent);
+  font-weight: 600;
+  animation: stageGlow 1.2s ease-in-out infinite alternate;
+}
+
+.ritual-stage-done {
+  color: var(--resolved);
+  background: rgba(74,222,128,.04);
+}
+.ritual-stage-done::before { content: "✓ "; opacity: .6; }
+
+.ritual-stage-pending {
+  opacity: .35;
+}
+
+.ritual-timer {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  letter-spacing: .08em;
+  opacity: .5;
+}
+
+@keyframes candleFlicker {
+  0%   { transform: scaleY(1)    rotate(-1deg); opacity: .9; }
+  40%  { transform: scaleY(1.06) rotate( 1deg); opacity: 1;  }
+  70%  { transform: scaleY(.95)  rotate(-2deg); opacity: .85;}
+  100% { transform: scaleY(1.02) rotate( 0deg); opacity: .95;}
+}
+
+@keyframes planchettePulse {
+  0%, 100% { opacity: 1;   transform: translateY(-50%) scale(1);    }
+  50%       { opacity: .7; transform: translateY(-50%) scale(1.15); }
+}
+
+@keyframes stageGlow {
+  from { text-shadow: 0 0 8px  var(--accent); }
+  to   { text-shadow: 0 0 20px var(--accent); }
+}
+
 /* ----- mist strip below header ----- */
 .mist-strip {
   height: 48px;

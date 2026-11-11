@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+from agents.redaction import redact_value
 from core.models import Difference
 
 PROMPT_VERSION = "resolver-v1"
@@ -40,7 +41,7 @@ def build_prompt(difference: Difference) -> str:
         "domain": difference.domain,
         "kind": difference.kind,
         "target": difference.target,
-        "context": difference.context,
+        "context": redact_value(difference.context),
     }
     body = json.dumps(payload, sort_keys=True, default=str, indent=2)
     return f"{SYSTEM_PROMPT}\nPROMPT_VERSION: {PROMPT_VERSION}\n\nDIFFERENCE:\n{body}\n"

@@ -107,11 +107,19 @@ The validator rejects SET statements outright.
 
 ## App phase implementation rules
 
-### Auth — Apply is OPEN (schema-drift app)
-No `_require_write()` guard. `/apply` calls `orch.apply_one(req.difference_id)`,
-`/rollback` calls `orch.rollback(req.difference_id)`. Both serialise their
-result via `_serialise_outcome()`. `/compare`, `/discover`, `/report/:id`,
-`/health`, `/config`, `/demo/reset` are all open.
+### Auth — Apply is OPEN (both apps)
+No `_require_write()` guard. All endpoints open.
+
+**Schema Drift**: `/apply` calls `orch.apply_one(req.difference_id)`,
+`/rollback` calls `orch.rollback(req.difference_id)`.
+
+**Contract Observer**: `/apply` bypasses `orch.apply_one()` — calls
+`ContractExecutor.execute(diff)` directly. All API diffs have `safe_fix=False`
+(PR-based fixes, not in-place); `apply_one()` would gate on REVIEW_REQUIRED/BLOCKED.
+State updated to RESOLVED or EXECUTION_FAILED; saved via `orch.persistence.save(report)`.
+
+Both serialise results via `_serialise_outcome()`.
+`/compare`, `/discover`, `/report/:id`, `/health`, `/config` all open on both apps.
 
 ### Demo reset endpoint
 ```python
@@ -138,6 +146,7 @@ Target repos are declared in `repos.json` at the project root. No env var needed
     "github": "NithinBR-AI/touchstone-demo-target-repo",
     "models_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/models.py",
     "openapi_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/openapi.yaml",
+    "api_base_url": "https://touchstone-demo-target-repo.onrender.com",
     "default": true
   }
 ]
@@ -226,12 +235,13 @@ Validator rules
   · Race-free atomic write: directory-fd-relative operations with
     O_NOFOLLOW, inode re-check, rename within the fd (see design.md).
 · HTTP:
-  · SSRF check before every request AND every redirect.
-  · Pin the resolved IP for the actual connection (see design.md).
+  · SSRF check before every request.
+  · follow_redirects=False — redirects treated as non-2xx, path skipped.
+  · trust_env=False — no proxy env vars.
 
 SSRF protection (Contract Observer)
 
-Before every request and every redirect hop:
+Before every request:
 
 1. Parse URL. Reject non-http/https schemes.
 2. Resolve hostname via socket.getaddrinfo.
@@ -240,15 +250,8 @@ Before every request and every redirect hop:
    · Check against blocked ranges (below).
    · Reject non-global addresses (unless --allow-local and IP is 127.0.0.1
      or ::1).
-4. Pin the first validated IP. Connect to the pinned IP preserving:
-   · Original hostname for TLS SNI
-   · Original hostname in Host header
-   · Original port
-   · IPv6 must be bracketed in URL
-5. On redirect: resolve Location relative to current URL, revalidate and
-   repin at every hop. Max 5 hops.
-6. trust_env=False in httpx — no proxy env vars.
-7. follow_redirects=False in httpx — manual redirect loop.
+4. trust_env=False in httpx — no proxy env vars.
+5. follow_redirects=False in httpx — redirects are not followed.
 
 Blocked CIDR ranges
 

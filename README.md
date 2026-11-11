@@ -18,7 +18,7 @@ Two states exist for every system: what the code declares, and what the system a
 
 Touchstone detects each ghost, proposes a validated fix, and — on human approval — applies it atomically and verifies the result.
 
-**The skeleton is exactly 7 files.** Two mandatory applications (`schema-drift` — live, `contract-observer` — in progress) will run on top of it, each a ~30-line wrapper. That is the Skeleton Crew entry.
+**The skeleton is exactly 7 files.** Two mandatory applications (`schema-drift` and `contract-observer`) run on top of it. That is the Skeleton Crew entry.
 
 ---
 
@@ -47,7 +47,7 @@ LLM proposes. Validator decides. Human authorizes. That order never changes.
 | `TYPE_CHANGED` (widening) | `ALTER COLUMN TYPE` | Auto-fixable |
 | `TYPE_CHANGED` (narrowing) | — | REVIEW_REQUIRED |
 | `COLUMN_MISSING` | `ADD COLUMN` | REVIEW_REQUIRED |
-| `FIELD_UNDOCUMENTED` | `FILE_PATCH` to openapi.yaml | Auto-fixable |
+| `FIELD_EXTRA` | `FILE_PATCH` to openapi.yaml | BLOCKED (PR-based) |
 | `TABLE_MISSING`, `COLUMN_EXTRA`, `TABLE_EXTRA`, `INDEX_EXTRA` | — | BLOCKED |
 
 Anything not in the matrix fails closed. The validator enforces this from the SQL AST — not keyword matching.
@@ -78,7 +78,7 @@ The demo ships pre-configured pointing at:
 
 The UI shows a **repo selector** in the header — judges can see that Touchstone is built to monitor multiple repos; in the demo it defaults to the one pre-configured repo.
 
-Three intentional drift cases are visible in the Schema Drift app:
+**Schema Drift app** — three intentional drift cases:
 
 | Case | Ghost | Policy | UI badge |
 |---|---|---|---|
@@ -86,7 +86,15 @@ Three intentional drift cases are visible in the Schema Drift app:
 | `ix_orders_user_id` declared, missing from live DB | `INDEX_MISSING` | AUTO-FIX | 👻 HAUNTING |
 | `users.email` declared `VARCHAR(255)`, live `VARCHAR(50)` | `TYPE_CHANGED` (widening) | AUTO-FIX | 🕯 SÉANCE NEEDED |
 
-**Apply is open** — judges can click **Exorcise** to apply auto-fixable drifts. After applying, click **↺ Reset Demo** to re-seed the DB and start over.
+**Contract Observer app** — three intentional API contract drift cases:
+
+| Case | Ghost | UI label | Action |
+|---|---|---|---|
+| `account_status` returned by `/users`, not in spec | Shadow Field | ⛓ BOUND | Opens PR on `openapi.yaml` |
+| `sku` returned by `/products`, not in spec | Shadow Field | ⛓ BOUND | Opens PR on `openapi.yaml` |
+| `loyalty_tier` declared in spec, not returned by `/users` | Vanished Field | 🕯 SÉANCE NEEDED | Opens PR on `main.py` |
+
+**Apply is open** — judges can click **Exorcise** on any ghost. Schema drifts apply directly to the Neon DB. API contract drifts open a GitHub PR on the demo target repo. After applying schema fixes, click **↺ Reset Demo** to re-seed the DB.
 
 ```bash
 # Restore drift state manually (or use the Reset Demo button in the UI)
@@ -254,10 +262,17 @@ touchstone/
 │   │   ├── comparator.py
 │   │   ├── executor.py
 │   │   └── verifier.py
-│   ├── openapi/                          # contract-observer domain (task 5.x)
+│   ├── openapi/                          # contract-observer domain (complete)
+│   │   ├── ssrf.py
+│   │   ├── intended.py
+│   │   ├── actual.py
+│   │   ├── comparator.py
+│   │   ├── executor.py
+│   │   └── verifier.py
 │   └── deps/                             # dependency-auditor domain (task 6.x, optional)
 ├── agents/
 │   ├── resolver.py                       # MockResolver (real Bedrock resolver: task 7.1)
+│   ├── redaction.py                      # token-based redaction + SafeError
 │   └── prompts.py
 ├── apps/
 │   ├── shared/ui/                        # one shared template + RENDERERS registry
@@ -269,7 +284,11 @@ touchstone/
 │   │   ├── config.json
 │   │   ├── README.md
 │   │   └── run.sh
-│   └── contract-observer/               # mandatory app 2 — The Séance (task 5.9)
+│   └── contract-observer/               # mandatory app 2 — The Séance (complete)
+│       ├── main.py
+│       ├── config.json
+│       ├── README.md
+│       └── run.sh
 ├── fixtures/                             # demo setup — schema declarations → NithinBR-AI/touchstone-demo-target-repo
 │   ├── seed.py                           # seeds live Neon DB with drift cases (also called by /demo/reset)
 │   ├── cases.json                        # drift cases for demo + cache seeding
@@ -287,6 +306,9 @@ touchstone/
 │   ├── test_cache_reproducibility.py     # cache hit / miss / provenance (8 tests)
 │   ├── test_orchestrator_mock.py         # end-to-end with fake infrastructure (5 tests)
 │   ├── test_resolver.py                  # MockResolver + canned resolutions (9 tests)
+│   ├── test_ssrf.py                      # SSRF guard — all blocked/allowed cases (13 tests)
+│   ├── test_comparator_api.py            # OpenAPI comparator (8 tests)
+│   ├── test_redaction.py                 # Token-based redaction + SafeError (49 tests)
 │   ├── test_comparator_pg.py             # Postgres comparator (requires DATABASE_URL)
 │   ├── test_executor_pg.py               # Postgres executor (requires DATABASE_URL)
 │   ├── test_verifier_pg.py               # Postgres verifier (requires DATABASE_URL)
@@ -328,7 +350,7 @@ DATABASE_URL=postgresql://neondb_owner:<password>@<host>/neondb?sslmode=require
 
 ```bash
 python -m pytest tests/ -q
-# 300 passed, 11 skipped, 3 failed (contract-observer not yet built — expected)
+# 373 passed, 11 skipped
 ```
 
 ### Run against real Postgres
@@ -351,6 +373,31 @@ touchstone compare --target ix_orders_user_id
 touchstone compare --target users.email
 touchstone report
 ```
+
+---
+
+## Skeleton proof
+
+The skeleton is `core/` — 7 files, frozen after week 2. Two mandatory applications (`schema-drift`, `contract-observer`) run on top of it without touching `core/`. That is the Skeleton Crew entry.
+
+**What the skeleton is:** `core/interfaces.py` defines six protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Executor`, `Verifier`). The remaining six files implement the 10-step compare-verify workflow and know nothing about Postgres, OpenAPI, or `pyproject.toml`.
+
+**What the apps are:** Each app is a ~30-line `main.py` that imports from `core/` and its domain adapter, a `config.json` (domain, accent, title), a `README.md`, and a `run.sh`. No domain logic lives in `core/`.
+
+**Verification commands:**
+
+```bash
+# 1. Confirm the freeze commit discipline — exactly one freeze commit after the week-1 initial
+git log --oneline core/
+
+# 2. Confirm core/ has not drifted since the freeze
+git diff core/
+
+# 3. Assert 7 files and no external imports into core/
+python -m pytest tests/test_skeleton.py -v
+```
+
+`git log` proves commit discipline, NOT architectural completeness. The import rule is enforced structurally by `test_skeleton.py`, which walks every module in `core/` and asserts no import resolves to a module outside `core/`.
 
 ---
 
