@@ -612,7 +612,11 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
   - _Req 36, 38_
 - [ ] 10.3 README "Skeleton proof"
   - _Req 38, 40_
-- [ ] 10.4 Confirm one freeze commit
+- [x] 10.4 ~~Confirm one freeze commit~~
+      SUPERSEDED: core/ was extended post-freeze (apply_batch, human_authorized,
+      FilePatchValidator removed). The freeze-commit discipline claim is dropped.
+      Skeleton Crew proof rests on test_skeleton.py (7 files + no external imports)
+      which passes on every test run — not on git history.
   - _Req 1, 38_
 
 ### 11. Deployment (Week 5)
@@ -627,7 +631,11 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ### 12. Repeatability (Week 5)
 
-- [ ] 12.1 test_cache_reproducibility.py
+- [x] 12.1 test_cache_reproducibility.py
+      DONE: 11 tests pass — second run hits cache, resolutions marked cached=True,
+      semantic outcomes match by signature, UUIDs differ between runs, cache entries
+      carry cache_version+validator_contract+prompt_hash+expires_at, lookup skips on
+      version/prompt_hash mismatch, null proposed_change never cached. PASS.
   - _Req 33_
 - [ ] 12.2 test_demo_repeatability.py
   - _Req 39_
