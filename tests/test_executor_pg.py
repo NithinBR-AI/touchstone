@@ -39,11 +39,15 @@ class FakeConn:
 
 
 def _res(change) -> Resolution:
-    return Resolution(difference_id="d1", difference_signature="s1", proposed_change=change)
+    return Resolution(
+        difference_id="d1", difference_signature="s1", proposed_change=change
+    )
 
 
 def _sql(statement: str = GOOD_SQL) -> SQLChange:
-    return SQLChange(statement=statement, operation="CREATE_INDEX", target="ix_users_email")
+    return SQLChange(
+        statement=statement, operation="CREATE_INDEX", target="ix_users_email"
+    )
 
 
 def test_success_commits_and_closes() -> None:

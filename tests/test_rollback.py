@@ -1,25 +1,17 @@
 """Rollback tests - file success, external edit, double rollback, DB refusal."""
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from core.cache import Cache
-from core.models import (
-    ComparisonTarget,
-    Difference,
-    ExecutionResult,
-    FilePatch,
-    GhostState,
-    Resolution,
-    RollbackEvent,
-    SQLChange,
-    State,
-    VerificationResult,
-)
+from core.models import (ComparisonTarget, Difference, ExecutionResult,
+                         FilePatch, GhostState, Resolution, RollbackEvent,
+                         SQLChange, State, VerificationResult)
+from core.orchestrator import Orchestrator
 from core.persistence import Persistence
 from core.validator import FilePatchValidator, SQLValidator, ValidationResult
-from core.orchestrator import Orchestrator
 
 
 def create_orchestrator(domain: str = "api"):

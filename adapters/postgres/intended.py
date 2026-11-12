@@ -14,7 +14,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from adapters.postgres.normalize import UnsupportedTypeError, normalize_sqlalchemy_type
+from adapters.postgres.normalize import (UnsupportedTypeError,
+                                         normalize_sqlalchemy_type)
 from core.models import ComparisonTarget, State
 
 
@@ -62,7 +63,11 @@ def load_intended_schema(models_path: Path) -> State:
 
             server_default = None
             if col.server_default is not None:
-                server_default = str(col.server_default.arg) if hasattr(col.server_default, "arg") else str(col.server_default)
+                server_default = (
+                    str(col.server_default.arg)
+                    if hasattr(col.server_default, "arg")
+                    else str(col.server_default)
+                )
 
             columns[col.name] = {
                 "type": canonical,

@@ -44,6 +44,7 @@ def load_actual_schema(dsn: str, schema: str = "public") -> State:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _read_tables(conn: psycopg.Connection, schema: str) -> dict[str, Any]:
     tables: dict[str, Any] = {}
 
@@ -73,8 +74,15 @@ def _read_tables(conn: psycopg.Connection, schema: str) -> dict[str, Any]:
 
     for row in col_rows:
         (
-            table_name, col_name, data_type, char_max_len,
-            num_precision, num_scale, is_nullable, col_default, udt_name,
+            table_name,
+            col_name,
+            data_type,
+            char_max_len,
+            num_precision,
+            num_scale,
+            is_nullable,
+            col_default,
+            udt_name,
         ) = row
 
         if table_name not in tables:

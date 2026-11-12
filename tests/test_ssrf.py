@@ -8,8 +8,8 @@ import pytest
 
 from adapters.openapi.ssrf import SSRFError, validate
 
-
 # ----- valid URLs --------------------------------------------------------
+
 
 def test_https_public_url_allowed():
     # github.com is a public host — should not raise
@@ -24,6 +24,7 @@ def test_http_allowed_for_scheme():
 
 # ----- bad schemes -------------------------------------------------------
 
+
 def test_ftp_scheme_blocked():
     with pytest.raises(SSRFError, match="scheme"):
         validate("ftp://example.com/file")
@@ -36,6 +37,7 @@ def test_file_scheme_blocked():
 
 # ----- metadata endpoints ------------------------------------------------
 
+
 def test_aws_metadata_blocked():
     with pytest.raises(SSRFError, match="blocked"):
         validate("http://169.254.169.254/latest/meta-data/")
@@ -47,6 +49,7 @@ def test_gcp_metadata_blocked():
 
 
 # ----- loopback / private ------------------------------------------------
+
 
 def test_localhost_blocked():
     with pytest.raises(SSRFError):
@@ -75,12 +78,14 @@ def test_private_172_16_range_blocked():
 
 # ----- no host -----------------------------------------------------------
 
+
 def test_missing_host_blocked():
     with pytest.raises(SSRFError, match="no host"):
         validate("https:///path")
 
 
 # ----- returns url on success --------------------------------------------
+
 
 def test_returns_url_unchanged():
     url = "https://raw.githubusercontent.com/owner/repo/main/openapi.yaml"

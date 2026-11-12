@@ -16,6 +16,7 @@ Target repo is read from repos.json (default entry). Override with MODELS_PATH e
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ def _load_env() -> None:
     """Load .env from the project root (best-effort)."""
     try:
         from dotenv import load_dotenv
+
         load_dotenv()
     except ImportError:
         pass
@@ -34,14 +36,15 @@ def cmd_compare(args: argparse.Namespace) -> int:
     _load_env()
     db_url = os.environ.get("DATABASE_URL", "")
     if not db_url:
-        print("ERROR: DATABASE_URL not set. Add it to .env or export it.", file=sys.stderr)
+        print(
+            "ERROR: DATABASE_URL not set. Add it to .env or export it.", file=sys.stderr
+        )
         return 1
 
     target = args.target
     domain = args.domain
 
     # Locate models file — prefer MODELS_PATH env var, then repos.json default repo
-    import json as _json
     if "MODELS_PATH" in os.environ:
         models_path = Path(os.environ["MODELS_PATH"])
         if not models_path.exists():
@@ -50,15 +53,19 @@ def cmd_compare(args: argparse.Namespace) -> int:
     else:
         _repos_file = Path(__file__).parent / "repos.json"
         if not _repos_file.exists():
-            print("ERROR: repos.json not found. Set MODELS_PATH or add repos.json.", file=sys.stderr)
+            print(
+                "ERROR: repos.json not found. Set MODELS_PATH or add repos.json.",
+                file=sys.stderr,
+            )
             return 1
-        _repos = _json.loads(_repos_file.read_text())
+        _repos = json.loads(_repos_file.read_text())
         _repo = next((r for r in _repos if r.get("default")), _repos[0])
         _url = _repo.get("models_url", "")
         if not _url:
             print("ERROR: no models_url in repos.json default repo.", file=sys.stderr)
             return 1
         from adapters.remote_source import fetch as _fetch_remote
+
         models_path = _fetch_remote(_url)
 
     from adapters.postgres.actual import load_actual_schema
@@ -102,7 +109,6 @@ def cmd_report(args: argparse.Namespace) -> int:
     if not reports:
         print(f"No JSON reports in {cache_dir}.")
         return 0
-    import json
     for path in reports[-5:]:
         data = json.loads(path.read_text())
         print(f"  {path.name}  —  differences: {len(data.get('differences', []))}")
@@ -122,7 +128,9 @@ def main() -> None:
         "--target", default="", help="Filter to this target (e.g. users.email)"
     )
     p_compare.add_argument(
-        "--domain", default="database", choices=["database", "api", "deps"],
+        "--domain",
+        default="database",
+        choices=["database", "api", "deps"],
         help="Domain to compare (default: database)",
     )
 

@@ -41,7 +41,7 @@ pip install -e .
 pytest -q
 ./apps/schema-drift/run.sh
 ./apps/contract-observer/run.sh
-./apps/dependency-auditor/run.sh    # optional
+./apps/poltergeist/run.sh           # third app — The Poltergeist (cache domain)
 touchstone compare --target users.email
 docker compose -f fixtures/docker-compose.yml up
 

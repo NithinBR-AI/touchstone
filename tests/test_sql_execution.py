@@ -15,8 +15,11 @@ import os
 
 import psycopg
 import pytest
+from dotenv import load_dotenv
 
-from adapters.postgres.executor import SQLExecutor
+load_dotenv()
+
+from adapters.postgres.executor import STATEMENT_TIMEOUT_MS, SQLExecutor
 from core.models import Difference, GhostState, Resolution, SQLChange
 
 DB_URL = os.environ.get("DATABASE_URL", "")
@@ -65,8 +68,15 @@ class TestSQLExecution:
     def test_alter_column_type_widens_successfully(self):
         """ALTER TABLE … TYPE executes successfully for a widening change."""
         ex = SQLExecutor(DB_URL)
-        diff = _diff("TYPE_CHANGED", "users.email",
-                     {"original_actual_type": "varchar(100)", "table": "users", "column": "email"})
+        diff = _diff(
+            "TYPE_CHANGED",
+            "users.email",
+            {
+                "original_actual_type": "varchar(100)",
+                "table": "users",
+                "column": "email",
+            },
+        )
         change = SQLChange(
             statement="ALTER TABLE users ALTER COLUMN email TYPE varchar(255)",
             operation="ALTER_COLUMN_TYPE",
@@ -86,10 +96,11 @@ class TestSQLExecution:
 
     def test_statement_timeout_is_enforced(self):
         """A long-running statement is cancelled by the connection-level timeout."""
-        from adapters.postgres.executor import SQLExecutor, STATEMENT_TIMEOUT_MS
 
         def fast_timeout_connect(dsn):
-            return psycopg.connect(dsn, connect_timeout=10, options="-c statement_timeout=1")
+            return psycopg.connect(
+                dsn, connect_timeout=10, options="-c statement_timeout=1"
+            )
 
         ex = SQLExecutor(DB_URL, connect=fast_timeout_connect)
         diff = _diff("INDEX_MISSING", "ix_test_slow", {})
@@ -106,7 +117,9 @@ class TestSQLExecution:
         """Connection failure stores error_code, not raw exception text."""
         ex = SQLExecutor("postgresql://bad:bad@localhost:9999/nonexistent")
         diff = _diff("INDEX_MISSING", "ix_test", {})
-        change = SQLChange(statement="SELECT 1", operation="CREATE_INDEX", target="ix_test")
+        change = SQLChange(
+            statement="SELECT 1", operation="CREATE_INDEX", target="ix_test"
+        )
         result = ex.execute(_res(diff, change))
         assert not result.success
         assert result.error_code == "CONNECT_FAILED"

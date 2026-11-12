@@ -1,57 +1,98 @@
 """State machine tests - 56 cells (7 states × 8 events)."""
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from core.cache import Cache
 from core.models import (
-    ComparisonTarget, Difference, ExecutionResult, GhostState,
-    Resolution, SQLChange, State, VerificationResult, RollbackEvent,
+    ComparisonTarget,
+    Difference,
+    ExecutionResult,
+    GhostState,
+    Resolution,
+    RollbackEvent,
+    SQLChange,
+    State,
+    VerificationResult,
 )
+from core.orchestrator import Orchestrator
 from core.persistence import Persistence
 from core.validator import FilePatchValidator, SQLValidator
-from core.orchestrator import Orchestrator
 
 
 def create_orchestrator(domain: str = "database"):
     """Create orchestrator with mocked adapters."""
     input_source = MagicMock()
-    input_source.targets.return_value = [ComparisonTarget(domain=domain, target="users.email", context={})]
+    input_source.targets.return_value = [
+        ComparisonTarget(domain=domain, target="users.email", context={})
+    ]
     source_adapter = MagicMock()
-    source_adapter.intended.return_value = State(domain=domain, data={"email": "VARCHAR(100)"})
-    source_adapter.actual.return_value = State(domain=domain, data={"email": "VARCHAR(50)"})
-    diff = Difference(kind="TYPE_CHANGED", target="users.email", domain=domain, id="test-diff",
-                      context={"original_actual_type": "varchar(50)", "original_intended_type": "varchar(100)"})
+    source_adapter.intended.return_value = State(
+        domain=domain, data={"email": "VARCHAR(100)"}
+    )
+    source_adapter.actual.return_value = State(
+        domain=domain, data={"email": "VARCHAR(50)"}
+    )
+    diff = Difference(
+        kind="TYPE_CHANGED",
+        target="users.email",
+        domain=domain,
+        id="test-diff",
+        context={
+            "original_actual_type": "varchar(50)",
+            "original_intended_type": "varchar(100)",
+        },
+    )
     diff.signature = "TYPE_CHANGED:users.email:varchar(50)"
     comparator = MagicMock()
     comparator.compare.return_value = [diff]
     resolver = MagicMock()
     resolver.resolve.return_value = Resolution(
-        difference_id=diff.id, difference_signature=diff.signature,
+        difference_id=diff.id,
+        difference_signature=diff.signature,
         proposed_change=SQLChange(
             statement="ALTER TABLE users ALTER COLUMN email TYPE varchar(100)",
-            operation="ALTER_COLUMN_TYPE", target="users.email"),
-        rationale="Test", prompt_sha256="abc123")
+            operation="ALTER_COLUMN_TYPE",
+            target="users.email",
+        ),
+        rationale="Test",
+        prompt_sha256="abc123",
+    )
     executor = MagicMock()
     executor.execute.return_value = ExecutionResult(
-        difference_id=diff.id, success=True,
+        difference_id=diff.id,
+        success=True,
         applied_change=SQLChange(
             statement="ALTER TABLE users ALTER COLUMN email TYPE varchar(100)",
-            operation="ALTER_COLUMN_TYPE", target="users.email"))
+            operation="ALTER_COLUMN_TYPE",
+            target="users.email",
+        ),
+    )
     executor.rollback.return_value = True
     verifier = MagicMock()
-    verifier.verify.return_value = VerificationResult(difference_id=diff.id, resolved=True, evidence={"email": "varchar(100)"})
+    verifier.verify.return_value = VerificationResult(
+        difference_id=diff.id, resolved=True, evidence={"email": "varchar(100)"}
+    )
     validator_sql = SQLValidator()
     validator_file = FilePatchValidator(Path("tests").parent)
     persistence = MagicMock(spec=Persistence)
     cache = MagicMock(spec=Cache)
     cache.get.return_value = None
     return Orchestrator(
-        input_source=input_source, source_adapter=source_adapter, comparator=comparator,
-        resolver=resolver, executor=executor, verifier=verifier,
-        validator_sql=validator_sql, validator_file=validator_file,
-        persistence=persistence, cache=cache, domain=domain)
+        input_source=input_source,
+        source_adapter=source_adapter,
+        comparator=comparator,
+        resolver=resolver,
+        executor=executor,
+        verifier=verifier,
+        validator_sql=validator_sql,
+        validator_file=validator_file,
+        persistence=persistence,
+        cache=cache,
+        domain=domain,
+    )
 
 
 # 8 events:
@@ -88,7 +129,9 @@ class TestStateTransitions:
         """PENDING + apply() success+verify fail -> STILL_PRESENT."""
         orch = create_orchestrator()
         report = orch.run()
-        orch.verifier.verify.return_value = VerificationResult(difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"})
+        orch.verifier.verify.return_value = VerificationResult(
+            difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"}
+        )
         outcome = orch.apply_one(report.differences[0].id)
         assert outcome.state == GhostState.STILL_PRESENT
 
@@ -107,8 +150,12 @@ class TestStateTransitions:
         diff_id = report.differences[0].id
         # Overwrite the stored resolution — apply_one() reads from report.resolutions
         report.resolutions[diff_id] = Resolution(
-            difference_id=diff_id, difference_signature="TYPE_CHANGED:users.email:varchar(50)",
-            proposed_change=None, rationale="Review required", prompt_sha256="abc123")
+            difference_id=diff_id,
+            difference_signature="TYPE_CHANGED:users.email:varchar(50)",
+            proposed_change=None,
+            rationale="Review required",
+            prompt_sha256="abc123",
+        )
         outcome = orch.apply_one(diff_id)
         assert outcome.state == GhostState.REVIEW_REQUIRED
 
@@ -119,9 +166,14 @@ class TestStateTransitions:
         diff_id = report.differences[0].id
         # Overwrite the stored resolution with one that has forbidden SQL
         report.resolutions[diff_id] = Resolution(
-            difference_id=diff_id, difference_signature="TYPE_CHANGED:users.email:varchar(50)",
-            proposed_change=SQLChange(statement="DROP TABLE users", operation="DROP", target="users"),
-            rationale="Invalid SQL", prompt_sha256="abc123")
+            difference_id=diff_id,
+            difference_signature="TYPE_CHANGED:users.email:varchar(50)",
+            proposed_change=SQLChange(
+                statement="DROP TABLE users", operation="DROP", target="users"
+            ),
+            rationale="Invalid SQL",
+            prompt_sha256="abc123",
+        )
         outcome = orch.apply_one(diff_id)
         assert outcome.state == GhostState.BLOCKED
 
@@ -246,7 +298,9 @@ class TestStateTransitions:
         """STILL_PRESENT + run() -> STILL_PRESENT (from previous apply)."""
         orch = create_orchestrator()
         report = orch.run()
-        orch.verifier.verify.return_value = VerificationResult(difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"})
+        orch.verifier.verify.return_value = VerificationResult(
+            difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"}
+        )
         orch.apply_one(report.differences[0].id)
         assert report.differences[0].state == GhostState.STILL_PRESENT
 
@@ -254,7 +308,9 @@ class TestStateTransitions:
         """STILL_PRESENT + apply() -> REFUSED, state unchanged."""
         orch = create_orchestrator()
         report = orch.run()
-        orch.verifier.verify.return_value = VerificationResult(difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"})
+        orch.verifier.verify.return_value = VerificationResult(
+            difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"}
+        )
         orch.apply_one(report.differences[0].id)
         outcome = orch.apply_one(report.differences[0].id)
         assert outcome.state == GhostState.STILL_PRESENT
@@ -263,7 +319,9 @@ class TestStateTransitions:
         """STILL_PRESENT + rollback() db domain -> REFUSED, state unchanged."""
         orch = create_orchestrator(domain="database")
         report = orch.run()
-        orch.verifier.verify.return_value = VerificationResult(difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"})
+        orch.verifier.verify.return_value = VerificationResult(
+            difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"}
+        )
         orch.apply_one(report.differences[0].id)
         event = orch.rollback(report.differences[0].id)
         assert event.success is False
@@ -273,7 +331,9 @@ class TestStateTransitions:
         """STILL_PRESENT + rollback() file domain -> success, state unchanged."""
         orch = create_orchestrator(domain="api")
         report = orch.run()
-        orch.verifier.verify.return_value = VerificationResult(difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"})
+        orch.verifier.verify.return_value = VerificationResult(
+            difference_id="test-diff", resolved=False, evidence={"email": "varchar(50)"}
+        )
         orch.apply_one(report.differences[0].id)
         event = orch.rollback(report.differences[0].id)
         assert event.success is True
@@ -381,7 +441,9 @@ class TestFullMatrix:
         orch = create_orchestrator()
         report = orch.run()
         report.differences[0].state = GhostState.REVIEW_REQUIRED
-        orch.verifier.verify.return_value = VerificationResult(difference_id="test-diff", resolved=False, evidence={})
+        orch.verifier.verify.return_value = VerificationResult(
+            difference_id="test-diff", resolved=False, evidence={}
+        )
         outcome = orch.apply_one(report.differences[0].id)
         assert outcome.state == GhostState.REVIEW_REQUIRED
 
@@ -462,7 +524,9 @@ class TestFullMatrix:
         orch = create_orchestrator()
         report = orch.run()
         orch.apply_one(report.differences[0].id)
-        orch.verifier.verify.return_value = VerificationResult(difference_id="test-diff", resolved=False, evidence={})
+        orch.verifier.verify.return_value = VerificationResult(
+            difference_id="test-diff", resolved=False, evidence={}
+        )
         outcome = orch.apply_one(report.differences[0].id)
         assert outcome.state == GhostState.RESOLVED
 
@@ -493,7 +557,9 @@ class TestFullMatrix:
     def _make_still_present(self):
         orch = create_orchestrator()
         report = orch.run()
-        orch.verifier.verify.return_value = VerificationResult(difference_id="test-diff", resolved=False, evidence={})
+        orch.verifier.verify.return_value = VerificationResult(
+            difference_id="test-diff", resolved=False, evidence={}
+        )
         orch.apply_one(report.differences[0].id)
         assert report.differences[0].state == GhostState.STILL_PRESENT
         return orch, report
@@ -537,8 +603,9 @@ class TestFullMatrix:
     def test_execution_failed__apply_success(self):
         orch, report = self._make_execution_failed()
         orch.executor.execute.side_effect = None
-        orch.executor.execute.return_value = __import__("core.models", fromlist=["ExecutionResult"]).ExecutionResult(
-            difference_id="test-diff", success=True)
+        orch.executor.execute.return_value = __import__(
+            "core.models", fromlist=["ExecutionResult"]
+        ).ExecutionResult(difference_id="test-diff", success=True)
         outcome = orch.apply_one(report.differences[0].id)
         assert outcome.state == GhostState.EXECUTION_FAILED
 

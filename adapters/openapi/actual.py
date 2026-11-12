@@ -30,7 +30,10 @@ SSRF validation runs before every request via ssrf.validate().
 
 from __future__ import annotations
 
+import re
+import ssl as _ssl
 import time
+import urllib.parse
 from typing import Any
 
 import httpx
@@ -43,7 +46,6 @@ from .ssrf import validate as ssrf_validate
 MAX_WARMUP_SECS = 60
 _WARMUP_INTERVAL = 5
 
-import ssl as _ssl
 _SSL_CTX = _ssl.create_default_context()
 _SSL_CTX.load_default_certs()
 
@@ -84,7 +86,6 @@ def _fetch_json(url: str) -> tuple[int, Any]:
     Follows same-host redirects (max 5 hops) with SSRF revalidation on each hop.
     Cross-host redirects are treated as non-2xx and the path is skipped.
     """
-    import urllib.parse
     original_host = urllib.parse.urlparse(url).netloc
     current_url = url
     for _ in range(5):
@@ -152,7 +153,6 @@ def probe(base_url: str, paths: dict[str, Any]) -> State:
             continue
         # Replace path params with simple values for probing
         probe_path = path
-        import re
         for param in re.findall(r"\{(\w+)\}", path):
             probe_path = probe_path.replace(f"{{{param}}}", "1")
 
@@ -176,12 +176,6 @@ def probe(base_url: str, paths: dict[str, Any]) -> State:
         else:
             schema = {}
 
-        result[path] = {
-            "get": {
-                "responses": {
-                    str(status): {"schema": schema}
-                }
-            }
-        }
+        result[path] = {"get": {"responses": {str(status): {"schema": schema}}}}
 
     return State(domain="api", data={"paths": result, "source": base_url})

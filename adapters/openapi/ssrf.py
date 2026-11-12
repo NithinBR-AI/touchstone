@@ -18,7 +18,7 @@ class SSRFError(ValueError):
 
 
 _BLOCKED_HOSTS = {
-    "169.254.169.254",   # AWS/GCP/Azure metadata
+    "169.254.169.254",  # AWS/GCP/Azure metadata
     "metadata.google.internal",
     "fd00:ec2::254",
 }

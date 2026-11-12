@@ -73,7 +73,9 @@ def load_from_url(url: str) -> State:
     """Fetch an OpenAPI spec from *url* and return an intended State."""
     ssrf_validate(url)
     req = urllib.request.Request(url, headers={"User-Agent": "touchstone/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 — ssrf validated above
+    with urllib.request.urlopen(
+        req, timeout=15
+    ) as resp:  # noqa: S310 — ssrf validated above
         raw = resp.read().decode()
     return _build_state(raw, source=url)
 

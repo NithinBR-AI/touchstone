@@ -14,11 +14,11 @@ Two states exist for every system: what the code declares, and what the system a
 |---|---|---|
 | Database | SQLAlchemy models | Live Postgres schema |
 | API contracts | `openapi.yaml` | One live response per endpoint |
-| Dependencies | `pyproject.toml` / `requirements.txt` | Installed package versions |
+| Cache | `cache_config.yaml` | Live Redis key list |
 
 Touchstone detects each ghost, proposes a validated fix, and — on human approval — applies it atomically and verifies the result.
 
-**The skeleton is exactly 7 files.** Two mandatory applications (`schema-drift` and `contract-observer`) run on top of it without modifying any skeleton file. That is the Skeleton Crew entry.
+**The skeleton is exactly 7 files.** Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it without modifying any skeleton file. Two mandatory apps satisfy the Skeleton Crew entry.
 
 ---
 
@@ -58,11 +58,18 @@ Judges can click **Exorcise** to open a GitHub PR proposing the spec change.
 
 ---
 
-### App 3 — Dependency Auditor · *The Manifest* · port 8003 *(optional — cut if behind)*
+### App 3 — The Poltergeist · *Redis Cache Drift Detector* · port 8003
 
-Compares declared dependency versions in `pyproject.toml` / `requirements.txt` against installed package versions. Ghosts are version mismatches and missing packages.
+Compares declared Redis cache keys in `cache_config.yaml` against keys that actually exist in the live cache. Ghosts are keys that should exist but don't (KEY_MISSING), and keys that exist in the live cache but were never declared (UNDECLARED_KEY).
 
-> **Status:** Placeholder — implementation in progress (task 6.x). Two apps satisfy the Skeleton Crew requirement.
+**Demo drift cases (live on Render):**
+
+| Ghost | Kind | Policy | Badge |
+|---|---|---|---|
+| `products:list` declared, absent from live cache | `KEY_MISSING` | AUTO-FIX | 👻 HAUNTING |
+| `debug:session_dump` present in live cache, not declared | `UNDECLARED_KEY` | BLOCKED | ⛓ BOUND |
+
+Judges can click **Exorcise** on `KEY_MISSING` ghosts to warm the missing key via `/cache/warm?key=<key>`. Click **↺ Reset Demo** to restore the drift state. `UNDECLARED_KEY` ghosts require manual investigation — no auto-fix.
 
 ---
 
@@ -88,10 +95,11 @@ Each domain adapter implements the 6 protocols. The skeleton calls the protocols
 ```
 adapters/postgres/    ← Schema Drift (complete)
 adapters/openapi/     ← Contract Observer (complete)
-adapters/deps/        ← Dependency Auditor (task 6.x, optional)
+adapters/redis/       ← The Poltergeist (complete)
 
 apps/schema-drift/    ← mandatory app 1 — The Crypt
 apps/contract-observer/ ← mandatory app 2 — The Séance
+apps/poltergeist/     ← third app — The Poltergeist
 apps/shared/ui/       ← one Halloween-themed template + RENDERERS registry
 ```
 
@@ -156,6 +164,13 @@ Widening pairs: `smallint→integer`, `integer→bigint`, `real→double precisi
 | `PATH_EXTRA` | Phantom Endpoint | BLOCKED |
 
 API contract changes are never auto-applied to a live system. The executor opens a GitHub PR.
+
+### Cache keys (The Poltergeist)
+
+| Kind | UI label | Policy |
+|---|---|---|
+| `KEY_MISSING` | Missing Key | AUTO-FIX — warms the key via `/cache/warm?key=<key>` |
+| `UNDECLARED_KEY` | Shadow Key | BLOCKED — requires manual investigation |
 
 ---
 
@@ -246,7 +261,7 @@ python fixtures/seed.py $DATABASE_URL
 
 # Run offline tests (no DB needed)
 python -m pytest tests/ -q
-# 373 passed, 11 skipped
+# 382 passed, 11 skipped
 
 # Run Postgres integration tests
 DATABASE_URL=<neon-url> python -m pytest tests/test_postgres_e2e.py tests/test_sql_execution.py -v
@@ -283,7 +298,12 @@ touchstone/
 │   │   ├── comparator.py
 │   │   ├── executor.py
 │   │   └── verifier.py
-│   └── deps/                             # dependency-auditor domain (task 6.x, optional)
+│   └── redis/                            # poltergeist domain (complete)
+│       ├── actual.py
+│       ├── intended.py
+│       ├── comparator.py
+│       ├── executor.py
+│       └── verifier.py
 ├── agents/
 │   ├── resolver.py                       # MockResolver (real Bedrock resolver: task 7.1)
 │   ├── redaction.py                      # token-based redaction + SafeError
@@ -303,7 +323,11 @@ touchstone/
 │   │   ├── config.json
 │   │   ├── README.md
 │   │   └── run.sh
-│   └── dependency-auditor/              # optional app 3 — The Manifest (task 6.x)
+│   └── poltergeist/                     # third app — The Poltergeist (complete)
+│       ├── main.py
+│       ├── config.json
+│       ├── README.md
+│       └── run.sh
 ├── fixtures/
 │   ├── seed.py                           # seeds Neon DB with drift cases
 │   ├── cases.json                        # drift cases for demo + cache seeding
@@ -324,6 +348,7 @@ touchstone/
 │   ├── test_ssrf.py                      # SSRF guard (13 tests)
 │   ├── test_comparator_api.py            # OpenAPI comparator (8 tests)
 │   ├── test_redaction.py                 # token-based redaction (49 tests)
+│   ├── test_comparator_cache.py          # Redis cache comparator (9 tests)
 │   ├── test_comparator_pg.py             # Postgres comparator (requires DATABASE_URL)
 │   ├── test_executor_pg.py               # Postgres executor (requires DATABASE_URL)
 │   ├── test_verifier_pg.py               # Postgres verifier (requires DATABASE_URL)
@@ -369,6 +394,9 @@ bash apps/schema-drift/run.sh
 
 # Contract Observer — The Séance (port 8002)
 bash apps/contract-observer/run.sh
+
+# The Poltergeist — Redis Cache Drift (port 8003)
+bash apps/poltergeist/run.sh
 ```
 
 ### CLI

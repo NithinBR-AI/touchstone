@@ -93,7 +93,9 @@ class SchemaComparator:
         for table in sorted(i_tables):
             if table not in a_tables:
                 diffs.append(
-                    _make("TABLE_MISSING", table, "HIGH", POLICY_BLOCKED, {"table": table})
+                    _make(
+                        "TABLE_MISSING", table, "HIGH", POLICY_BLOCKED, {"table": table}
+                    )
                 )
                 continue
             diffs.extend(self._compare_columns(table, i_tables[table], a_tables[table]))
@@ -102,7 +104,9 @@ class SchemaComparator:
         for table in sorted(a_tables):
             if table not in i_tables:
                 diffs.append(
-                    _make("TABLE_EXTRA", table, "MEDIUM", POLICY_BLOCKED, {"table": table})
+                    _make(
+                        "TABLE_EXTRA", table, "MEDIUM", POLICY_BLOCKED, {"table": table}
+                    )
                 )
 
         return diffs
@@ -124,9 +128,7 @@ class SchemaComparator:
             if col not in a_cols:
                 has_default = spec.get("default") is not None
                 nullable = bool(spec.get("nullable", True))
-                policy = (
-                    POLICY_REVIEW if (nullable or has_default) else POLICY_BLOCKED
-                )
+                policy = POLICY_REVIEW if (nullable or has_default) else POLICY_BLOCKED
                 diffs.append(
                     _make(
                         "COLUMN_MISSING",
@@ -148,10 +150,12 @@ class SchemaComparator:
             old_type = a_cols[col]["type"]
             new_type = spec["type"]
             if old_type != new_type:
-                unsupported = old_type.startswith("UNSUPPORTED:") or new_type.startswith(
+                unsupported = old_type.startswith(
                     "UNSUPPORTED:"
+                ) or new_type.startswith("UNSUPPORTED:")
+                widening = (not unsupported) and _WIDENING._is_widening(
+                    old_type, new_type
                 )
-                widening = (not unsupported) and _WIDENING._is_widening(old_type, new_type)
                 diffs.append(
                     _make(
                         "TYPE_CHANGED",
@@ -176,7 +180,11 @@ class SchemaComparator:
                         f"{table}.{col}",
                         "MEDIUM",
                         POLICY_BLOCKED,
-                        {"table": table, "column": col, "actual_type": a_cols[col]["type"]},
+                        {
+                            "table": table,
+                            "column": col,
+                            "actual_type": a_cols[col]["type"],
+                        },
                         {"type": a_cols[col]["type"]},
                     )
                 )
@@ -209,8 +217,12 @@ class SchemaComparator:
                     _index_name(table, cols),
                     "LOW",
                     POLICY_REVIEW if unique else POLICY_AUTO,
-                    {"table": table, "columns": cols, "unique": unique,
-                     "declared_name": name},
+                    {
+                        "table": table,
+                        "columns": cols,
+                        "unique": unique,
+                        "declared_name": name,
+                    },
                     {"columns": cols, "unique": unique},
                 )
             )

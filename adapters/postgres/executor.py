@@ -101,7 +101,9 @@ class SQLExecutor:
     @staticmethod
     def _precheck(statement: str) -> str:
         try:
-            parsed = [s for s in sqlglot.parse(statement, dialect="postgres") if s is not None]
+            parsed = [
+                s for s in sqlglot.parse(statement, dialect="postgres") if s is not None
+            ]
         except Exception:  # noqa: BLE001
             return "PARSE_ERROR"
         if len(parsed) != 1:

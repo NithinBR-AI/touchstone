@@ -14,18 +14,37 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Sensitive token set (exhaustive per spec)
 # ---------------------------------------------------------------------------
 
-SENSITIVE_TOKENS: frozenset[str] = frozenset({
-    "authorization", "auth", "cookie", "token", "secret",
-    "password", "passwd", "pwd", "credential", "credentials",
-    "key", "apikey", "session", "sessionid", "access",
-    "refresh", "bearer", "jwt", "signature", "hmac",
-    "clientsecret", "privatekey", "dsn",
-})
+SENSITIVE_TOKENS: frozenset[str] = frozenset(
+    {
+        "authorization",
+        "auth",
+        "cookie",
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "pwd",
+        "credential",
+        "credentials",
+        "key",
+        "apikey",
+        "session",
+        "sessionid",
+        "access",
+        "refresh",
+        "bearer",
+        "jwt",
+        "signature",
+        "hmac",
+        "clientsecret",
+        "privatekey",
+        "dsn",
+    }
+)
 
 _REDACTED = "***REDACTED***"
 _TRUNCATED = "***TRUNCATED***"
@@ -35,6 +54,7 @@ _MAX_DEPTH = 5
 # ---------------------------------------------------------------------------
 # Token splitter
 # ---------------------------------------------------------------------------
+
 
 def _split_tokens(key: str) -> list[str]:
     """
@@ -64,6 +84,7 @@ def _is_sensitive(key: str) -> bool:
 # ---------------------------------------------------------------------------
 # Core redaction
 # ---------------------------------------------------------------------------
+
 
 def redact_value(value: Any, depth: int = 0) -> Any:
     """
@@ -111,15 +132,15 @@ def redact_url_userinfo(url: str) -> str:
 # ---------------------------------------------------------------------------
 
 _ERROR_SUMMARIES: dict[str, str] = {
-    "SSRF_BLOCKED":        "Request blocked: destination address is not permitted.",
-    "CONNECTION_REFUSED":  "Connection refused by the target host.",
-    "CONNECTION_TIMEOUT":  "Connection timed out.",
-    "DNS_FAILURE":         "Hostname could not be resolved.",
-    "TLS_ERROR":           "TLS/SSL handshake failed.",
-    "HTTP_ERROR":          "Target returned an HTTP error response.",
-    "PARSE_ERROR":         "Response body could not be parsed.",
-    "GITHUB_API_ERROR":    "GitHub API returned an error.",
-    "UNKNOWN":             "An unexpected error occurred.",
+    "SSRF_BLOCKED": "Request blocked: destination address is not permitted.",
+    "CONNECTION_REFUSED": "Connection refused by the target host.",
+    "CONNECTION_TIMEOUT": "Connection timed out.",
+    "DNS_FAILURE": "Hostname could not be resolved.",
+    "TLS_ERROR": "TLS/SSL handshake failed.",
+    "HTTP_ERROR": "Target returned an HTTP error response.",
+    "PARSE_ERROR": "Response body could not be parsed.",
+    "GITHUB_API_ERROR": "GitHub API returned an error.",
+    "UNKNOWN": "An unexpected error occurred.",
 }
 
 
@@ -132,6 +153,7 @@ class SafeError:
     class name (safe — no message). *summary* is a human-readable string
     derived from the lookup table, max 200 chars.
     """
+
     code: str
     error_class: str
     summary: str

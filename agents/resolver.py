@@ -37,6 +37,7 @@ _PLAIN_IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
 # Output schema
 # ---------------------------------------------------------------------------
 
+
 def validate_payload(payload: Any) -> str:
     """Return "" if payload matches the resolver output schema, else a reason."""
     if not isinstance(payload, dict):
@@ -49,7 +50,10 @@ def validate_payload(payload: Any) -> str:
     if not isinstance(payload["rationale"], str):
         return "rationale must be a string"
     if payload["action"] == "sql":
-        if not isinstance(payload["statement"], str) or not payload["statement"].strip():
+        if (
+            not isinstance(payload["statement"], str)
+            or not payload["statement"].strip()
+        ):
             return "sql action requires a statement"
         if payload["operation"] not in ALLOWED_OPERATIONS:
             return "invalid operation"
@@ -63,8 +67,14 @@ def validate_payload(payload: Any) -> str:
 # Canned responder (week-1 stand-in for the model)
 # ---------------------------------------------------------------------------
 
+
 def _review(rationale: str) -> dict[str, Any]:
-    return {"action": "review", "statement": None, "operation": None, "rationale": rationale}
+    return {
+        "action": "review",
+        "statement": None,
+        "operation": None,
+        "rationale": rationale,
+    }
 
 
 def canned_responder(prompt: str, difference: Difference) -> dict[str, Any]:
@@ -73,8 +83,12 @@ def canned_responder(prompt: str, difference: Difference) -> dict[str, Any]:
     if difference.kind == "INDEX_MISSING":
         table = ctx.get("table", "")
         cols = list(ctx.get("columns", []))
-        if not cols or not all(_PLAIN_IDENT.match(x) for x in [table, *cols, difference.target]):
-            return _review("Identifiers need quoting; not generating SQL automatically.")
+        if not cols or not all(
+            _PLAIN_IDENT.match(x) for x in [table, *cols, difference.target]
+        ):
+            return _review(
+                "Identifiers need quoting; not generating SQL automatically."
+            )
         return {
             "action": "sql",
             "statement": f"CREATE INDEX {difference.target} ON {table} ({', '.join(cols)})",
@@ -86,7 +100,9 @@ def canned_responder(prompt: str, difference: Difference) -> dict[str, Any]:
         table, col = ctx.get("table", ""), ctx.get("column", "")
         new_type = str(ctx.get("intended_type", ""))
         if not (_PLAIN_IDENT.match(table) and _PLAIN_IDENT.match(col)):
-            return _review("Identifiers need quoting; not generating SQL automatically.")
+            return _review(
+                "Identifiers need quoting; not generating SQL automatically."
+            )
         if not re.fullmatch(r"[a-z ]+(\(\d+\))?", new_type):
             return _review("Intended type is not a simple widening target.")
         return {
@@ -105,6 +121,7 @@ def canned_responder(prompt: str, difference: Difference) -> dict[str, Any]:
 # Resolver
 # ---------------------------------------------------------------------------
 
+
 class MockResolver:
     """Resolver protocol implementation. Pass a different responder to test failures."""
 
@@ -115,8 +132,13 @@ class MockResolver:
         prompt = build_prompt(difference)
         digest = prompt_sha256(prompt)
 
-        if not difference.context.get("safe_fix", False) or difference.kind in REVIEW_ONLY_KINDS:
-            return self._resolution(difference, digest, None, "Review required: not auto-fixable.")
+        if (
+            not difference.context.get("safe_fix", False)
+            or difference.kind in REVIEW_ONLY_KINDS
+        ):
+            return self._resolution(
+                difference, digest, None, "Review required: not auto-fixable."
+            )
 
         last_error = ""
         for _ in range(MAX_ATTEMPTS):

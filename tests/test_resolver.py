@@ -15,39 +15,64 @@ from core.validator import SQLValidator
 
 
 def _index_diff(**ctx) -> Difference:
-    context = {"table": "users", "columns": ["email"], "unique": False,
-               "safe_fix": True, "policy": "auto_fixable"}
+    context = {
+        "table": "users",
+        "columns": ["email"],
+        "unique": False,
+        "safe_fix": True,
+        "policy": "auto_fixable",
+    }
     context.update(ctx)
-    return Difference(signature="sig-idx", domain="database", kind="INDEX_MISSING",
-                      target="ix_users_email", context=context)
+    return Difference(
+        signature="sig-idx",
+        domain="database",
+        kind="INDEX_MISSING",
+        target="ix_users_email",
+        context=context,
+    )
 
 
 def _type_diff(old: str, new: str, safe: bool = True) -> Difference:
     return Difference(
-        signature="sig-type", domain="database", kind="TYPE_CHANGED", target="users.email",
+        signature="sig-type",
+        domain="database",
+        kind="TYPE_CHANGED",
+        target="users.email",
         state=GhostState.PENDING if safe else GhostState.REVIEW_REQUIRED,
-        context={"table": "users", "column": "email", "original_actual_type": old,
-                 "intended_type": new, "safe_fix": safe},
+        context={
+            "table": "users",
+            "column": "email",
+            "original_actual_type": old,
+            "intended_type": new,
+            "safe_fix": safe,
+        },
     )
 
 
 def test_index_missing_proposal_passes_validator() -> None:
     diff = _index_diff()
     res = MockResolver().resolve(diff)
-    assert res.proposed_change.statement == "CREATE INDEX ix_users_email ON users (email)"
+    assert (
+        res.proposed_change.statement == "CREATE INDEX ix_users_email ON users (email)"
+    )
     assert SQLValidator().validate(res.proposed_change, diff).status == "valid"
 
 
 def test_widening_type_proposal_passes_validator() -> None:
     diff = _type_diff("varchar(100)", "varchar(255)")
     res = MockResolver().resolve(diff)
-    assert res.proposed_change.statement == "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
+    assert (
+        res.proposed_change.statement
+        == "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
+    )
     assert SQLValidator().validate(res.proposed_change, diff).status == "valid"
 
 
 def test_not_safe_fix_is_review_only_and_responder_not_called() -> None:
     calls = []
-    res = MockResolver(lambda p, d: calls.append(1)).resolve(_type_diff("text", "integer", safe=False))
+    res = MockResolver(lambda p, d: calls.append(1)).resolve(
+        _type_diff("text", "integer", safe=False)
+    )
     assert res.proposed_change is None
     assert calls == []
 
@@ -99,10 +124,32 @@ def test_identifiers_needing_quotes_are_not_auto_generated() -> None:
 
 
 def test_validate_payload_rules() -> None:
-    assert validate_payload({"action": "review", "statement": None,
-                             "operation": None, "rationale": "x"}) == ""
-    assert validate_payload({"action": "sql", "statement": "DROP TABLE x",
-                             "operation": "DROP_TABLE", "rationale": "x"}) == "invalid operation"
-    assert validate_payload({"action": "review", "statement": "SELECT 1",
-                             "operation": None, "rationale": "x"}) != ""
+    assert (
+        validate_payload(
+            {"action": "review", "statement": None, "operation": None, "rationale": "x"}
+        )
+        == ""
+    )
+    assert (
+        validate_payload(
+            {
+                "action": "sql",
+                "statement": "DROP TABLE x",
+                "operation": "DROP_TABLE",
+                "rationale": "x",
+            }
+        )
+        == "invalid operation"
+    )
+    assert (
+        validate_payload(
+            {
+                "action": "review",
+                "statement": "SELECT 1",
+                "operation": None,
+                "rationale": "x",
+            }
+        )
+        != ""
+    )
     assert validate_payload([]) != ""

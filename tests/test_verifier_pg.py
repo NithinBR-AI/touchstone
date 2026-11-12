@@ -15,8 +15,18 @@ from core.models import ComparisonTarget, State
 INTENDED = {
     "users": {
         "columns": {
-            "id": {"type": "integer", "nullable": False, "primary_key": True, "default": None},
-            "email": {"type": "varchar(255)", "nullable": False, "primary_key": False, "default": None},
+            "id": {
+                "type": "integer",
+                "nullable": False,
+                "primary_key": True,
+                "default": None,
+            },
+            "email": {
+                "type": "varchar(255)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+            },
         },
         "indexes": {"ix_users_email": {"columns": ["email"], "unique": False}},
         "primary_key": ["id"],
@@ -65,6 +75,8 @@ def test_still_present_when_ghost_remains() -> None:
 def test_unrelated_differences_do_not_block_resolution() -> None:
     diff = _index_diff()
     other_drift = copy.deepcopy(INTENDED)
-    other_drift["users"]["columns"]["email"]["type"] = "varchar(100)"  # a different ghost
+    other_drift["users"]["columns"]["email"][
+        "type"
+    ] = "varchar(100)"  # a different ghost
     v = SchemaVerifier(lambda: _state(INTENDED), lambda: _state(other_drift))
     assert v.verify(ComparisonTarget("database", diff.target), diff).resolved is True

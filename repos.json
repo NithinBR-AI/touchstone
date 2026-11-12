@@ -5,7 +5,10 @@
     "github": "NithinBR-AI/touchstone-demo-target-repo",
     "models_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/models.py",
     "openapi_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/openapi.yaml",
+    "cache_config_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/cache_config.yaml",
     "api_base_url": "https://touchstone-demo-target-repo.onrender.com",
+    "cache_status_url": "https://touchstone-demo-target-repo.onrender.com/cache/status",
+    "cache_warm_url": "https://touchstone-demo-target-repo.onrender.com/cache/warm",
     "default": true
   }
 ]

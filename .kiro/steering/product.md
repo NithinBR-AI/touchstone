@@ -24,10 +24,9 @@ folder under `apps/` and is a ~30-line wrapper that imports from `core/`.
 |---|---|---|---|---|
 | Schema Drift | database | orange `#f97316` | Apply | **Yes** |
 | Contract Observer | api | icy cyan `#67e8f9` | Exorcise | **Yes** |
-| Dependency Auditor | deps | violet `#8b5cf6` | Apply | Optional (cut if behind) |
+| The Poltergeist | cache | violet `#c084fc` | Exorcise | **Shipped** (third app) |
 
-Two apps satisfy Skeleton Crew. The third is additional evidence. Cut line:
-week 4, day 3.
+Three apps shipped. Two mandatory apps satisfy Skeleton Crew. Dependency Auditor was cut.
 
 ## The pitch
 Your code says what should exist. Your system says what does.

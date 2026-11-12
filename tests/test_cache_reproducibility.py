@@ -20,7 +20,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.cache import Cache, CACHE_VERSION, VALIDATOR_CONTRACT
+from agents.resolver import MockResolver, canned_responder
+from core.cache import CACHE_VERSION, VALIDATOR_CONTRACT, Cache
 from core.models import (
     ComparisonTarget,
     Difference,
@@ -35,7 +36,6 @@ from core.orchestrator import Orchestrator
 from core.persistence import Persistence
 from core.validator import FilePatchValidator, SQLValidator
 
-
 # ---------------------------------------------------------------------------
 # In-memory fake DB (same pattern as test_orchestrator_mock.py)
 # ---------------------------------------------------------------------------
@@ -43,8 +43,18 @@ from core.validator import FilePatchValidator, SQLValidator
 INTENDED = {
     "users": {
         "columns": {
-            "id":    {"type": "integer",      "nullable": False, "primary_key": True,  "default": None},
-            "email": {"type": "varchar(255)", "nullable": False, "primary_key": False, "default": None},
+            "id": {
+                "type": "integer",
+                "nullable": False,
+                "primary_key": True,
+                "default": None,
+            },
+            "email": {
+                "type": "varchar(255)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+            },
         },
         "indexes": {"ix_users_email": {"columns": ["email"], "unique": False}},
         "primary_key": ["id"],
@@ -91,8 +101,8 @@ class _FakeExecutor:
 # Orchestrator factory
 # ---------------------------------------------------------------------------
 
+
 def _build_orch(tmp_path: Path, db: _FakeDB, responder=None) -> Orchestrator:
-    from agents.resolver import MockResolver, canned_responder
     from adapters.postgres.comparator import SchemaComparator
     from adapters.postgres.verifier import SchemaVerifier
 
@@ -118,13 +128,12 @@ def _build_orch(tmp_path: Path, db: _FakeDB, responder=None) -> Orchestrator:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestCacheReproducibility:
 
     def test_second_run_hits_cache_responder_not_called(self, tmp_path: Path) -> None:
         """Responder is called once; second orchestrator run reads from cache."""
         calls: list[int] = []
-
-        from agents.resolver import canned_responder
 
         def counting(prompt, diff):
             calls.append(1)
@@ -138,9 +147,9 @@ class TestCacheReproducibility:
         _build_orch(tmp_path, db2, counting).run()
 
         assert first_count >= 1, "Responder was never called on first run"
-        assert len(calls) == first_count, (
-            f"Responder called again on second run: {len(calls)} total vs {first_count} after first"
-        )
+        assert (
+            len(calls) == first_count
+        ), f"Responder called again on second run: {len(calls)} total vs {first_count} after first"
 
     def test_second_run_resolutions_marked_cached(self, tmp_path: Path) -> None:
         """All resolutions on the second run have cached=True."""
@@ -206,7 +215,9 @@ class TestCacheReproducibility:
 
         for sig, entry in data.items():
             assert "cache_version" in entry, f"cache_version missing for {sig}"
-            assert "validator_contract" in entry, f"validator_contract missing for {sig}"
+            assert (
+                "validator_contract" in entry
+            ), f"validator_contract missing for {sig}"
             assert "prompt_hash" in entry, f"prompt_hash missing for {sig}"
             assert entry["cache_version"] == CACHE_VERSION
             assert entry["validator_contract"] == VALIDATOR_CONTRACT
@@ -225,7 +236,6 @@ class TestCacheReproducibility:
 
         # Second run with same inputs: cache should be skipped → responder called again
         calls: list[int] = []
-        from agents.resolver import canned_responder
 
         def counting(prompt, diff):
             calls.append(1)
@@ -248,7 +258,6 @@ class TestCacheReproducibility:
         cache_file.write_text(json.dumps(data), encoding="utf-8")
 
         calls: list[int] = []
-        from agents.resolver import canned_responder
 
         def counting(prompt, diff):
             calls.append(1)
@@ -256,7 +265,9 @@ class TestCacheReproducibility:
 
         db2 = _FakeDB()
         _build_orch(tmp_path, db2, counting).run()
-        assert len(calls) >= 1, "Expected responder to be called after prompt_hash mismatch"
+        assert (
+            len(calls) >= 1
+        ), "Expected responder to be called after prompt_hash mismatch"
 
     def test_first_run_no_cached_flag(self, tmp_path: Path) -> None:
         """First run resolutions are NOT marked cached (they came from the resolver)."""
@@ -264,4 +275,6 @@ class TestCacheReproducibility:
         report = _build_orch(tmp_path, db).run()
 
         for sig, res in report.resolutions.items():
-            assert res.cached is False, f"Resolution {sig} wrongly marked cached on first run"
+            assert (
+                res.cached is False
+            ), f"Resolution {sig} wrongly marked cached on first run"

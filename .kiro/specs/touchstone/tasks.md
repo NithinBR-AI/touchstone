@@ -424,18 +424,39 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       app code in apps/contract-observer/. core/ frozen. PASS.
   - _Req 1, 38_
 
-### 6. App 3 — Dependency Auditor (Week 4 — OPTIONAL, cuttable)
+### 6. App 3 — The Poltergeist (cache domain — SHIPPED)
 
-- [ ] 6.1 adapters/deps/* — DECLARED_UNPINNED produces PENDING (not auto-apply)
-  - _Req 12, 13, 14, 22, 34_
-- [ ] 6.2 test_comparator_deps.py
-  - _Req 14_
-- [ ] 6.3 apps/dependency-auditor/{main.py, config.json, README.md, run.sh}
+Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence drift).
+
+- [x] 6.1 adapters/redis/{actual.py, intended.py, comparator.py, executor.py, verifier.py}
+      DONE: Full Redis cache adapter. actual.py fetches /cache/status via httpx (no TCP),
+      warmup pattern matches adapters/openapi/actual.py (60s /health poll). intended.py
+      fetches cache_config.yaml from GitHub raw URL. comparator.py emits KEY_MISSING
+      (PENDING, safe_fix=True) and UNDECLARED_KEY (BLOCKED, safe_fix=False).
+      executor.py calls POST /cache/warm?key=<diff.target> via _CLIENT from actual.py.
+      verifier.py re-fetches /cache/status and checks key presence.
   - _Req 28, 30_
-- [ ] 6.4 Verify `git diff core/` still empty
+- [x] 6.2 test_comparator_cache.py
+      DONE: 9 tests — no-drift, KEY_MISSING (detected, description, multiple),
+      UNDECLARED_KEY (detected, multiple), mixed drift, signature stability ×2. All pass.
+  - _Req 30_
+- [x] 6.3 apps/poltergeist/{main.py, config.json, README.md, run.sh}
+      DONE: all 4 files present and verified.
+      · config.json: {"domain":"cache","accent":"#c084fc","title":"The Poltergeist"}
+      · run.sh: port 8003, .venv python detection matches schema-drift/contract-observer pattern.
+      · main.py: wires CacheComparator, CacheExecutor, CacheVerifier, MockResolver.
+        /compare post-processes safe_fix diffs from BLOCKED → PENDING (MockResolver returns
+        proposed_change=None for cache kinds; orchestrator blocks them; endpoint resets them).
+        /apply calls CacheExecutor directly. /demo/reset calls POST /cache/warm via _CLIENT.
+        All imports at top of module. Uses _CLIENT from actual.py (no urllib).
+      · UI: RENDERERS includes cache: renderCacheEvidence; KIND_LABELS for KEY_MISSING
+        (Missing Key) and UNDECLARED_KEY (Shadow Key); RITUAL_STAGES and IDLE_COPY
+        extended for cache domain; BLOCKED cache diffs show no Exorcise button.
+  - _Req 28, 30_
+- [x] 6.4 Verify `git diff core/` still empty
+      DONE: No changes to core/ in Stage 6. All adapter code in adapters/redis/,
+      app code in apps/poltergeist/. core/ frozen. PASS.
   - _Req 1, 38_
-- [ ] 6.5 **CUT LINE: week 4 day 3 if behind — delete
-      apps/dependency-auditor/ and adapters/deps/. Ship two apps.**
 
 ### 7. Real resolver + orchestration (Week 4)
 
@@ -521,8 +542,9 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
 
 ## Notes
 
-- Progress verified by running `pytest -q`: **295 passed, 11 skipped** (offline run,
-  no DATABASE_URL). All 1.0a–1.0f and 2.1–2.23 green.
+- Progress verified by running `pytest -q`: **382 passed, 11 skipped** (offline run,
+  no DATABASE_URL). All 1.0a–1.0f, 2.1–2.23, 5.1–5.10, and 6.1–6.4 green.
+  New tests in Stage 6: test_comparator_cache.py (9 tests).
 - Real Neon run (2026-11-11): test_postgres_e2e + test_sql_execution → **9 passed, 1 skipped**
   (cache test skips when drift already applied by earlier tests in same run — expected).
   Seed with `fixtures/seed.py` before each full Neon run to restore drift state.

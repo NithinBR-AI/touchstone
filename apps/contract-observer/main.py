@@ -9,6 +9,8 @@ State: module-level orchestrator singleton, one per process.
 
 from __future__ import annotations
 
+import dataclasses
+import datetime
 import json
 import os
 from pathlib import Path
@@ -20,10 +22,10 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-HERE   = Path(__file__).parent
-REPO   = HERE.parent.parent
+HERE = Path(__file__).parent
+REPO = HERE.parent.parent
 CONFIG = json.loads((HERE / "config.json").read_text(encoding="utf-8"))
-REPOS  = json.loads((REPO / "repos.json").read_text())
+REPOS = json.loads((REPO / "repos.json").read_text())
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
@@ -31,20 +33,20 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 _active_repo: dict = next((r for r in REPOS if r.get("default")), REPOS[0])
 
 # ----- adapter wiring ------------------------------------------------
-from adapters.openapi.actual     import probe as probe_actual
+from adapters.openapi.actual import probe as probe_actual
 from adapters.openapi.comparator import ContractComparator
-from adapters.openapi.executor   import ContractExecutor
-from adapters.openapi.intended   import load_from_url as load_intended
-from adapters.openapi.verifier   import ContractVerifier
-from agents.resolver             import MockResolver
-from core.cache                  import Cache
-from core.models                 import ComparisonTarget
-from core.orchestrator           import Orchestrator
-from core.persistence            import Persistence
-from core.validator              import FilePatchValidator, SQLValidator
+from adapters.openapi.executor import ContractExecutor
+from adapters.openapi.intended import load_from_url as load_intended
+from adapters.openapi.verifier import ContractVerifier
+from agents.resolver import MockResolver
+from core.cache import Cache
+from core.models import ApplyOutcome, ComparisonTarget, GhostState
+from core.orchestrator import Orchestrator
+from core.persistence import Persistence
+from core.validator import FilePatchValidator, SQLValidator
 
 _reports_dir = HERE / ".reports"
-_cache_path  = HERE / ".cache.json"
+_cache_path = HERE / ".cache.json"
 
 
 def _openapi_url() -> str:
@@ -83,18 +85,18 @@ _executor = ContractExecutor(
 _verifier = ContractVerifier()
 
 orch = Orchestrator(
-    input_source   = _InputSource(),
-    source_adapter = _SourceAdapter(),
-    comparator     = ContractComparator(),
-    resolver       = MockResolver(),
-    executor       = _executor,
-    verifier       = _verifier,
-    validator_sql  = SQLValidator(),
-    validator_file = FilePatchValidator(REPO),
-    persistence    = Persistence(_reports_dir),
-    cache          = Cache(_cache_path),
-    domain         = "api",
-    principal      = "demo-sandbox",
+    input_source=_InputSource(),
+    source_adapter=_SourceAdapter(),
+    comparator=ContractComparator(),
+    resolver=MockResolver(),
+    executor=_executor,
+    verifier=_verifier,
+    validator_sql=SQLValidator(),
+    validator_file=FilePatchValidator(REPO),
+    persistence=Persistence(_reports_dir),
+    cache=Cache(_cache_path),
+    domain="api",
+    principal="demo-sandbox",
 )
 
 _latest_report_id: str | None = None
@@ -102,15 +104,19 @@ _latest_report_id: str | None = None
 # ----- app -----------------------------------------------------------
 app = FastAPI(title="Contract Observer", version="1.0.0")
 
+
 # ----- request bodies ------------------------------------------------
 class ApplyRequest(BaseModel):
     difference_id: str
 
+
 class RollbackRequest(BaseModel):
     difference_id: str
 
+
 class SelectRepoRequest(BaseModel):
     repo_id: str
+
 
 # ----- endpoints -----------------------------------------------------
 @app.get("/health")
@@ -122,18 +128,24 @@ def health():
         "active_repo": _active_repo["id"],
     }
 
+
 @app.get("/config")
 def get_config():
     return {
         **CONFIG,
         "latest_report_id": _latest_report_id,
         "active_repo": _active_repo["id"],
-        "repos": [{"id": r["id"], "name": r["name"], "github": r.get("github", "")} for r in REPOS],
+        "repos": [
+            {"id": r["id"], "name": r["name"], "github": r.get("github", "")}
+            for r in REPOS
+        ],
     }
+
 
 @app.get("/repos")
 def list_repos():
     return {"repos": REPOS, "active": _active_repo["id"]}
+
 
 @app.post("/repos/select")
 def select_repo(req: SelectRepoRequest):
@@ -150,12 +162,21 @@ def select_repo(req: SelectRepoRequest):
     )
     return {"active": _active_repo["id"]}
 
+
 @app.get("/discover")
 def discover():
-    return {"targets": [{"domain": "api", "target": _active_repo["id"],
-                         "openapi_url": _active_repo.get("openapi_url", ""),
-                         "api_base_url": _active_repo.get("api_base_url", ""),
-                         "repo": _active_repo.get("github", "")}]}
+    return {
+        "targets": [
+            {
+                "domain": "api",
+                "target": _active_repo["id"],
+                "openapi_url": _active_repo.get("openapi_url", ""),
+                "api_base_url": _active_repo.get("api_base_url", ""),
+                "repo": _active_repo.get("github", ""),
+            }
+        ]
+    }
+
 
 @app.post("/compare")
 def compare():
@@ -166,6 +187,7 @@ def compare():
         raise HTTPException(503, detail=f"compare failed: {exc}") from exc
     _latest_report_id = report.id
     return _serialise_report(report)
+
 
 @app.post("/apply")
 def apply(req: ApplyRequest):
@@ -178,14 +200,16 @@ def apply(req: ApplyRequest):
 
     # API domain: executor opens a GitHub PR — bypass orchestrator resolver gate
     # (all API diffs have safe_fix=False so apply_one would refuse them)
-    from core.models import ApplyOutcome, GhostState
-    import datetime
     try:
         execution = _executor.execute(diff)
     except Exception as exc:
         diff.state = GhostState.EXECUTION_FAILED
         orch.persistence.save(report)
-        return {"difference_id": req.difference_id, "state": "EXECUTION_FAILED", "error": str(exc)}
+        return {
+            "difference_id": req.difference_id,
+            "state": "EXECUTION_FAILED",
+            "error": str(exc),
+        }
 
     if execution.success:
         diff.state = GhostState.RESOLVED
@@ -201,6 +225,7 @@ def apply(req: ApplyRequest):
     orch.persistence.save(report)
     return _serialise_outcome(outcome)
 
+
 @app.post("/rollback")
 def rollback(req: RollbackRequest):
     try:
@@ -209,6 +234,7 @@ def rollback(req: RollbackRequest):
         raise HTTPException(404, detail="difference not found")
     return _serialise_outcome(event)
 
+
 @app.get("/report/{report_id}")
 def get_report(report_id: str):
     report = orch.persistence.load(report_id)
@@ -216,36 +242,27 @@ def get_report(report_id: str):
         raise HTTPException(404, detail="report not found")
     return _serialise_report(report)
 
+
 # ----- serialisation -------------------------------------------------
+def _default(o: object) -> object:
+    if dataclasses.is_dataclass(o) and not isinstance(o, type):
+        return dataclasses.asdict(o)
+    if hasattr(o, "value"):
+        return o.value
+    if isinstance(o, datetime.datetime):
+        return o.isoformat()
+    if isinstance(o, bytes):
+        return o.hex()
+    raise TypeError(type(o).__name__)
+
+
 def _serialise_outcome(obj) -> dict:
-    import dataclasses, datetime
-    def default(o):
-        if dataclasses.is_dataclass(o) and not isinstance(o, type):
-            return dataclasses.asdict(o)
-        if hasattr(o, "value"):
-            return o.value
-        if isinstance(o, datetime.datetime):
-            return o.isoformat()
-        if isinstance(o, bytes):
-            return o.hex()
-        raise TypeError(type(o).__name__)
-    import json as _json
-    return _json.loads(_json.dumps(dataclasses.asdict(obj), default=default))
+    return json.loads(json.dumps(dataclasses.asdict(obj), default=_default))
+
 
 def _serialise_report(report) -> dict:
-    import dataclasses, datetime
-    def default(o):
-        if dataclasses.is_dataclass(o) and not isinstance(o, type):
-            return dataclasses.asdict(o)
-        if hasattr(o, "value"):
-            return o.value
-        if isinstance(o, datetime.datetime):
-            return o.isoformat()
-        if isinstance(o, bytes):
-            return o.hex()
-        raise TypeError(type(o).__name__)
-    import json as _json
-    return _json.loads(_json.dumps(dataclasses.asdict(report), default=default))
+    return json.loads(json.dumps(dataclasses.asdict(report), default=_default))
+
 
 # ----- static UI (must be last mount) --------------------------------
 app.mount(

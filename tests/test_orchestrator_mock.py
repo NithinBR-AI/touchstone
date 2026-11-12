@@ -14,7 +14,7 @@ from pathlib import Path
 
 from adapters.postgres.comparator import SchemaComparator
 from adapters.postgres.verifier import SchemaVerifier
-from agents.resolver import MockResolver
+from agents.resolver import MockResolver, canned_responder
 from core.cache import Cache
 from core.models import ComparisonTarget, ExecutionResult, GhostState, State
 from core.orchestrator import Orchestrator
@@ -24,8 +24,18 @@ from core.validator import FilePatchValidator, SQLValidator
 INTENDED = {
     "users": {
         "columns": {
-            "id": {"type": "integer", "nullable": False, "primary_key": True, "default": None},
-            "email": {"type": "varchar(255)", "nullable": False, "primary_key": False, "default": None},
+            "id": {
+                "type": "integer",
+                "nullable": False,
+                "primary_key": True,
+                "default": None,
+            },
+            "email": {
+                "type": "varchar(255)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+            },
         },
         "indexes": {"ix_users_email": {"columns": ["email"], "unique": False}},
         "primary_key": ["id"],
@@ -36,8 +46,10 @@ INTENDED = {
 class FakeDB:
     def __init__(self) -> None:
         self.tables = copy.deepcopy(INTENDED)
-        self.tables["users"]["indexes"] = {}                      # ghost: missing index
-        self.tables["users"]["columns"]["email"]["type"] = "varchar(100)"  # ghost: narrower type
+        self.tables["users"]["indexes"] = {}  # ghost: missing index
+        self.tables["users"]["columns"]["email"][
+            "type"
+        ] = "varchar(100)"  # ghost: narrower type
 
     def state(self) -> State:
         return State(domain="database", data={"tables": copy.deepcopy(self.tables)})
@@ -70,11 +82,16 @@ class FakeExecutor:
         if self.apply:
             if stmt.startswith("CREATE INDEX"):
                 self.db.tables["users"]["indexes"]["ix_users_email"] = {
-                    "columns": ["email"], "unique": False}
+                    "columns": ["email"],
+                    "unique": False,
+                }
             elif "ALTER COLUMN email TYPE varchar(255)" in stmt:
                 self.db.tables["users"]["columns"]["email"]["type"] = "varchar(255)"
-        return ExecutionResult(difference_id=resolution.difference_id, success=True,
-                               applied_change=resolution.proposed_change)
+        return ExecutionResult(
+            difference_id=resolution.difference_id,
+            success=True,
+            applied_change=resolution.proposed_change,
+        )
 
 
 def _orch(tmp_path: Path, db: FakeDB, resolver=None, apply=True) -> Orchestrator:
@@ -112,7 +129,8 @@ def test_full_loop_resolves_both_ghosts(tmp_path: Path) -> None:
     # Persisted report matches in-memory state
     saved = Persistence(tmp_path / "reports").load(report.id)
     assert {d.id: d.state for d in saved.differences} == {
-        d.id: d.state for d in report.differences}
+        d.id: d.state for d in report.differences
+    }
 
 
 def test_apply_without_effect_is_still_present(tmp_path: Path) -> None:
@@ -143,8 +161,6 @@ def test_resolver_failure_blocks_instead_of_pending(tmp_path: Path) -> None:
 
 def test_second_run_hits_cache(tmp_path: Path) -> None:
     calls = []
-
-    from agents.resolver import canned_responder
 
     def counting(prompt, diff):
         calls.append(1)

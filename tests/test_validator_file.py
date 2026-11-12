@@ -36,7 +36,7 @@ def make_patch(
         file_path=file_path,
         before_sha256=sha256(original_bytes),
         after_sha256=sha256(new_bytes),
-        forward_patch=new_bytes,   # week-1 stub: forward_patch = full new content
+        forward_patch=new_bytes,  # week-1 stub: forward_patch = full new content
         reverse_patch=original_bytes,
     )
 
@@ -64,7 +64,9 @@ class TestFilePatchValidator:
         p.write_bytes(original)
 
         patch = make_patch(str(p), original, new)
-        diff = Difference(kind="FIELD_UNDOCUMENTED", target="host", domain="api", context={})
+        diff = Difference(
+            kind="FIELD_UNDOCUMENTED", target="host", domain="api", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "valid"
@@ -90,7 +92,9 @@ class TestFilePatchValidator:
             forward_patch=b"key: new\n",
             reverse_patch=b"key: value\n",
         )
-        diff = Difference(kind="FIELD_UNDOCUMENTED", target="key", domain="api", context={})
+        diff = Difference(
+            kind="FIELD_UNDOCUMENTED", target="key", domain="api", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "invalid"
@@ -112,7 +116,9 @@ class TestFilePatchValidator:
             forward_patch=b"x: 1\n",
             reverse_patch=b"x: 0\n",
         )
-        diff = Difference(kind="FIELD_UNDOCUMENTED", target="x", domain="api", context={})
+        diff = Difference(
+            kind="FIELD_UNDOCUMENTED", target="x", domain="api", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "invalid"
@@ -134,7 +140,9 @@ class TestFilePatchValidator:
             forward_patch=b"key: new\n",
             reverse_patch=b"key: original\n",
         )
-        diff = Difference(kind="FIELD_UNDOCUMENTED", target="key", domain="api", context={})
+        diff = Difference(
+            kind="FIELD_UNDOCUMENTED", target="key", domain="api", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "invalid"
@@ -152,7 +160,9 @@ class TestFilePatchValidator:
         p.write_bytes(original)
 
         patch = make_patch(str(p), original, new)
-        diff = Difference(kind="FIELD_UNDOCUMENTED", target="host", domain="api", context={})
+        diff = Difference(
+            kind="FIELD_UNDOCUMENTED", target="host", domain="api", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "valid"
@@ -165,7 +175,9 @@ class TestFilePatchValidator:
         p.write_bytes(original)
 
         patch = make_patch(str(p), original, new)
-        diff = Difference(kind="FIELD_UNDOCUMENTED", target="item1", domain="api", context={})
+        diff = Difference(
+            kind="FIELD_UNDOCUMENTED", target="item1", domain="api", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "invalid"
@@ -173,12 +185,14 @@ class TestFilePatchValidator:
     def test_yaml_wrong_key_rejected(self, validator, tmp_root):
         """YAML patch modifying a key other than the declared target is rejected."""
         original = b"host: old\nport: 5432\n"
-        new = b"host: old\nport: 9999\n"   # changed port, not host
+        new = b"host: old\nport: 9999\n"  # changed port, not host
         p = tmp_root / "db.yml"
         p.write_bytes(original)
 
         patch = make_patch(str(p), original, new)
-        diff = Difference(kind="FIELD_UNDOCUMENTED", target="host", domain="api", context={})
+        diff = Difference(
+            kind="FIELD_UNDOCUMENTED", target="host", domain="api", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "invalid"
@@ -196,7 +210,9 @@ class TestFilePatchValidator:
         p.write_bytes(original)
 
         patch = make_patch(str(p), original, new)
-        diff = Difference(kind="DECLARED_UNPINNED", target="name", domain="deps", context={})
+        diff = Difference(
+            kind="DECLARED_UNPINNED", target="name", domain="deps", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "valid"
@@ -204,12 +220,14 @@ class TestFilePatchValidator:
     def test_toml_wrong_key_rejected(self, validator, tmp_root):
         """TOML patch modifying a key other than the declared target is rejected."""
         original = b'name = "old"\nversion = "1.0"\n'
-        new = b'name = "old"\nversion = "2.0"\n'   # changed version, not name
+        new = b'name = "old"\nversion = "2.0"\n'  # changed version, not name
         p = tmp_root / "pyproject.toml"
         p.write_bytes(original)
 
         patch = make_patch(str(p), original, new)
-        diff = Difference(kind="DECLARED_UNPINNED", target="name", domain="deps", context={})
+        diff = Difference(
+            kind="DECLARED_UNPINNED", target="name", domain="deps", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "invalid"
@@ -226,7 +244,9 @@ class TestFilePatchValidator:
         p.write_bytes(original)
 
         patch = make_patch(str(p), original, new)
-        diff = Difference(kind="DECLARED_UNPINNED", target="sqlglot", domain="deps", context={})
+        diff = Difference(
+            kind="DECLARED_UNPINNED", target="sqlglot", domain="deps", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "valid"
@@ -234,12 +254,14 @@ class TestFilePatchValidator:
     def test_requirements_unrelated_line_rejected(self, validator, tmp_root):
         """requirements.txt patch that also changes an unrelated package is rejected."""
         original = b"sqlglot\nhttpx==0.28.0\n"
-        new = b"sqlglot==30.29.0\nhttpx==0.29.0\n"   # also bumped httpx
+        new = b"sqlglot==30.29.0\nhttpx==0.29.0\n"  # also bumped httpx
         p = tmp_root / "requirements.txt"
         p.write_bytes(original)
 
         patch = make_patch(str(p), original, new)
-        diff = Difference(kind="DECLARED_UNPINNED", target="sqlglot", domain="deps", context={})
+        diff = Difference(
+            kind="DECLARED_UNPINNED", target="sqlglot", domain="deps", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "invalid"
@@ -261,7 +283,9 @@ class TestFilePatchValidator:
             forward_patch=b"key: new\n",
             reverse_patch=original,
         )
-        diff = Difference(kind="FIELD_UNDOCUMENTED", target="key", domain="api", context={})
+        diff = Difference(
+            kind="FIELD_UNDOCUMENTED", target="key", domain="api", context={}
+        )
 
         result = validator.validate(patch, diff)
         assert result.status == "invalid"

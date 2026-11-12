@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import sys
 
+import psycopg
+
 
 def main(dsn: str) -> None:
-    import psycopg
-
     conn = psycopg.connect(dsn)
     try:
         # Drop in dependency order
@@ -88,8 +88,12 @@ def main(dsn: str) -> None:
         print("Seed complete.")
         print("  Drift cases present:")
         print("    · ix_orders_user_id  MISSING    (INDEX_MISSING, auto-fixable)")
-        print("    · users.email        VARCHAR(50) vs declared VARCHAR(255)  (TYPE_CHANGED, widening)")
-        print("    · users.age          BIGINT      vs declared INTEGER        (TYPE_CHANGED, narrowing)")
+        print(
+            "    · users.email        VARCHAR(50) vs declared VARCHAR(255)  (TYPE_CHANGED, widening)"
+        )
+        print(
+            "    · users.age          BIGINT      vs declared INTEGER        (TYPE_CHANGED, narrowing)"
+        )
     finally:
         conn.close()
 

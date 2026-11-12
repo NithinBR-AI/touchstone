@@ -10,20 +10,14 @@ Token-based redaction boundary coverage per spec:
 
 import pytest
 
-from agents.redaction import (
-    SafeError,
-    _is_sensitive,
-    _split_tokens,
-    redact_headers,
-    redact_query,
-    redact_url_userinfo,
-    redact_value,
-)
-
+from agents.redaction import (SafeError, _is_sensitive, _split_tokens,
+                              redact_headers, redact_query,
+                              redact_url_userinfo, redact_value)
 
 # ---------------------------------------------------------------------------
 # Token splitter
 # ---------------------------------------------------------------------------
+
 
 class TestSplitTokens:
     def test_lowercase(self):
@@ -54,6 +48,7 @@ class TestSplitTokens:
 # ---------------------------------------------------------------------------
 # _is_sensitive boundary cases (from spec)
 # ---------------------------------------------------------------------------
+
 
 class TestIsSensitive:
     # Must trigger redaction
@@ -117,6 +112,7 @@ class TestIsSensitive:
 # redact_value — JSON dict/list/scalar
 # ---------------------------------------------------------------------------
 
+
 class TestRedactValue:
     def test_sensitive_key_redacted(self):
         result = redact_value({"authorization": "Bearer abc123"})
@@ -155,11 +151,13 @@ class TestRedactValue:
         assert result["clientSecret"] == "***REDACTED***"
 
     def test_mixed_dict(self):
-        result = redact_value({
-            "id": 1,
-            "api_key": "key-123",
-            "email": "user@example.com",
-        })
+        result = redact_value(
+            {
+                "id": 1,
+                "api_key": "key-123",
+                "email": "user@example.com",
+            }
+        )
         assert result["id"] == 1
         assert result["api_key"] == "***REDACTED***"
         assert result["email"] == "user@example.com"
@@ -169,9 +167,12 @@ class TestRedactValue:
 # redact_headers
 # ---------------------------------------------------------------------------
 
+
 class TestRedactHeaders:
     def test_authorization_header(self):
-        result = redact_headers({"Authorization": "Bearer token123", "Content-Type": "application/json"})
+        result = redact_headers(
+            {"Authorization": "Bearer token123", "Content-Type": "application/json"}
+        )
         assert result["Authorization"] == "***REDACTED***"
         assert result["Content-Type"] == "application/json"
 
@@ -193,6 +194,7 @@ class TestRedactHeaders:
 # redact_query
 # ---------------------------------------------------------------------------
 
+
 class TestRedactQuery:
     def test_token_param(self):
         result = redact_query({"token": "abc123", "page": "1"})
@@ -212,6 +214,7 @@ class TestRedactQuery:
 # ---------------------------------------------------------------------------
 # redact_url_userinfo
 # ---------------------------------------------------------------------------
+
 
 class TestRedactUrlUserinfo:
     def test_basic_auth_in_url(self):
@@ -233,6 +236,7 @@ class TestRedactUrlUserinfo:
 # ---------------------------------------------------------------------------
 # SafeError
 # ---------------------------------------------------------------------------
+
 
 class TestSafeError:
     def test_from_exception(self):

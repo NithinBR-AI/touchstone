@@ -13,7 +13,12 @@ from core.models import GhostState, State
 
 
 def _col(type_: str, nullable: bool = True, default: str | None = None) -> dict:
-    return {"type": type_, "nullable": nullable, "primary_key": False, "default": default}
+    return {
+        "type": type_,
+        "nullable": nullable,
+        "primary_key": False,
+        "default": default,
+    }
 
 
 BASE = {
@@ -84,15 +89,24 @@ def test_column_missing_nullable_is_review_required() -> None:
 def test_column_missing_not_null_no_default_is_blocked() -> None:
     actual = copy.deepcopy(BASE)
     del actual["users"]["columns"]["email"]
-    d = _by_kind(SchemaComparator().compare(_state(BASE), _state(actual)), "COLUMN_MISSING")[0]
+    d = _by_kind(
+        SchemaComparator().compare(_state(BASE), _state(actual)), "COLUMN_MISSING"
+    )[0]
     assert d.state == GhostState.BLOCKED
 
 
 def test_destructive_kinds_are_blocked() -> None:
     actual = copy.deepcopy(BASE)
     actual["users"]["columns"]["legacy"] = _col("text")
-    actual["users"]["indexes"]["ix_users_legacy"] = {"columns": ["legacy"], "unique": False}
-    actual["orphans"] = {"columns": {"id": _col("integer", False)}, "indexes": {}, "primary_key": ["id"]}
+    actual["users"]["indexes"]["ix_users_legacy"] = {
+        "columns": ["legacy"],
+        "unique": False,
+    }
+    actual["orphans"] = {
+        "columns": {"id": _col("integer", False)},
+        "indexes": {},
+        "primary_key": ["id"],
+    }
     diffs = SchemaComparator().compare(_state(BASE), _state(actual))
     kinds = {d.kind for d in diffs}
     assert {"COLUMN_EXTRA", "INDEX_EXTRA", "TABLE_EXTRA"} <= kinds
@@ -108,7 +122,10 @@ def test_table_missing_is_blocked() -> None:
 
 def test_unique_actual_indexes_are_not_reported_extra() -> None:
     actual = copy.deepcopy(BASE)
-    actual["users"]["indexes"]["users_email_key"] = {"columns": ["email"], "unique": True}
+    actual["users"]["indexes"]["users_email_key"] = {
+        "columns": ["email"],
+        "unique": True,
+    }
     actual["users"]["indexes"]["users_pkey"] = {"columns": ["id"], "unique": True}
     assert SchemaComparator().compare(_state(BASE), _state(actual)) == []
 

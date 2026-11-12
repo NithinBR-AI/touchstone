@@ -9,10 +9,10 @@ deterministically, proposes one fix per difference via one LLM agent,
 validates each proposal against an operation matrix, and applies approved
 fixes with evidence-backed re-verification.
 
-Two applications mandatory; third optional:
+Three applications shipped:
 - Schema Drift (database) — MANDATORY
 - Contract Observer (API) — MANDATORY
-- Dependency Auditor (deps) — OPTIONAL, cut if behind
+- The Poltergeist (cache) — SHIPPED (third app, Redis key-existence drift)
 
 ## Submission scope
 
@@ -23,13 +23,13 @@ MANDATORY:
 
 OPTIONAL — skip if behind; list under "What's next":
 - Req 3 (discovery — demo uses cases.json)
-- Req 12, 13, 14, 22, 34 (Dependency domain)
+- Req 12, 13, 14, 22, 34 (Dependency domain — CUT, replaced by Poltergeist)
 - Req 16 (MCP grounding)
 - Req 35 (Kiro hooks)
 - Req 36 (CI)
 - Req 37 items 2–3 (deployment polish)
 
-Two-app submission with mandatory intact is fully eligible.
+Three-app submission shipped. Two mandatory apps satisfy Skeleton Crew.
 
 ## Requirements
 
@@ -306,8 +306,8 @@ on same file as SUPERSEDED. UI dims them. `/apply` refuses SUPERSEDED.
    ```js
    const RENDERERS = {
      database: renderDatabaseEvidence,
-     api: renderApiEvidence,
-     deps: renderDepsEvidence,
+     api:      renderApiEvidence,
+     cache:    renderCacheEvidence,
    };
 ```
 
@@ -320,7 +320,7 @@ evidence body inside a card.
 Requirement 30: Applications in Separate Folders
 
 1. apps/schema-drift/ and apps/contract-observer/ — both MANDATORY.
-2. apps/dependency-auditor/ — OPTIONAL, cuttable.
+2. apps/poltergeist/ — SHIPPED third app (cache domain).
 3. Each app folder contains: main.py (~30 lines importing core + domain
    adapter), config.json, README.md, run.sh.
 4. main.py imports from core/ and its domain adapter. No domain logic.

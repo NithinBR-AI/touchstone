@@ -36,15 +36,42 @@ EXPECTED_FILES = {
 # that no *project* package outside core/ is imported).
 ALLOWED_STDLIB_PREFIXES = {
     "__future__",
-    "abc", "ast", "collections", "contextlib", "dataclasses", "datetime",
-    "enum", "functools", "hashlib", "importlib", "inspect", "io", "itertools",
-    "json", "logging", "math", "operator", "os", "pathlib", "re", "shutil",
-    "stat", "string", "sys", "textwrap", "time", "tomllib", "traceback",
-    "typing", "typing_extensions", "uuid", "warnings",
+    "abc",
+    "ast",
+    "collections",
+    "contextlib",
+    "dataclasses",
+    "datetime",
+    "enum",
+    "functools",
+    "hashlib",
+    "importlib",
+    "inspect",
+    "io",
+    "itertools",
+    "json",
+    "logging",
+    "math",
+    "operator",
+    "os",
+    "pathlib",
+    "re",
+    "shutil",
+    "stat",
+    "string",
+    "sys",
+    "textwrap",
+    "time",
+    "tomllib",
+    "traceback",
+    "typing",
+    "typing_extensions",
+    "uuid",
+    "warnings",
     # pinned third-party allowed inside core:
     "sqlglot",
     "packaging",
-    "yaml",     # pyyaml — used in FilePatchValidator
+    "yaml",  # pyyaml — used in FilePatchValidator
 }
 
 PROJECT_PACKAGES = {"adapters", "agents", "apps", "scripts", "inputs", "demo"}
@@ -53,6 +80,7 @@ PROJECT_PACKAGES = {"adapters", "agents", "apps", "scripts", "inputs", "demo"}
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestSkeletonFileCount:
     def test_exact_seven_files(self) -> None:
@@ -65,7 +93,8 @@ class TestSkeletonFileCount:
 
     def test_no_subdirectories(self) -> None:
         subdirs = [
-            p for p in CORE_DIR.iterdir()
+            p
+            for p in CORE_DIR.iterdir()
             if p.is_dir() and not p.name.startswith(".") and p.name != "__pycache__"
         ]
         assert subdirs == [], f"core/ must not contain subdirectories: {subdirs}"
@@ -90,9 +119,10 @@ class TestCoreImportRule:
                             "outside core/ — forbidden"
                         )
 
-        assert not violations, (
-            f"core/{filename} contains forbidden imports:\n"
-            + "\n".join(f"  {v}" for v in violations)
+        assert (
+            not violations
+        ), f"core/{filename} contains forbidden imports:\n" + "\n".join(
+            f"  {v}" for v in violations
         )
 
     @staticmethod
@@ -107,7 +137,10 @@ class TestCoreImportRule:
 class TestCoreImportable:
     """All 7 core modules must be importable without error."""
 
-    @pytest.mark.parametrize("module", [f"core.{f[:-3]}" for f in sorted(EXPECTED_FILES) if f != "__init__.py"])
+    @pytest.mark.parametrize(
+        "module",
+        [f"core.{f[:-3]}" for f in sorted(EXPECTED_FILES) if f != "__init__.py"],
+    )
     def test_importable(self, module: str) -> None:
         try:
             importlib.import_module(module)

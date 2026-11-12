@@ -48,8 +48,10 @@ def _make(
 ) -> Difference:
     ctx = dict(context)
     ctx["policy"] = policy
-    ctx["safe_fix"] = False   # API drift always requires a PR — never auto-apply
-    state = GhostState.BLOCKED if policy == POLICY_BLOCKED else GhostState.REVIEW_REQUIRED
+    ctx["safe_fix"] = False  # API drift always requires a PR — never auto-apply
+    state = (
+        GhostState.BLOCKED if policy == POLICY_BLOCKED else GhostState.REVIEW_REQUIRED
+    )
     return Difference(
         signature=_signature(kind, target, key_ctx or {}),
         domain=DOMAIN,
@@ -179,8 +181,13 @@ class ContractComparator:
                     f"{target_prefix}.{field}",
                     "MEDIUM",
                     POLICY_BLOCKED,
-                    {"path": path, "method": method, "status": status, "field": field,
-                     "description": f"Field '{field}' returned by API but not in spec"},
+                    {
+                        "path": path,
+                        "method": method,
+                        "status": status,
+                        "field": field,
+                        "description": f"Field '{field}' returned by API but not in spec",
+                    },
                     {"path": path, "field": field},
                 )
             )
@@ -193,8 +200,13 @@ class ContractComparator:
                     f"{target_prefix}.{field}",
                     "HIGH",
                     POLICY_REVIEW,
-                    {"path": path, "method": method, "status": status, "field": field,
-                     "description": f"Field '{field}' in spec but not returned by API"},
+                    {
+                        "path": path,
+                        "method": method,
+                        "status": status,
+                        "field": field,
+                        "description": f"Field '{field}' in spec but not returned by API",
+                    },
                     {"path": path, "field": field},
                 )
             )

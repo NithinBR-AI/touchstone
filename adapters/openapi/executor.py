@@ -32,7 +32,6 @@ import yaml
 
 from core.models import Difference, ExecutionResult
 
-
 _GH_API = "https://api.github.com"
 
 
@@ -52,7 +51,9 @@ def _gh_request(
     }
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310 — github.com only
+    with urllib.request.urlopen(
+        req, timeout=20
+    ) as resp:  # noqa: S310 — github.com only
         return json.loads(resp.read().decode())
 
 
@@ -132,13 +133,13 @@ def _add_field_to_api(main_py: str, path: str, field: str) -> str:
     in_target_func = False
     in_return_block = False
     brace_depth = 0
-    last_dict_field_idx = -1   # index in result[] of the last "key": value line
+    last_dict_field_idx = -1  # index in result[] of the last "key": value line
 
     for line in lines:
         stripped = line.strip()
 
         # Detect the decorator for this path
-        if (f'@app.get("{path}")' in line or f"@app.get('{path}')" in line):
+        if f'@app.get("{path}")' in line or f"@app.get('{path}')" in line:
             in_target_func = True
             in_return_block = False
             brace_depth = 0
@@ -147,11 +148,21 @@ def _add_field_to_api(main_py: str, path: str, field: str) -> str:
         if in_target_func:
             if not in_return_block:
                 # Look for start of a return dict/list
-                if re.match(r'\s*return\s+[\[\{]', line):
+                if re.match(r"\s*return\s+[\[\{]", line):
                     in_return_block = True
-                    brace_depth = line.count("{") + line.count("[") - line.count("}") - line.count("]")
+                    brace_depth = (
+                        line.count("{")
+                        + line.count("[")
+                        - line.count("}")
+                        - line.count("]")
+                    )
             else:
-                brace_depth += line.count("{") + line.count("[") - line.count("}") - line.count("]")
+                brace_depth += (
+                    line.count("{")
+                    + line.count("[")
+                    - line.count("}")
+                    - line.count("]")
+                )
                 # Track last "key": value line in the dict
                 if re.match(r'\s*"[^"]+"\s*:', stripped):
                     last_dict_field_idx = len(result)
@@ -162,8 +173,10 @@ def _add_field_to_api(main_py: str, path: str, field: str) -> str:
                         ref_line = result[last_dict_field_idx]
                         indent = " " * (len(ref_line) - len(ref_line.lstrip()))
                         result.append(line)  # add closing line first
-                        result.insert(last_dict_field_idx + 1,
-                                      f'{indent}"{field}": None,  # TODO: implement\n')
+                        result.insert(
+                            last_dict_field_idx + 1,
+                            f'{indent}"{field}": None,  # TODO: implement\n',
+                        )
                         in_target_func = False
                         in_return_block = False
                         last_dict_field_idx = -1
@@ -224,7 +237,10 @@ class ContractExecutor:
 
             new_spec = _add_field_to_spec(spec_text, path, field)
             self._commit_file(
-                "openapi.yaml", new_spec, file_sha, branch,
+                "openapi.yaml",
+                new_spec,
+                file_sha,
+                branch,
                 message=f"fix: document {field} field on {path}",
             )
 
@@ -243,14 +259,22 @@ class ContractExecutor:
             pr_url = pr.get("html_url", "")
             return ExecutionResult(
                 success=True,
-                applied_change={"pr_url": pr_url, "branch": branch, "field": field, "file": "openapi.yaml"},
+                applied_change={
+                    "pr_url": pr_url,
+                    "branch": branch,
+                    "field": field,
+                    "file": "openapi.yaml",
+                },
                 raw_output=f"PR opened: {pr_url}",
             )
 
         except urllib.error.HTTPError as exc:
             body = exc.read().decode() if hasattr(exc, "read") else ""
-            return ExecutionResult(success=False, applied_change=None,
-                                   error=f"GitHub API error {exc.code}: {body[:200]}")
+            return ExecutionResult(
+                success=False,
+                applied_change=None,
+                error=f"GitHub API error {exc.code}: {body[:200]}",
+            )
         except Exception as exc:
             return ExecutionResult(success=False, applied_change=None, error=str(exc))
 
@@ -267,7 +291,10 @@ class ContractExecutor:
 
             new_main = _add_field_to_api(main_text, path, field)
             self._commit_file(
-                "main.py", new_main, file_sha, branch,
+                "main.py",
+                new_main,
+                file_sha,
+                branch,
                 message=f"fix: return {field} field on {path}",
             )
 
@@ -286,14 +313,22 @@ class ContractExecutor:
             pr_url = pr.get("html_url", "")
             return ExecutionResult(
                 success=True,
-                applied_change={"pr_url": pr_url, "branch": branch, "field": field, "file": "main.py"},
+                applied_change={
+                    "pr_url": pr_url,
+                    "branch": branch,
+                    "field": field,
+                    "file": "main.py",
+                },
                 raw_output=f"PR opened: {pr_url}",
             )
 
         except urllib.error.HTTPError as exc:
             body = exc.read().decode() if hasattr(exc, "read") else ""
-            return ExecutionResult(success=False, applied_change=None,
-                                   error=f"GitHub API error {exc.code}: {body[:200]}")
+            return ExecutionResult(
+                success=False,
+                applied_change=None,
+                error=f"GitHub API error {exc.code}: {body[:200]}",
+            )
         except Exception as exc:
             return ExecutionResult(success=False, applied_change=None, error=str(exc))
 

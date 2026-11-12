@@ -100,35 +100,25 @@ class TestAlterTableTypeAST:
 
     def test_alter_table_is_alter(self) -> None:
         # In sqlglot 30.29.0 the node is exp.Alter, NOT exp.AlterTable
-        stmt = parse_one(
-            "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
-        )
+        stmt = parse_one("ALTER TABLE users ALTER COLUMN email TYPE varchar(255)")
         assert isinstance(stmt, exp.Alter)
 
     def test_table_name_extractable(self) -> None:
-        stmt = parse_one(
-            "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
-        )
+        stmt = parse_one("ALTER TABLE users ALTER COLUMN email TYPE varchar(255)")
         assert "users" in str(stmt.this).lower()
 
     def test_alter_column_node_present(self) -> None:
-        stmt = parse_one(
-            "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
-        )
+        stmt = parse_one("ALTER TABLE users ALTER COLUMN email TYPE varchar(255)")
         alter_col = stmt.find(exp.AlterColumn)
         assert alter_col is not None
 
     def test_column_name_extractable(self) -> None:
-        stmt = parse_one(
-            "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
-        )
+        stmt = parse_one("ALTER TABLE users ALTER COLUMN email TYPE varchar(255)")
         alter_col = stmt.find(exp.AlterColumn)
         assert "email" in str(alter_col.this).lower()
 
     def test_dtype_present(self) -> None:
-        stmt = parse_one(
-            "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
-        )
+        stmt = parse_one("ALTER TABLE users ALTER COLUMN email TYPE varchar(255)")
         alter_col = stmt.find(exp.AlterColumn)
         dtype = alter_col.args.get("dtype")
         assert dtype is not None
@@ -141,9 +131,7 @@ class TestAlterTableTypeAST:
         assert alter_col.args.get("using") is not None
 
     def test_no_using_on_plain(self) -> None:
-        stmt = parse_one(
-            "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
-        )
+        stmt = parse_one("ALTER TABLE users ALTER COLUMN email TYPE varchar(255)")
         alter_col = stmt.find(exp.AlterColumn)
         assert not alter_col.args.get("using")
 
@@ -153,7 +141,8 @@ class TestMultiStatementRejection:
 
     def test_two_statements_parsed_as_two(self) -> None:
         stmts = [
-            s for s in sqlglot.parse(
+            s
+            for s in sqlglot.parse(
                 "CREATE INDEX a ON t (x); CREATE INDEX b ON t (y)",
                 dialect="postgres",
             )
@@ -163,9 +152,8 @@ class TestMultiStatementRejection:
 
     def test_single_statement_parsed_as_one(self) -> None:
         stmts = [
-            s for s in sqlglot.parse(
-                "CREATE INDEX a ON t (x)", dialect="postgres"
-            )
+            s
+            for s in sqlglot.parse("CREATE INDEX a ON t (x)", dialect="postgres")
             if s is not None
         ]
         assert len(stmts) == 1

@@ -42,38 +42,38 @@ class UnsupportedTypeError(ValueError):
 
 _SIMPLE_MAP: dict[str, str] = {
     # Integer family
-    "int":       "integer",
-    "int4":      "integer",
-    "integer":   "integer",
-    "int2":      "smallint",
-    "smallint":  "smallint",
-    "int8":      "bigint",
-    "bigint":    "bigint",
+    "int": "integer",
+    "int4": "integer",
+    "integer": "integer",
+    "int2": "smallint",
+    "smallint": "smallint",
+    "int8": "bigint",
+    "bigint": "bigint",
     # Float family
-    "float4":            "real",
-    "real":              "real",
-    "float8":            "double precision",
-    "double precision":  "double precision",
-    "float":             "double precision",
+    "float4": "real",
+    "real": "real",
+    "float8": "double precision",
+    "double precision": "double precision",
+    "float": "double precision",
     # Text family
-    "text":    "text",
-    "clob":    "text",
+    "text": "text",
+    "clob": "text",
     # Boolean
-    "bool":    "boolean",
+    "bool": "boolean",
     "boolean": "boolean",
     # Binary
     "bytea": "bytea",
     # Date/time
-    "date":      "date",
-    "time":      "time",
+    "date": "date",
+    "time": "time",
     "timestamp": "timestamp",
-    "timestamptz":                    "timestamptz",
-    "timestamp with time zone":       "timestamptz",
-    "timestamp without time zone":    "timestamp",
-    "time with time zone":            "time",
-    "time without time zone":         "time",
+    "timestamptz": "timestamptz",
+    "timestamp with time zone": "timestamptz",
+    "timestamp without time zone": "timestamp",
+    "time with time zone": "time",
+    "time without time zone": "time",
     # JSON
-    "json":  "json",
+    "json": "json",
     "jsonb": "jsonb",
     # UUID
     "uuid": "uuid",
@@ -83,19 +83,43 @@ _SIMPLE_MAP: dict[str, str] = {
 }
 
 # Types we explicitly refuse (serial aliases etc.)
-_UNSUPPORTED: frozenset[str] = frozenset({
-    "serial", "bigserial", "smallserial",
-    "money", "bit", "bit varying", "xml", "oid",
-    "point", "line", "lseg", "box", "path", "polygon", "circle",
-    "cidr", "inet", "macaddr", "macaddr8",
-    "tsvector", "tsquery",
-    "int4range", "int8range", "numrange", "tsrange", "tstzrange", "daterange",
-})
+_UNSUPPORTED: frozenset[str] = frozenset(
+    {
+        "serial",
+        "bigserial",
+        "smallserial",
+        "money",
+        "bit",
+        "bit varying",
+        "xml",
+        "oid",
+        "point",
+        "line",
+        "lseg",
+        "box",
+        "path",
+        "polygon",
+        "circle",
+        "cidr",
+        "inet",
+        "macaddr",
+        "macaddr8",
+        "tsvector",
+        "tsquery",
+        "int4range",
+        "int8range",
+        "numrange",
+        "tsrange",
+        "tstzrange",
+        "daterange",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def normalize_pg_type(pg_type: str) -> str:
     """
@@ -223,6 +247,7 @@ def normalize_sqlalchemy_type(sa_type: object) -> str:
 # ---------------------------------------------------------------------------
 # Internal normalisation
 # ---------------------------------------------------------------------------
+
 
 def _normalise_raw(raw: str) -> str:
     """Normalise a raw type string to canonical form."""

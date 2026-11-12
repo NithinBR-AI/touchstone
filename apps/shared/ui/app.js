@@ -20,7 +20,7 @@ let _applying = new Set();
 const RENDERERS = {
   database: renderDatabaseEvidence,
   api:      renderApiEvidence,
-  deps:     renderDepsEvidence,
+  cache:    renderCacheEvidence,
 };
 
 function pill(k, v, cls = "") {
@@ -85,13 +85,20 @@ function renderApiEvidence(diff, resolution) {
   return pillsHtml + patchHtml;
 }
 
-function renderDepsEvidence(diff, resolution) {
+function renderCacheEvidence(diff, resolution) {
   const ctx = diff.context || {};
   const pills = [];
 
-  if (ctx.declared_version)  pills.push(pill("declared",  esc(ctx.declared_version),  "pill-code"));
-  if (ctx.installed_version) pills.push(pill("installed", esc(ctx.installed_version), "pill-warn"));
-  if (ctx.specifier)         pills.push(pill("specifier", esc(ctx.specifier)));
+  pills.push(pill("key", esc(ctx.key || diff.target), "pill-code"));
+  pills.push(severityPill(diff.severity));
+
+  if (diff.kind === "KEY_MISSING") {
+    pills.push(pill("declared", "yes", "pill-code"));
+    pills.push(pill("in redis",  "no",  "pill-warn"));
+  } else if (diff.kind === "UNDECLARED_KEY") {
+    pills.push(pill("declared", "no",  "pill-warn"));
+    pills.push(pill("in redis",  "yes", "pill-code"));
+  }
 
   return `<div class="card-pills">${pills.join("")}</div>`;
 }
@@ -121,10 +128,10 @@ const RITUAL_STAGES = {
     "Comparing declarations…",
     "Ghosts identified",
   ],
-  deps: [
-    "Unsealing the manifest…",
-    "Checking installed versions…",
-    "Measuring the drift…",
+  cache: [
+    "Rattling the cache…",
+    "Fetching declared keys…",
+    "Probing Redis…",
     "Ghosts identified",
   ],
 };
@@ -200,10 +207,10 @@ const IDLE_COPY = {
     tombstone: "R.I.P. undeclared contract drift",
     sub: "probe your API contracts",
   },
-  deps: {
-    headline: "The shadows hold nothing… yet.",
-    tombstone: "R.I.P. unpinned dependencies",
-    sub: "audit your dependencies",
+  cache: {
+    headline: "The cache is undisturbed… for now.",
+    tombstone: "R.I.P. undeclared cache ghosts",
+    sub: "scan your Redis cache",
   },
 };
 
@@ -223,6 +230,9 @@ const KIND_LABELS = {
   FIELD_MISSING:      "Vanished Field",
   PATH_MISSING:       "Lost Endpoint",
   PATH_EXTRA:         "Phantom Endpoint",
+  // Cache domain
+  KEY_MISSING:        "Missing Cache Specter",
+  UNDECLARED_KEY:     "Phantom Cache Key",
 };
 
 function ghostKind(kind) {
@@ -260,8 +270,8 @@ function renderCard(diff, report, index) {
   const evidenceHtml = renderer(diff, resolution);
 
   // API domain: executor handles everything — Apply is always available for non-resolved ghosts
-  const canApply    = (state === "PENDING" || state === "REVIEW_REQUIRED" || state === "BLOCKED") &&
-    (CONFIG.domain === "api" || (resolution && resolution.proposed_change));
+  const canApply    = (state === "PENDING" || state === "REVIEW_REQUIRED" || (state === "BLOCKED" && CONFIG.domain !== "cache")) &&
+    (CONFIG.domain === "api" || CONFIG.domain === "cache" || (resolution && resolution.proposed_change));
   const canRollback = (state === "RESOLVED" || state === "STILL_PRESENT") && CONFIG.domain !== "database";
 
   const applyBtn = canApply
@@ -586,7 +596,13 @@ function handleCardClick(e) {
   const action = btn.dataset.action;
   const id     = btn.dataset.id;
 
-  if (action === "apply")    showApplyDialog(id);
+  if (action === "apply") {
+    if (CONFIG.domain === "api" || CONFIG.domain === "cache") {
+      apiApply(id);
+    } else {
+      showApplyDialog(id);
+    }
+  }
   if (action === "rollback") apiRollback(id);
 }
 
