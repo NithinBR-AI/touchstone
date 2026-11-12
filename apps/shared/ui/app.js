@@ -72,17 +72,23 @@ function renderApiEvidence(diff, resolution) {
   if (ctx.method) pills.push(pill("method", esc(ctx.method), "pill-code"));
   if (ctx.path)   pills.push(pill("path",   esc(ctx.path),   "pill-code"));
   if (ctx.field)  pills.push(pill("field",  esc(ctx.field),  "pill-code"));
-  if (ctx.status_code) pills.push(pill("status", String(ctx.status_code), "pill-warn"));
+  // comparator stores status as ctx.status (e.g. "200"), not ctx.status_code
+  if (ctx.status) pills.push(pill("status", esc(String(ctx.status)), "pill-warn"));
+  if (diff.kind === "TYPE_MISMATCH") {
+    if (ctx.actual_type)   pills.push(pill("live",     esc(ctx.actual_type),   "pill-warn"));
+    if (ctx.declared_type) pills.push(pill("declared", esc(ctx.declared_type), "pill-code"));
+  }
   pills.push(severityPill(diff.severity));
 
   const pillsHtml = `<div class="card-pills">${pills.join("")}</div>`;
 
-  let patchHtml = "";
-  if (resolution && resolution.proposed_change && resolution.proposed_change.forward_patch) {
-    patchHtml = `<pre class="card-sql">${esc(resolution.proposed_change.forward_patch)}</pre>`;
+  // For PATH_MISSING / PATH_EXTRA there is no field — show the description instead
+  let descHtml = "";
+  if (!ctx.field && ctx.description) {
+    descHtml = `<div class="card-desc">${esc(ctx.description)}</div>`;
   }
 
-  return pillsHtml + patchHtml;
+  return pillsHtml + descHtml;
 }
 
 function renderCacheEvidence(diff, resolution) {
@@ -314,7 +320,12 @@ function renderCard(diff, report, index) {
 
 // ----- health bar --------------------------------------------
 function updateHealthBar(report) {
-  if (!report || !report.differences) return;
+  if (!report || !report.differences) {
+    // Clear exorcise-all button when no report
+    const exBtn = document.getElementById("btn-exorcise-all");
+    if (exBtn) exBtn.style.display = "none";
+    return;
+  }
 
   const diffs = report.differences;
   const total      = diffs.length;
@@ -336,6 +347,22 @@ function updateHealthBar(report) {
       (review     ? ` &middot; <span>${review}</span> review`      : "") +
       (blocked    ? ` &middot; <span>${blocked}</span> blocked`    : "") +
       (superseded ? ` &middot; <span>${superseded}</span> superseded` : "");
+  }
+
+  // Show "Exorcise All" for API domain when there are batchable diffs
+  const exBtn = document.getElementById("btn-exorcise-all");
+  if (exBtn && CONFIG.domain === "api") {
+    const batchable = diffs.filter(d =>
+      (d.kind === "FIELD_EXTRA" || d.kind === "FIELD_MISSING") &&
+      d.state !== "RESOLVED" && d.state !== "SUPERSEDED" && d.state !== "EXECUTION_FAILED"
+    );
+    if (batchable.length > 0) {
+      exBtn.style.display = "";
+      exBtn.textContent = `⚡ Exorcise All (${batchable.length} contract drifts → 1 PR)`;
+      exBtn.dataset.sampleId = batchable[0].id;
+    } else {
+      exBtn.style.display = "none";
+    }
   }
 
   if (fillEl) {
@@ -469,8 +496,23 @@ async function apiCompare() {
 }
 
 async function apiApply(diffId) {
-  _applying.add(diffId);
-  renderCards(REPORT);  // show spinner
+  // For api batch kinds, mark all same-kind diffs as applying so spinners show on all cards
+  const triggerDiff = REPORT && REPORT.differences.find(d => d.id === diffId);
+  const isBatchKind = triggerDiff && CONFIG.domain === "api" &&
+    (triggerDiff.kind === "FIELD_EXTRA" || triggerDiff.kind === "FIELD_MISSING");
+
+  let batchIds = [diffId];
+  if (isBatchKind && REPORT) {
+    batchIds = REPORT.differences
+      .filter(d =>
+        d.kind === triggerDiff.kind &&
+        d.state !== "RESOLVED" && d.state !== "SUPERSEDED" && d.state !== "EXECUTION_FAILED"
+      )
+      .map(d => d.id);
+  }
+
+  batchIds.forEach(id => _applying.add(id));
+  renderCards(REPORT);  // show spinner on all batch cards
 
   try {
     const res = await fetch("/apply", {
@@ -483,12 +525,32 @@ async function apiApply(diffId) {
 
     const outcome = await res.json();
 
-    // patch the in-memory report with the new state
+    // Patch in-memory report — for batch, re-fetch full report to get all updated states
     if (REPORT) {
-      const diff = REPORT.differences.find(d => d.id === diffId);
-      if (diff) diff.state = outcome.state;
-      if (!REPORT.outcomes) REPORT.outcomes = {};
-      REPORT.outcomes[diffId] = outcome;
+      if (isBatchKind && REPORT && REPORT.id) {
+        // Re-fetch report to get all batch outcomes from server
+        try {
+          const rr = await fetch(`/report/${REPORT.id}`);
+          if (rr.ok) REPORT = await rr.json();
+        } catch (_) {
+          // fallback: patch just the trigger diff
+          const diff = REPORT.differences.find(d => d.id === diffId);
+          if (diff) diff.state = outcome.state;
+          if (!REPORT.outcomes) REPORT.outcomes = {};
+          REPORT.outcomes[diffId] = outcome;
+        }
+      } else {
+        const diff = REPORT.differences.find(d => d.id === diffId);
+        if (diff) diff.state = outcome.state;
+        if (!REPORT.outcomes) REPORT.outcomes = {};
+        REPORT.outcomes[diffId] = outcome;
+      }
+    }
+
+    // Show PR popup BEFORE re-render — outcome is from the server response
+    if (isBatchKind && outcome.state === "RESOLVED") {
+      const prUrl = outcome.execution && outcome.execution.file_path_ref;
+      showPrPopup(prUrl, triggerDiff.kind, batchIds.length);
     }
 
     renderCards(REPORT);
@@ -496,7 +558,8 @@ async function apiApply(diffId) {
   } catch (err) {
     showError(err.message);
   } finally {
-    _applying.delete(diffId);
+    batchIds.forEach(id => _applying.delete(id));
+    renderCards(REPORT);
   }
 }
 
@@ -551,6 +614,67 @@ function showApplyDialog(diffId) {
   document.getElementById("dialog-backdrop").classList.remove("hidden");
 }
 
+function showPrPopup(prUrl, kind, count) {
+  const kindLabel = kind === "FIELD_EXTRA" ? "Shadow Field" : "Vanished Field";
+  const file = kind === "FIELD_EXTRA" ? "openapi.yaml" : "main.py";
+
+  // Remove any existing popup first
+  document.querySelectorAll(".pr-popup").forEach(el => el.remove());
+
+  const popup = document.createElement("div");
+  popup.className = "pr-popup";
+  popup.style.cssText = "position:fixed;bottom:32px;right:32px;z-index:9999;max-width:380px;background:#1a1a2e;border:1px solid #f97316;border-radius:10px;padding:20px 24px;box-shadow:0 0 32px rgba(0,0,0,.8),0 0 12px #f97316;";
+  popup.innerHTML = `
+    <div style="font-family:monospace;font-size:13px;font-weight:600;color:#4ade80;margin-bottom:10px;">
+      ✝ ${count} ${kindLabel} ghost${count > 1 ? "s" : ""} bound
+    </div>
+    <div style="font-size:12px;color:#aaa;line-height:1.6;margin-bottom:14px;">
+      A PR has been raised on <strong style="color:#f97316">${file}</strong>.<br>
+      Once it is merged, the ghost${count > 1 ? "s" : ""} will be laid to rest.
+    </div>
+    ${prUrl ? `<a style="display:inline-block;margin-right:8px;margin-bottom:8px;padding:6px 12px;background:#f97316;color:#000;border-radius:6px;text-decoration:none;font-size:11px;font-family:monospace;" href="${esc(prUrl)}" target="_blank" rel="noopener">View PR ↗</a>` : ""}
+    <button style="padding:6px 12px;background:transparent;border:1px solid #555;color:#aaa;border-radius:6px;cursor:pointer;font-size:11px;font-family:monospace;" id="pr-popup-dismiss">Dismiss</button>`;
+
+  document.body.appendChild(popup);
+  document.getElementById("pr-popup-dismiss").onclick = () => popup.remove();
+  setTimeout(() => { if (popup.parentNode) popup.remove(); }, 12000);
+}
+
+function showBatchApplyDialog(diffId, diff) {
+  if (!REPORT) return;
+
+  // Count all non-resolved diffs of the same kind
+  const samekind = REPORT.differences.filter(d =>
+    d.kind === diff.kind &&
+    d.state !== "RESOLVED" && d.state !== "SUPERSEDED" && d.state !== "EXECUTION_FAILED"
+  );
+
+  const kindLabel = ghostKind(diff.kind);
+  const file = diff.kind === "FIELD_EXTRA" ? "openapi.yaml" : "main.py";
+  const fields = samekind
+    .map(d => d.context && d.context.field ? `${d.context.field} (${d.context.path || "?"})` : d.target)
+    .join(", ");
+
+  document.getElementById("dialog-title").textContent = `Exorcise ${samekind.length} ${kindLabel} drift${samekind.length > 1 ? "s" : ""}`;
+  document.getElementById("dialog-change").textContent =
+    `${samekind.length} field${samekind.length > 1 ? "s" : ""} will be patched in ${file}:\n${fields}`;
+  document.getElementById("dialog-warn").textContent =
+    samekind.length > 1
+      ? `⚠  Fixing these separately would create conflicting PRs on the same file. All ${samekind.length} drifts will be fixed together in a single GitHub PR.`
+      : `⚠  A GitHub PR will be opened on ${file} to fix this drift.`;
+
+  const confirmBtn = document.getElementById("dialog-confirm");
+  confirmBtn.textContent = samekind.length > 1
+    ? `Fix All ${samekind.length} — 1 PR`
+    : "Fix — Open PR";
+  confirmBtn.onclick = () => {
+    hideDialog();
+    apiApply(diffId);
+  };
+
+  document.getElementById("dialog-backdrop").classList.remove("hidden");
+}
+
 function hideDialog() {
   document.getElementById("dialog-backdrop").classList.add("hidden");
 }
@@ -597,8 +721,16 @@ function handleCardClick(e) {
   const id     = btn.dataset.id;
 
   if (action === "apply") {
-    if (CONFIG.domain === "api" || CONFIG.domain === "cache") {
+    if (CONFIG.domain === "cache") {
       apiApply(id);
+    } else if (CONFIG.domain === "api") {
+      const diff = REPORT && REPORT.differences.find(d => d.id === id);
+      const isBatchKind = diff && (diff.kind === "FIELD_EXTRA" || diff.kind === "FIELD_MISSING");
+      if (isBatchKind) {
+        showBatchApplyDialog(id, diff);
+      } else {
+        apiApply(id);
+      }
     } else {
       showApplyDialog(id);
     }

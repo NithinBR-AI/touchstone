@@ -54,7 +54,7 @@ Probes a live API and compares each response against the declared `openapi.yaml`
 
 The live API is deployed at **[touchstone-demo-target-repo.onrender.com](https://touchstone-demo-target-repo.onrender.com)** (Render free tier — warms up automatically on first Hunt Ghosts). The declared spec lives in **[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**.
 
-Judges can click **Exorcise** to open a GitHub PR proposing the spec change.
+Judges can click **Exorcise** on any drift card to open a GitHub PR. All drifts of the same kind are batched into **one PR per file** — Shadow Fields → one PR on `openapi.yaml`, Vanished Fields → one PR on `main.py`. Clicking Exorcise on an already-open touchstone PR returns the existing PR (idempotent). **Reset Demo** closes all open touchstone PRs so the next run produces a fresh PR.
 
 ---
 
@@ -85,7 +85,9 @@ core/
 │                       SQLChange, FilePatch, ExecutionResult,
 │                       VerificationResult, ApplyOutcome, RollbackEvent, Report
 ├── validator.py     ← domain validator (operation matrix + safety rules)
-├── cache.py         ← JSON-backed resolution cache; provenance-verified lookup
+├── cache.py         ← JSON-backed resolution cache; written only after apply+verify succeeds;
+│                       keyed by Difference.signature with cache_version, validator_contract,
+│                       prompt_hash; 7-day TTL (expires_at); null proposals never cached
 ├── persistence.py   ← atomic report store (temp + fsync + rename)
 └── orchestrator.py  ← state machine: run() / apply_one() / rollback()
 ```
@@ -231,8 +233,8 @@ Scaffolds the full application plumbing when a new domain comparator is created:
 **`comparator-test`** (trigger: `FileSave` on `adapters/**/comparator.py`)  
 Runs the matching comparator test suite on every save. Resolves the test file from the domain folder name — `adapters/postgres/comparator.py` triggers `tests/test_comparator_pg.py`.
 
-**`demo-case-cache`** (trigger: `FileSave` on `fixtures/cases.json`)  
-Invokes the resolver against each new demo case and writes the resolution into `agents/cache.json` keyed by `Difference.signature`. Each entry includes `cache_version`, `validator_contract`, and `prompt_hash`.
+**`demo-case-cache`** (trigger: `FileSave` on `fixtures/cases.json`)
+Invokes the resolver against each new demo case. Cache entries are written organically by `apply_one()` after verification succeeds — not by this hook directly. The hook seeds demo drift so the apply+verify path can populate the cache naturally.
 
 ### MCP — Context7
 

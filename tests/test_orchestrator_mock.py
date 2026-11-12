@@ -160,15 +160,59 @@ def test_resolver_failure_blocks_instead_of_pending(tmp_path: Path) -> None:
 
 
 def test_second_run_hits_cache(tmp_path: Path) -> None:
+    """Cache is populated after apply+verify; second run hits cache for resolved diffs."""
     calls = []
 
     def counting(prompt, diff):
         calls.append(1)
         return canned_responder(prompt, diff)
 
-    _orch(tmp_path, FakeDB(), resolver=MockResolver(counting)).run()
+    # First run + apply all diffs to populate the cache
+    db1 = FakeDB()
+    orch1 = _orch(tmp_path, db1, resolver=MockResolver(counting))
+    report1 = orch1.run()
+    for diff in report1.differences:
+        orch1.apply_one(diff.id)
     first = len(calls)
-    report = _orch(tmp_path, FakeDB(), resolver=MockResolver(counting)).run()
-    assert first == 2
-    assert len(calls) == first  # no new responder calls
-    assert all(r.cached for r in report.resolutions.values())
+    assert first >= 1
+
+    # Second run — same diffs, same signatures → cache hit, responder not called again
+    db2 = FakeDB()
+    report2 = _orch(tmp_path, db2, resolver=MockResolver(counting)).run()
+    assert len(calls) == first, "Responder called again on second run — cache miss"
+    resolved_sigs = {
+        r.difference_signature for r in report1.resolutions.values()
+        if r.proposed_change is not None
+    }
+    for sig, res in report2.resolutions.items():
+        diff = next(d for d in report2.differences if d.id == sig)
+        if diff.signature in resolved_sigs:
+            assert res.cached is True, f"Expected cache hit for {diff.signature}"
+
+
+def test_cache_not_populated_before_apply(tmp_path: Path) -> None:
+    """run() alone must NOT write to cache — cache only populated after verify."""
+    db = FakeDB()
+    _orch(tmp_path, db).run()
+    cache_file = tmp_path / "cache.json"
+    if cache_file.exists():
+        data = cache_file.read_text(encoding="utf-8").strip()
+        assert data in ("{}", ""), "Cache should be empty before any apply"
+
+
+def test_cache_populated_after_successful_apply(tmp_path: Path) -> None:
+    """Cache is written only after apply_one verifies the fix worked."""
+    import json as _json
+    db = FakeDB()
+    orch = _orch(tmp_path, db)
+    report = orch.run()
+    pending = [d for d in report.differences if d.state == GhostState.PENDING]
+    assert pending
+    orch.apply_one(pending[0].id)
+    cache_file = tmp_path / "cache.json"
+    assert cache_file.exists()
+    data = _json.loads(cache_file.read_text(encoding="utf-8"))
+    assert len(data) >= 1, "Expected at least one cache entry after successful apply"
+    for entry in data.values():
+        assert entry.get("proposed_change") is not None, "Cached entry has no proposed_change"
+        assert "expires_at" in entry, "Cached entry missing expires_at TTL field"

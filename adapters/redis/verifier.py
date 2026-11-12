@@ -6,11 +6,13 @@ the drift is resolved.
 
 For KEY_MISSING: key should now appear in Redis.
 For UNDECLARED_KEY: not auto-fixable, verification is a no-op.
+
+Signature follows core.interfaces.Verifier: verify(target, difference).
 """
 
 from __future__ import annotations
 
-from core.models import Difference, ExecutionResult, VerificationResult
+from core.models import ComparisonTarget, Difference, VerificationResult
 
 from .actual import load_from_url as load_actual
 
@@ -23,42 +25,35 @@ class CacheVerifier:
 
     def verify(
         self,
-        diff: Difference,
-        result: ExecutionResult,
+        target: ComparisonTarget,
+        difference: Difference,
     ) -> VerificationResult:
-        if not result.success:
-            return VerificationResult(
-                difference_id=diff.id,
-                resolved=False,
-                evidence={"reason": "execution failed"},
-            )
-
         try:
             actual_state = load_actual(self.cache_status_url)
         except Exception as exc:
             return VerificationResult(
-                difference_id=diff.id,
+                difference_id=difference.id,
                 resolved=False,
                 evidence={"reason": "fetch_failed", "error": type(exc).__name__},
             )
 
         actual_keys: set[str] = set(actual_state.data.get("keys", []))
 
-        if diff.kind == "KEY_MISSING":
-            resolved = diff.target in actual_keys
+        if difference.kind == "KEY_MISSING":
+            resolved = difference.target in actual_keys
             return VerificationResult(
-                difference_id=diff.id,
+                difference_id=difference.id,
                 resolved=resolved,
                 evidence={
-                    "key": diff.target,
+                    "key": difference.target,
                     "found_in_redis": resolved,
                     "all_keys": sorted(actual_keys),
                 },
             )
 
-        # UNDECLARED_KEY — not auto-fixable, trust execution result
+        # UNDECLARED_KEY — not auto-fixable, requires manual review
         return VerificationResult(
-            difference_id=diff.id,
+            difference_id=difference.id,
             resolved=False,
-            evidence={"kind": diff.kind, "requires_manual_review": True},
+            evidence={"kind": difference.kind, "requires_manual_review": True},
         )

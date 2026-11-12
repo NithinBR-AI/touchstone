@@ -65,7 +65,7 @@ def _api_base_url() -> str:
 
 class _InputSource:
     def targets(self):
-        return [ComparisonTarget("api", _active_repo["id"])]
+        return [ComparisonTarget("api", _active_repo["id"], context={"openapi_url": _active_repo.get("openapi_url", "")})]
 
 
 class _SourceAdapter:
@@ -77,27 +77,25 @@ class _SourceAdapter:
         return probe_actual(_api_base_url(), intended_state.data.get("paths", {}))
 
 
-_executor = ContractExecutor(
-    repo=_active_repo.get("github", ""),
-    token=GITHUB_TOKEN,
-)
+def _build_orch(repo: dict) -> Orchestrator:
+    executor = ContractExecutor(repo=repo.get("github", ""), token=GITHUB_TOKEN)
+    return Orchestrator(
+        input_source=_InputSource(),
+        source_adapter=_SourceAdapter(),
+        comparator=ContractComparator(),
+        resolver=MockResolver(),
+        executor=executor,
+        verifier=ContractVerifier(),
+        validator_sql=SQLValidator(),
+        validator_file=FilePatchValidator(REPO),
+        persistence=Persistence(_reports_dir),
+        cache=Cache(_cache_path),
+        domain="api",
+        principal="demo-sandbox",
+    )
 
-_verifier = ContractVerifier()
 
-orch = Orchestrator(
-    input_source=_InputSource(),
-    source_adapter=_SourceAdapter(),
-    comparator=ContractComparator(),
-    resolver=MockResolver(),
-    executor=_executor,
-    verifier=_verifier,
-    validator_sql=SQLValidator(),
-    validator_file=FilePatchValidator(REPO),
-    persistence=Persistence(_reports_dir),
-    cache=Cache(_cache_path),
-    domain="api",
-    principal="demo-sandbox",
-)
+orch = _build_orch(_active_repo)
 
 _latest_report_id: str | None = None
 
@@ -149,17 +147,13 @@ def list_repos():
 
 @app.post("/repos/select")
 def select_repo(req: SelectRepoRequest):
-    global _active_repo, _latest_report_id, _executor
+    global _active_repo, _latest_report_id, orch
     repo = next((r for r in REPOS if r["id"] == req.repo_id), None)
     if repo is None:
         raise HTTPException(404, detail=f"repo '{req.repo_id}' not found")
     _active_repo = repo
     _latest_report_id = None
-    # Rebuild executor with new repo
-    _executor = ContractExecutor(
-        repo=repo.get("github", ""),
-        token=GITHUB_TOKEN,
-    )
+    orch = _build_orch(repo)
     return {"active": _active_repo["id"]}
 
 
@@ -191,39 +185,71 @@ def compare():
 
 @app.post("/apply")
 def apply(req: ApplyRequest):
+    """
+    Batch apply: when user clicks Exorcise on any diff, we batch ALL
+    actionable diffs of the same kind into one PR — no per-field conflicts.
+    """
     report = orch._report
     if report is None:
         raise HTTPException(503, detail="No report — run /compare first")
-    diff = next((d for d in report.differences if d.id == req.difference_id), None)
-    if diff is None:
+
+    trigger_diff = next((d for d in report.differences if d.id == req.difference_id), None)
+    if trigger_diff is None:
         raise HTTPException(404, detail="difference not found")
 
-    # API domain: executor opens a GitHub PR — bypass orchestrator resolver gate
-    # (all API diffs have safe_fix=False so apply_one would refuse them)
+    # Collect all non-resolved diffs of the same kind to batch into one PR
+    same_kind_diffs = [
+        d for d in report.differences
+        if d.kind == trigger_diff.kind and d.state not in (
+            GhostState.RESOLVED, GhostState.SUPERSEDED, GhostState.EXECUTION_FAILED
+        )
+    ]
+
     try:
-        execution = _executor.execute(diff)
+        executions = orch.executor.execute_batch(same_kind_diffs)
     except Exception as exc:
-        diff.state = GhostState.EXECUTION_FAILED
+        trigger_diff.state = GhostState.EXECUTION_FAILED
+        outcome = ApplyOutcome(
+            difference_id=req.difference_id,
+            state=GhostState.EXECUTION_FAILED,
+        )
+        report.outcomes[req.difference_id] = outcome
         orch.persistence.save(report)
-        return {
-            "difference_id": req.difference_id,
-            "state": "EXECUTION_FAILED",
-            "error": str(exc),
-        }
+        return {"difference_id": req.difference_id, "state": "EXECUTION_FAILED", "error": str(exc)}
 
-    if execution.success:
-        diff.state = GhostState.RESOLVED
-    else:
-        diff.state = GhostState.EXECUTION_FAILED
+    diff_map = {d.id: d for d in same_kind_diffs}
+    response_outcome = None
+    for execution in executions:
+        diff = diff_map.get(execution.difference_id)
+        if diff is None:
+            continue
+        diff.state = GhostState.RESOLVED if execution.success else GhostState.EXECUTION_FAILED
+        outcome = ApplyOutcome(
+            difference_id=execution.difference_id,
+            state=diff.state,
+            execution=execution,
+        )
+        report.outcomes[execution.difference_id] = outcome
+        if execution.difference_id == req.difference_id:
+            response_outcome = outcome
 
-    outcome = ApplyOutcome(
-        difference_id=req.difference_id,
-        state=diff.state,
-        execution=execution,
-    )
-    report.outcomes[req.difference_id] = outcome
     orch.persistence.save(report)
-    return _serialise_outcome(outcome)
+
+    if response_outcome is None:
+        response_outcome = ApplyOutcome(
+            difference_id=req.difference_id,
+            state=trigger_diff.state,
+        )
+    return _serialise_outcome(response_outcome)
+
+
+@app.post("/demo/reset")
+def demo_reset():
+    """Close all open touchstone/* PRs on GitHub and reset the report."""
+    global _latest_report_id
+    closed = orch.executor.close_touchstone_prs()
+    _latest_report_id = None
+    return {"reset": True, "prs_closed": closed}
 
 
 @app.post("/rollback")

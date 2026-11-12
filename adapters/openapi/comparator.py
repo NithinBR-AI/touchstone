@@ -63,18 +63,26 @@ def _make(
     )
 
 
+def _flatten_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap array schema to its item schema."""
+    if schema.get("type") == "array":
+        return schema.get("items", {})
+    return schema
+
+
 def _actual_props(schema: dict[str, Any]) -> set[str]:
     """Return property names from an inferred schema."""
-    if schema.get("type") == "array":
-        return _actual_props(schema.get("items", {}))
-    return set(schema.get("properties", {}).keys())
+    return set(_flatten_schema(schema).get("properties", {}).keys())
 
 
 def _intended_props(schema: dict[str, Any]) -> set[str]:
     """Return property names from a spec schema."""
-    if schema.get("type") == "array":
-        return _intended_props(schema.get("items", {}))
-    return set(schema.get("properties", {}).keys())
+    return set(_flatten_schema(schema).get("properties", {}).keys())
+
+
+def _schema_props(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return the properties dict from a (possibly array-wrapped) schema."""
+    return _flatten_schema(schema).get("properties", {})
 
 
 class ContractComparator:
@@ -210,5 +218,31 @@ class ContractComparator:
                     {"path": path, "field": field},
                 )
             )
+
+        # Fields present in both — check for type mismatch
+        i_props_dict = _schema_props(i_schema)
+        a_props_dict = _schema_props(a_schema)
+        for field in sorted(i_props & a_props):
+            declared_type = i_props_dict.get(field, {}).get("type", "")
+            actual_type = a_props_dict.get(field, {}).get("type", "")
+            if declared_type and actual_type and declared_type != actual_type:
+                diffs.append(
+                    _make(
+                        "TYPE_MISMATCH",
+                        f"{target_prefix}.{field}",
+                        "MEDIUM",
+                        POLICY_REVIEW,
+                        {
+                            "path": path,
+                            "method": method,
+                            "status": status,
+                            "field": field,
+                            "declared_type": declared_type,
+                            "actual_type": actual_type,
+                            "description": f"Field '{field}' declared as '{declared_type}' but API returns '{actual_type}'",
+                        },
+                        {"path": path, "field": field, "declared_type": declared_type},
+                    )
+                )
 
         return diffs

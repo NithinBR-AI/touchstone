@@ -74,23 +74,27 @@ class _SourceAdapter:
         return load_actual_schema(DB_URL)
 
 
-orch = Orchestrator(
-    input_source=_InputSource(),
-    source_adapter=_SourceAdapter(),
-    comparator=SchemaComparator(),
-    resolver=MockResolver(),
-    executor=SQLExecutor(DB_URL),
-    verifier=SchemaVerifier(
-        load_intended=lambda: load_intended_schema(_models_path()),
-        load_actual=lambda: load_actual_schema(DB_URL),
-    ),
-    validator_sql=SQLValidator(),
-    validator_file=FilePatchValidator(REPO),
-    persistence=Persistence(_reports_dir),
-    cache=Cache(_cache_path),
-    domain="database",
-    principal="demo-sandbox",
-)
+def _build_orch() -> Orchestrator:
+    return Orchestrator(
+        input_source=_InputSource(),
+        source_adapter=_SourceAdapter(),
+        comparator=SchemaComparator(),
+        resolver=MockResolver(),
+        executor=SQLExecutor(DB_URL),
+        verifier=SchemaVerifier(
+            load_intended=lambda: load_intended_schema(_models_path()),
+            load_actual=lambda: load_actual_schema(DB_URL),
+        ),
+        validator_sql=SQLValidator(),
+        validator_file=FilePatchValidator(REPO),
+        persistence=Persistence(_reports_dir),
+        cache=Cache(_cache_path),
+        domain="database",
+        principal="demo-sandbox",
+    )
+
+
+orch = _build_orch()
 
 _latest_report_id: str | None = None
 
@@ -137,13 +141,14 @@ def list_repos():
 
 @app.post("/repos/select")
 def select_repo(req: SelectRepoRequest):
-    global _active_repo, _latest_report_id
+    global _active_repo, _latest_report_id, orch
     repo = next((r for r in REPOS if r["id"] == req.repo_id), None)
     if repo is None:
         raise HTTPException(404, detail=f"repo '{req.repo_id}' not found")
     _active_repo = repo
     invalidate_remote()  # force re-fetch of models on next compare
-    _latest_report_id = None  # clear stale report from previous repo
+    _latest_report_id = None
+    orch = _build_orch()
     return {"active": _active_repo["id"]}
 
 

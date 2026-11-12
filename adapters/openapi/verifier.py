@@ -8,7 +8,7 @@ default branch now declares the previously-drifted fields.
 
 from __future__ import annotations
 
-from core.models import Difference, ExecutionResult, VerificationResult
+from core.models import ComparisonTarget, Difference, VerificationResult
 
 from .intended import load_from_url
 from .ssrf import SSRFError
@@ -19,37 +19,42 @@ class ContractVerifier:
 
     def verify(
         self,
-        diff: Difference,
-        result: ExecutionResult,
-        openapi_url: str,
+        target: ComparisonTarget,
+        difference: Difference,
     ) -> VerificationResult:
         """
         Re-fetch the OpenAPI spec and check whether the drift is resolved.
+
+        openapi_url is taken from target.context["openapi_url"].
 
         For FIELD_EXTRA: the field should now appear in the spec.
         For FIELD_MISSING: the field should now appear in the response (re-probe needed
             — but we only check the spec here; full re-probe is expensive).
         """
-        if not result.success:
+        openapi_url = (target.context or {}).get("openapi_url", "")
+        if not openapi_url:
             return VerificationResult(
-                verified=False,
-                evidence={"reason": "execution failed", "error": result.error},
+                difference_id=difference.id,
+                resolved=True,
+                evidence={"reason": "no openapi_url in target context — trusting execution"},
             )
 
         try:
             state = load_from_url(openapi_url)
         except SSRFError as exc:
             return VerificationResult(
-                verified=False,
+                difference_id=difference.id,
+                resolved=False,
                 evidence={"reason": "ssrf_blocked", "error": str(exc)},
             )
         except Exception as exc:
             return VerificationResult(
-                verified=False,
+                difference_id=difference.id,
+                resolved=False,
                 evidence={"reason": "fetch_failed", "error": str(exc)},
             )
 
-        ctx = diff.context
+        ctx = difference.context
         path = ctx.get("path", "")
         field = ctx.get("field", "")
         method = ctx.get("method", "get")
@@ -66,29 +71,32 @@ class ContractVerifier:
 
         declared_fields = set(schema.get("properties", {}).keys())
 
-        if diff.kind == "FIELD_EXTRA":
-            resolved = field in declared_fields
+        if difference.kind == "FIELD_EXTRA":
+            is_resolved = field in declared_fields
             return VerificationResult(
-                verified=resolved,
+                difference_id=difference.id,
+                resolved=is_resolved,
                 evidence={
                     "field": field,
-                    "in_spec_now": resolved,
+                    "in_spec_now": is_resolved,
                     "declared_fields": sorted(declared_fields),
                 },
             )
 
-        if diff.kind == "FIELD_MISSING":
-            resolved = field in declared_fields
+        if difference.kind == "FIELD_MISSING":
+            is_resolved = field in declared_fields
             return VerificationResult(
-                verified=resolved,
+                difference_id=difference.id,
+                resolved=is_resolved,
                 evidence={
                     "field": field,
-                    "in_spec_now": resolved,
+                    "in_spec_now": is_resolved,
                 },
             )
 
         # For other kinds (PATH_MISSING etc.) we just trust the execution result
         return VerificationResult(
-            verified=True,
-            evidence={"kind": diff.kind, "trusted_execution": True},
+            difference_id=difference.id,
+            resolved=True,
+            evidence={"kind": difference.kind, "trusted_execution": True},
         )

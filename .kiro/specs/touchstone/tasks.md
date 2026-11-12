@@ -42,11 +42,14 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       (10 tests: DB refused, file resolved/still_present/state_unchanged, external edit,
        executor exception, double rollback, event recorded/fields; all pass)
 - [x] 1.0e Repeatability and caching — test_cache_reproducibility.py
-      (8 tests: second run hits cache / responder not called, resolutions marked cached=True,
+      (11 tests: second run hits cache / responder not called, resolutions marked cached=True,
        semantic outcomes match by signature, UUIDs differ between runs,
-       cache entries carry cache_version+validator_contract+prompt_hash,
+       cache entries carry cache_version+validator_contract+prompt_hash+expires_at,
        lookup skips on version mismatch, lookup skips on prompt_hash mismatch,
-       first run not marked cached; all pass)
+       first run not marked cached, cache empty before apply, TTL expiry forces fresh call,
+       null proposed_change never cached; all pass)
+      Cache written ONLY after apply+verify (verification.resolved=True). Never at resolve
+      time. Never for null proposals. 7-day TTL enforced.
 - [x] 1.0f Resolver in loop — mock resolver works end-to-end (fake infra; real Postgres pending task 2.19)
       (test_orchestrator_mock.py: 5 tests — full loop resolves both ghosts, apply without effect
        is STILL_PRESENT, second apply refused, resolver failure blocks, second run hits cache;
@@ -465,7 +468,11 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       confirm whether Bedrock path is implemented, else add it; temperature 0,
       prompt SHA-256 on every Resolution)
   - _Req 15, 16_
-- [ ] 7.2 agents/cache.json — pre-recorded resolutions for all demo cases
+- [x] 7.2 ~~agents/cache.json — pre-recorded resolutions for all demo cases~~
+      SUPERSEDED: cache is now populated organically by apply_one() after
+      verification.resolved=True (never at resolve time, never for null proposals).
+      7-day TTL (expires_at). Null proposed_change entries never written.
+      Existing stale entries cleared. test_cache_reproducibility.py covers all cases.
   - _Req 15, 33_
 - [ ] 7.3 inputs/repo_discovery.py, manual_form.py
   - _Req 3, 4_

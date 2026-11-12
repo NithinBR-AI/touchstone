@@ -20,8 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from adapters.redis.actual import _CLIENT
-from adapters.redis.actual import load_from_url as load_actual
+from adapters.redis.actual import _CLIENT, load_from_url as load_actual
 from adapters.redis.comparator import CacheComparator
 from adapters.redis.executor import CacheExecutor
 from adapters.redis.intended import load_from_url as load_intended
@@ -84,23 +83,24 @@ class _SourceAdapter:
         return load_actual(_cache_status_url())
 
 
-_executor = CacheExecutor(cache_warm_url=_active_repo.get("cache_warm_url", ""))
-_verifier = CacheVerifier(cache_status_url=_active_repo.get("cache_status_url", ""))
+def _build_orch() -> Orchestrator:
+    return Orchestrator(
+        input_source=_InputSource(),
+        source_adapter=_SourceAdapter(),
+        comparator=CacheComparator(),
+        resolver=MockResolver(),
+        executor=CacheExecutor(cache_warm_url=_active_repo.get("cache_warm_url", "")),
+        verifier=CacheVerifier(cache_status_url=_active_repo.get("cache_status_url", "")),
+        validator_sql=SQLValidator(),
+        validator_file=FilePatchValidator(REPO),
+        persistence=Persistence(_reports_dir),
+        cache=Cache(_cache_path),
+        domain="cache",
+        principal="demo-sandbox",
+    )
 
-orch = Orchestrator(
-    input_source=_InputSource(),
-    source_adapter=_SourceAdapter(),
-    comparator=CacheComparator(),
-    resolver=MockResolver(),
-    executor=_executor,
-    verifier=_verifier,
-    validator_sql=SQLValidator(),
-    validator_file=FilePatchValidator(REPO),
-    persistence=Persistence(_reports_dir),
-    cache=Cache(_cache_path),
-    domain="cache",
-    principal="demo-sandbox",
-)
+
+orch = _build_orch()
 
 _latest_report_id: str | None = None
 
@@ -147,14 +147,13 @@ def list_repos():
 
 @app.post("/repos/select")
 def select_repo(req: SelectRepoRequest):
-    global _active_repo, _latest_report_id, _executor, _verifier
+    global _active_repo, _latest_report_id, orch
     repo = next((r for r in REPOS if r["id"] == req.repo_id), None)
     if repo is None:
         raise HTTPException(404, detail=f"repo '{req.repo_id}' not found")
     _active_repo = repo
     _latest_report_id = None
-    _executor = CacheExecutor(cache_warm_url=repo.get("cache_warm_url", ""))
-    _verifier = CacheVerifier(cache_status_url=repo.get("cache_status_url", ""))
+    orch = _build_orch()
     return {"active": _active_repo["id"]}
 
 
@@ -202,9 +201,14 @@ def apply(req: ApplyRequest):
         raise HTTPException(404, detail="difference not found")
 
     try:
-        execution = _executor.execute(diff)
+        execution = orch.executor.execute(diff)
     except Exception as exc:
         diff.state = GhostState.EXECUTION_FAILED
+        outcome = ApplyOutcome(
+            difference_id=req.difference_id,
+            state=GhostState.EXECUTION_FAILED,
+        )
+        report.outcomes[req.difference_id] = outcome
         orch.persistence.save(report)
         return {
             "difference_id": req.difference_id,
@@ -214,7 +218,8 @@ def apply(req: ApplyRequest):
 
     if execution.success:
         diff.state = GhostState.RESOLVED
-        verification = _verifier.verify(diff, execution)
+        target = orch._find_target(diff)
+        verification = orch.verifier.verify(target, diff)
         if not verification.resolved:
             diff.state = GhostState.STILL_PRESENT
     else:

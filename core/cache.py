@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,9 @@ CACHE_VERSION = "1.0.0"
 
 # Increment when the validator's operation matrix or binding rules change.
 VALIDATOR_CONTRACT = "v1"
+
+# Verified fixes expire after this many days — forces a fresh LLM call after expiry.
+CACHE_TTL_DAYS = 7
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +57,8 @@ class Cache:
     ) -> Resolution | None:
         """
         Return a cached Resolution if the signature matches AND
-        cache_version, validator_contract, and prompt_hash all match.
+        cache_version, validator_contract, prompt_hash all match AND
+        the entry has not expired.
         Returns None on any mismatch (falls through to live call).
         """
         entry = self._data.get(signature)
@@ -66,6 +70,14 @@ class Cache:
             return None
         if entry.get("prompt_hash") != prompt_hash:
             return None
+        # TTL check — expired entries fall through to a fresh LLM call
+        expires_at_raw = entry.get("expires_at")
+        if expires_at_raw:
+            expires_at = datetime.fromisoformat(expires_at_raw)
+            if datetime.now(timezone.utc) > expires_at:
+                del self._data[signature]
+                self._save()
+                return None
         return self._deserialise(entry)
 
     def put(self, resolution: Resolution) -> None:
@@ -125,6 +137,7 @@ class Cache:
             "prompt_hash": resolution.prompt_hash,
             "cached": True,
             "resolved_at": resolution.resolved_at.isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS)).isoformat(),
         }
 
     def _deserialise(self, entry: dict[str, Any]) -> Resolution:

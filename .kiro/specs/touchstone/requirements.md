@@ -154,9 +154,10 @@ enumeration. No pip subprocess.
 - JSON schema validated. Retry once on failure, then `blocked`.
 - Only Difference and context sent.
 - Cache keyed by signature with `cache_version`, `validator_contract`,
-  `prompt_hash`.
+  `prompt_hash`, `expires_at` (7-day TTL). Never caches null proposed_change.
+  Written only after apply+verify (verification.resolved=True), not at resolve time.
 - `safe_fix=False` or `DECLARED_VERSION_MISMATCH` → review-only Resolution.
-- Demo mode serves cached resolutions marked `CACHED`.
+- Demo mode: cache is populated organically by apply+verify; hits marked `CACHED`.
 - **The resolver SHALL be operational in week 1** — mock returning canned
   resolutions acceptable for week-1 schema-drift path.
 
@@ -355,10 +356,13 @@ success or execution failure. Red <40, amber 40–79, green 80+.
 
 Requirement 33: Cache Version and Provenance
 
-Cache entries carry cache_version, validator_contract, prompt_hash.
-Lookup skips on mismatch. Skipped entries fall through to live.
-test_cache_reproducibility.py runs twice, asserts semantic outcomes match
-by signature, UUIDs differ, second run marked cached=True.
+Cache entries carry cache_version, validator_contract, prompt_hash, expires_at (7-day TTL).
+Lookup skips on any field mismatch or expired TTL. Skipped entries fall through to a live call.
+Cache is written ONLY after apply_one() verifies the fix (verification.resolved=True) —
+never at resolve time, never for null proposed_change.
+test_cache_reproducibility.py runs twice, asserts semantic outcomes match by signature,
+UUIDs differ between runs, second run marked cached=True, TTL expiry forces fresh call,
+null proposals never cached, cache empty before any apply.
 
 Requirement 34: Dependency Verifier Evidence (optional)
 

@@ -190,6 +190,8 @@ class Orchestrator:
 
         if verification.resolved:
             diff.state = GhostState.RESOLVED
+            # Cache only verified fixes — this is the proof the fix actually worked
+            self.cache.put(resolution)
             # Supersede other PENDING diffs on the same file
             if isinstance(resolution.proposed_change, type(None)) is False:
                 from core.models import FilePatch
@@ -288,7 +290,7 @@ class Orchestrator:
         )
         prompt_hash = hashlib.sha256(prompt_data.encode()).hexdigest()
 
-        # Cache lookup
+        # Cache lookup — only verified fixes are stored (see apply_one)
         cached = self.cache.get(diff.signature, prompt_hash)
         if cached:
             cached.difference_id = diff.id
@@ -298,7 +300,7 @@ class Orchestrator:
             resolution.cache_version = CACHE_VERSION
             resolution.validator_contract = VALIDATOR_CONTRACT
             resolution.prompt_hash = prompt_hash
-            self.cache.put(resolution)
+            # Do NOT cache here — cache only after apply+verify succeeds (apply_one)
 
         # Validate — sets diff.state if not valid
         if resolution.proposed_change is not None:

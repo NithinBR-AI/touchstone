@@ -153,3 +153,116 @@ def test_different_keys_have_different_signatures() -> None:
     actual = _actual([])
     diffs = CacheComparator().compare(intended, actual)
     assert diffs[0].signature != diffs[1].signature
+
+
+# ---------------------------------------------------------------------------
+# Verifier signature regression (issue #2)
+# ---------------------------------------------------------------------------
+
+
+def test_verifier_accepts_comparison_target() -> None:
+    """CacheVerifier.verify() must accept (ComparisonTarget, Difference) — not (diff, result)."""
+    from unittest.mock import MagicMock, patch
+
+    from adapters.redis.verifier import CacheVerifier
+    from core.models import ComparisonTarget, GhostState
+
+    verifier = CacheVerifier(cache_status_url="http://example.com/cache/status")
+
+    diff = _by_kind(
+        CacheComparator().compare(
+            _intended({"users:list": {"description": ""}}), _actual([])
+        ),
+        "KEY_MISSING",
+    )[0]
+
+    target = ComparisonTarget(domain="cache", target=diff.target)
+
+    mock_state = MagicMock()
+    mock_state.data = {"keys": ["users:list"]}  # key is now present — resolved
+
+    with patch("adapters.redis.verifier.load_actual", return_value=mock_state):
+        result = verifier.verify(target, diff)
+
+    assert result.resolved is True
+    assert result.evidence["key"] == "users:list"
+
+
+def test_verifier_reports_still_present_when_key_absent() -> None:
+    """Verifier returns resolved=False when key still missing after warm."""
+    from unittest.mock import MagicMock, patch
+
+    from adapters.redis.verifier import CacheVerifier
+    from core.models import ComparisonTarget
+
+    verifier = CacheVerifier(cache_status_url="http://example.com/cache/status")
+
+    diff = _by_kind(
+        CacheComparator().compare(
+            _intended({"products:list": {"description": ""}}), _actual([])
+        ),
+        "KEY_MISSING",
+    )[0]
+
+    target = ComparisonTarget(domain="cache", target=diff.target)
+
+    mock_state = MagicMock()
+    mock_state.data = {"keys": []}  # still empty
+
+    with patch("adapters.redis.verifier.load_actual", return_value=mock_state):
+        result = verifier.verify(target, diff)
+
+    assert result.resolved is False
+
+
+# ---------------------------------------------------------------------------
+# Executor uses diff.target as key (issue #3 regression)
+# ---------------------------------------------------------------------------
+
+
+def test_executor_uses_diff_target_as_key() -> None:
+    """CacheExecutor must POST to warm URL with key=diff.target."""
+    from unittest.mock import MagicMock, patch
+
+    from adapters.redis.executor import CacheExecutor
+
+    diff = _by_kind(
+        CacheComparator().compare(
+            _intended({"orders:list": {"description": ""}}), _actual([])
+        ),
+        "KEY_MISSING",
+    )[0]
+
+    executor = CacheExecutor(cache_warm_url="http://example.com/cache/warm")
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch("adapters.redis.executor._CLIENT") as mock_client:
+        mock_client.post.return_value = mock_resp
+        result = executor.execute(diff)
+
+    assert result.success is True
+    call_url = mock_client.post.call_args[0][0]
+    assert "orders%3Alist" in call_url or "orders:list" in call_url
+
+
+def test_executor_refuses_undeclared_key() -> None:
+    """CacheExecutor must refuse UNDECLARED_KEY without making a network call."""
+    from unittest.mock import patch
+
+    from adapters.redis.executor import CacheExecutor
+
+    diff = _by_kind(
+        CacheComparator().compare(_intended({}), _actual(["debug:dump"])),
+        "UNDECLARED_KEY",
+    )[0]
+
+    executor = CacheExecutor(cache_warm_url="http://example.com/cache/warm")
+
+    with patch("adapters.redis.executor._CLIENT") as mock_client:
+        result = executor.execute(diff)
+        mock_client.post.assert_not_called()
+
+    assert result.success is False
+    assert result.error_code == "NOT_AUTO_FIXABLE"
