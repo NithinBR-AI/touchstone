@@ -30,15 +30,12 @@ from __future__ import annotations
 import base64
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 import uuid
 from typing import Any
 
-import yaml
-
-from core.models import Difference, ExecutionResult
+from core.models import Difference, ExecutionResult, FilePatch, Resolution
 
 _GH_API = "https://api.github.com"
 
@@ -59,7 +56,9 @@ def _gh_request(
     }
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310 — github.com only
+    with urllib.request.urlopen(
+        req, timeout=20
+    ) as resp:  # noqa: S310 — github.com only
         return json.loads(resp.read().decode())
 
 
@@ -68,115 +67,6 @@ def _get_file(repo: str, path: str, ref: str = "main") -> tuple[str, str]:
     info = _gh_request(f"/repos/{repo}/contents/{path}?ref={ref}")
     content = base64.b64decode(info["content"]).decode()
     return content, info["sha"]
-
-
-def _add_field_to_spec(spec_text: str, path: str, field: str) -> str:
-    """
-    Add *field* (type: string) to the response schema for GET *path* 200.
-    Works on the YAML text level using PyYAML round-trip via dict.
-    """
-    spec = yaml.safe_load(spec_text)
-    components = spec.get("components", {})
-    schemas = components.get("schemas", {})
-
-    path_item = spec.get("paths", {}).get(path, {})
-    op = path_item.get("get", {})
-    resp = op.get("responses", {}).get("200", {})
-    content = resp.get("content", {}).get("application/json", {})
-    schema_ref = content.get("schema", {})
-
-    target_schema = None
-    schema_name = None
-    if "$ref" in schema_ref:
-        m = re.match(r"#/components/schemas/(\w+)", schema_ref["$ref"])
-        if m:
-            schema_name = m.group(1)
-            candidate = schemas.get(schema_name, {})
-            if candidate.get("type") == "array":
-                item_ref = candidate.get("items", {}).get("$ref", "")
-                m2 = re.match(r"#/components/schemas/(\w+)", item_ref)
-                if m2:
-                    schema_name = m2.group(1)
-            target_schema = schemas.get(schema_name)
-
-    if target_schema is None:
-        if "properties" not in schema_ref:
-            schema_ref["properties"] = {}
-        schema_ref["properties"][field] = {"type": "string"}
-    else:
-        if "properties" not in target_schema:
-            target_schema["properties"] = {}
-        if field not in target_schema["properties"]:
-            target_schema["properties"][field] = {"type": "string"}
-        schemas[schema_name] = target_schema
-        spec["components"]["schemas"] = schemas
-
-    return yaml.dump(spec, default_flow_style=False, allow_unicode=True)
-
-
-def _add_field_to_api(main_py: str, path: str, field: str) -> str:
-    """
-    Patch a FastAPI main.py to return *field* in the response dict for GET *path*.
-    Finds the @app.get decorator, scans forward to the first return dict block,
-    and inserts the field after the last existing key-value pair.
-    Falls back to appending a TODO comment if no suitable insertion point is found.
-    """
-    if field in main_py:
-        return main_py
-
-    lines = main_py.splitlines(keepends=True)
-    result = []
-    in_target_func = False
-    in_return_block = False
-    brace_depth = 0
-    last_dict_field_idx = -1
-
-    for line in lines:
-        stripped = line.strip()
-
-        if f'@app.get("{path}")' in line or f"@app.get('{path}')" in line:
-            in_target_func = True
-            in_return_block = False
-            brace_depth = 0
-            last_dict_field_idx = -1
-
-        if in_target_func:
-            if not in_return_block:
-                if re.match(r"\s*return\s+[\[\{]", line):
-                    in_return_block = True
-                    brace_depth = (
-                        line.count("{") + line.count("[")
-                        - line.count("}") - line.count("]")
-                    )
-            else:
-                brace_depth += (
-                    line.count("{") + line.count("[")
-                    - line.count("}") - line.count("]")
-                )
-                if re.match(r'\s*"[^"]+"\s*:', stripped):
-                    last_dict_field_idx = len(result)
-                if brace_depth <= 0:
-                    if last_dict_field_idx >= 0:
-                        ref_line = result[last_dict_field_idx]
-                        indent = " " * (len(ref_line) - len(ref_line.lstrip()))
-                        result.append(line)
-                        result.insert(
-                            last_dict_field_idx + 1,
-                            f'{indent}"{field}": None,  # TODO: implement\n',
-                        )
-                        in_target_func = False
-                        in_return_block = False
-                        last_dict_field_idx = -1
-                        continue
-                    in_return_block = False
-                    in_target_func = False
-
-        result.append(line)
-
-    patched = "".join(result)
-    if patched == main_py:
-        patched += f"\n# TODO: add '{field}' field to GET {path} response\n"
-    return patched
 
 
 class ContractExecutor:
@@ -203,66 +93,90 @@ class ContractExecutor:
     # Public API
     # ------------------------------------------------------------------
 
-    def execute(self, diff: Difference) -> ExecutionResult:
-        """Single-diff execute — delegates to execute_batch with just this diff."""
-        return self.execute_batch([diff])[0]
+    def execute(
+        self, resolution: Resolution, difference: Difference
+    ) -> ExecutionResult:
+        """Single-diff execute — delegates to execute_batch with resolution context."""
+        return self.execute_batch([(resolution, difference)])[0]
 
-    def execute_batch(self, diffs: list[Difference]) -> list[ExecutionResult]:
+    def execute_batch(
+        self, items: list[tuple[Resolution, Difference]]
+    ) -> list[ExecutionResult]:
         """
-        Batch execute: group diffs by kind, produce one PR per kind.
-        Returns one ExecutionResult per input diff (all in a kind share the PR URL).
+        Batch execute: group by kind, produce one PR per kind using LLM-generated content.
+        Returns one ExecutionResult per input item (all in a kind share the PR URL).
         """
-        if not diffs:
+        if not items:
             return []
 
         if not self.token:
             return [
                 ExecutionResult(
-                    difference_id=d.id,
+                    difference_id=diff.id,
                     success=False,
                     error_code="NO_TOKEN",
                     error_summary="GITHUB_TOKEN not set; cannot open PR",
                 )
-                for d in diffs
+                for _, diff in items
             ]
 
-        field_extra  = [d for d in diffs if d.kind == "FIELD_EXTRA"]
-        field_missing = [d for d in diffs if d.kind == "FIELD_MISSING"]
-        other        = [d for d in diffs if d.kind not in ("FIELD_EXTRA", "FIELD_MISSING")]
+        field_extra = [(r, d) for r, d in items if d.kind == "FIELD_EXTRA"]
+        field_missing = [(r, d) for r, d in items if d.kind == "FIELD_MISSING"]
+        other = [
+            (r, d) for r, d in items if d.kind not in ("FIELD_EXTRA", "FIELD_MISSING")
+        ]
 
         results: list[ExecutionResult] = []
 
         if field_extra:
-            pr_url, err_code, err_summary = self._raise_spec_pr_batch(field_extra)
+            pr_url, err_code, err_summary = self._raise_pr_batch(
+                field_extra,
+                "openapi.yaml",
+                "fix(contract): document undocumented field(s)",
+                "touchstone/spec-fix-",
+                "FIELD_EXTRA",
+            )
             success = not err_code
-            for d in field_extra:
-                results.append(ExecutionResult(
-                    difference_id=d.id,
-                    success=success,
-                    error_code=err_code,
-                    error_summary=err_summary,
-                    file_path_ref=pr_url,
-                ))
+            for _, d in field_extra:
+                results.append(
+                    ExecutionResult(
+                        difference_id=d.id,
+                        success=success,
+                        error_code=err_code,
+                        error_summary=err_summary,
+                        file_path_ref=pr_url,
+                    )
+                )
 
         if field_missing:
-            pr_url, err_code, err_summary = self._raise_api_pr_batch(field_missing)
+            pr_url, err_code, err_summary = self._raise_pr_batch(
+                field_missing,
+                "main.py",
+                "fix(contract): return missing field(s)",
+                "touchstone/api-fix-",
+                "FIELD_MISSING",
+            )
             success = not err_code
-            for d in field_missing:
-                results.append(ExecutionResult(
-                    difference_id=d.id,
-                    success=success,
-                    error_code=err_code,
-                    error_summary=err_summary,
-                    file_path_ref=pr_url,
-                ))
+            for _, d in field_missing:
+                results.append(
+                    ExecutionResult(
+                        difference_id=d.id,
+                        success=success,
+                        error_code=err_code,
+                        error_summary=err_summary,
+                        file_path_ref=pr_url,
+                    )
+                )
 
-        for d in other:
-            results.append(ExecutionResult(
-                difference_id=d.id,
-                success=True,
-                error_code="REVIEW_REQUIRED",
-                error_summary=f"kind={d.kind} requires manual review; no automated PR",
-            ))
+        for _, d in other:
+            results.append(
+                ExecutionResult(
+                    difference_id=d.id,
+                    success=True,
+                    error_code="REVIEW_REQUIRED",
+                    error_summary=f"kind={d.kind} requires manual review; no automated PR",
+                )
+            )
 
         return results
 
@@ -293,62 +207,71 @@ class ContractExecutor:
             return 0
 
     # ------------------------------------------------------------------
-    # Batch PR helpers
+    # Batch PR helper
     # ------------------------------------------------------------------
 
-    def _raise_spec_pr_batch(
-        self, diffs: list[Difference]
+    def _raise_pr_batch(
+        self,
+        items: list[tuple[Resolution, Difference]],
+        file_name: str,
+        title_prefix: str,
+        branch_prefix: str,
+        kind: str,
     ) -> tuple[str, str, str]:
         """
-        Patch openapi.yaml once with ALL undocumented fields from *diffs*.
+        Open one PR for all diffs of the same kind.
+
+        Uses the LLM-generated patched_content from each resolution's FilePatch.
+        When multiple diffs affect the same file, the last resolution's content
+        wins (the LLM was given all context including all fields to fix at once
+        via the batch prompt — the orchestrator ensures this).
+
         Returns (pr_url, error_code, error_summary).
         """
-        fields_by_path: dict[str, list[str]] = {}
-        for d in diffs:
-            p = d.context.get("path", "")
-            f = d.context.get("field", "")
-            if p and f:
-                fields_by_path.setdefault(p, []).append(f)
+        # Collect field names for the PR title/body — context.fields is now a list
+        field_names = sorted(
+            {
+                f
+                for _, d in items
+                for f in (d.context.get("fields") or [d.context.get("field", d.target)])
+                if f
+            }
+        )
 
-        field_names = sorted({f for fs in fields_by_path.values() for f in fs})
-        title_prefix = "fix(contract): document undocumented field(s)"
-        branch = f"touchstone/spec-fix-{uuid.uuid4().hex[:8]}"
+        branch = f"{branch_prefix}{uuid.uuid4().hex[:8]}"
 
         try:
             existing = self._find_existing_pr(title_prefix)
             if existing:
                 return existing, "", f"Existing PR: {existing}"
 
-            spec_text, file_sha = _get_file(self.repo, "openapi.yaml", ref="main")
+            # Fetch file once — need both content (for LLM) and sha (for commit API)
+            current_content, file_sha = _get_file(self.repo, file_name, ref="main")
+
+            # One LLM call with ALL fields — produces one complete patch
+            patched_content, patch_err = self._llm_patch(
+                current_content, file_name, kind, items
+            )
+            if patch_err:
+                return "", "NO_PATCH", patch_err
+
             head_sha = self._head_sha()
             self._create_branch(branch, head_sha)
 
-            new_spec = spec_text
-            for path, fields in fields_by_path.items():
-                for field in fields:
-                    new_spec = _add_field_to_spec(new_spec, path, field)
-
-            field_lines = "\n".join(
-                f"- `{f}` on `{p}`"
-                for p, fs in fields_by_path.items()
-                for f in fs
-            )
+            commit_msg = f"fix(contract): {kind.lower().replace('_', ' ')} — {', '.join(field_names[:3])}{'…' if len(field_names) > 3 else ''}"
             self._commit_file(
-                "openapi.yaml", new_spec, file_sha, branch,
-                message=f"fix(contract): document {len(field_names)} undocumented field(s)",
+                file_name, patched_content, file_sha, branch, message=commit_msg
             )
-            title = (
-                f"{title_prefix}: "
-                f"{', '.join(field_names[:3])}{'…' if len(field_names) > 3 else ''}"
-            )
+
+            field_lines = "\n".join(f"- `{f}`" for f in field_names)
+            title = f"{title_prefix}: {', '.join(field_names[:3])}{'…' if len(field_names) > 3 else ''}"
             pr = self._open_pr(
                 branch=branch,
                 title=title,
                 body=(
-                    f"Touchstone detected **FIELD_EXTRA** drift — "
-                    f"the live API returns fields not declared in `openapi.yaml`.\n\n"
+                    f"Touchstone detected **{kind}** drift.\n\n"
                     f"**Fields fixed ({len(field_names)}):**\n{field_lines}\n\n"
-                    f"_Auto-generated by Touchstone Contract Observer._"
+                    f"_Patch generated by Touchstone LLM. Auto-raised by Contract Observer._"
                 ),
             )
             pr_url = pr.get("html_url", "")
@@ -360,69 +283,53 @@ class ContractExecutor:
         except Exception as exc:
             return "", type(exc).__name__, str(exc)
 
-    def _raise_api_pr_batch(
-        self, diffs: list[Difference]
-    ) -> tuple[str, str, str]:
-        """
-        Patch main.py once with ALL missing fields from *diffs*.
-        Returns (pr_url, error_code, error_summary).
-        """
-        fields_by_path: dict[str, list[str]] = {}
-        for d in diffs:
-            p = d.context.get("path", "")
-            f = d.context.get("field", "")
-            if p and f:
-                fields_by_path.setdefault(p, []).append(f)
+    # ------------------------------------------------------------------
+    # LLM patch generation
+    # ------------------------------------------------------------------
 
-        field_names = sorted({f for fs in fields_by_path.values() for f in fs})
-        title_prefix = "fix(contract): return missing field(s)"
-        branch = f"touchstone/api-fix-{uuid.uuid4().hex[:8]}"
+    def _llm_patch(
+        self,
+        current_content: str,
+        file_name: str,
+        kind: str,
+        items: list[tuple],
+    ) -> tuple[str, str]:
+        """
+        Make one LLM call with ALL affected fields and the full file content.
+        Returns (patched_content, error_string). error_string is "" on success.
+        """
+        import json
+
+        from agents.mantle_client import deepseek_pro, strip_llm_wrapper
+        from agents.prompts import (_API_SYSTEM_PROMPT,
+                                    build_api_batch_user_message)
+
+        all_fields = sorted(
+            {
+                f
+                for _, d in items
+                for f in (
+                    d.context.get("fields")
+                    or ([d.context.get("field")] if d.context.get("field") else [])
+                )
+            }
+        )
+        path = items[0][1].context.get("path", "") if items else ""
+
+        user = build_api_batch_user_message(
+            kind, all_fields, path, file_name, current_content
+        )
 
         try:
-            existing = self._find_existing_pr(title_prefix)
-            if existing:
-                return existing, "", f"Existing PR: {existing}"
-
-            main_text, file_sha = _get_file(self.repo, "main.py", ref="main")
-            head_sha = self._head_sha()
-            self._create_branch(branch, head_sha)
-
-            new_main = main_text
-            for path, fields in fields_by_path.items():
-                for field in fields:
-                    new_main = _add_field_to_api(new_main, path, field)
-
-            field_lines = "\n".join(
-                f"- `{f}` on `{p}`"
-                for p, fs in fields_by_path.items()
-                for f in fs
-            )
-            self._commit_file(
-                "main.py", new_main, file_sha, branch,
-                message=f"fix(contract): return {len(field_names)} missing field(s)",
-            )
-            title = (
-                f"{title_prefix}: "
-                f"{', '.join(field_names[:3])}{'…' if len(field_names) > 3 else ''}"
-            )
-            pr = self._open_pr(
-                branch=branch,
-                title=title,
-                body=(
-                    f"Touchstone detected **FIELD_MISSING** drift — "
-                    f"the spec declares fields the live API does not return.\n\n"
-                    f"**Fields fixed ({len(field_names)}):**\n{field_lines}\n\n"
-                    f"_Auto-generated by Touchstone Contract Observer._"
-                ),
-            )
-            pr_url = pr.get("html_url", "")
-            return pr_url, "", f"PR opened: {pr_url}"
-
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode() if hasattr(exc, "read") else ""
-            return "", str(exc.code), f"GitHub API error {exc.code}: {body[:200]}"
+            raw = deepseek_pro(system=_API_SYSTEM_PROMPT, user=user)
+            raw = strip_llm_wrapper(raw)
+            payload = json.loads(raw)
+            content = payload.get("patched_content", "")
+            if not content:
+                return "", "LLM returned empty patched_content"
+            return content, ""
         except Exception as exc:
-            return "", type(exc).__name__, str(exc)
+            return "", f"LLM patch failed: {type(exc).__name__}: {exc}"
 
     # ------------------------------------------------------------------
     # GitHub API helpers
@@ -440,10 +347,9 @@ class ContractExecutor:
             )
             for pr in prs:
                 head_ref = pr.get("head", {}).get("ref", "")
-                if (
-                    head_ref.startswith("touchstone/")
-                    and pr.get("title", "").startswith(title_prefix)
-                ):
+                if head_ref.startswith("touchstone/") and pr.get(
+                    "title", ""
+                ).startswith(title_prefix):
                     return pr.get("html_url", "")
         except Exception:
             pass

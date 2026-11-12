@@ -42,12 +42,12 @@ from adapters.postgres.intended import load_intended_schema
 from adapters.postgres.verifier import SchemaVerifier
 from adapters.remote_source import fetch as fetch_remote
 from adapters.remote_source import invalidate as invalidate_remote
-from agents.resolver import MockResolver
+from agents.resolver import MantleResolver
 from core.cache import Cache
 from core.models import ComparisonTarget
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import FilePatchValidator, SQLValidator
+from core.validator import SQLValidator
 
 _reports_dir = HERE / ".reports"
 _cache_path = HERE / ".cache.json"
@@ -79,14 +79,13 @@ def _build_orch() -> Orchestrator:
         input_source=_InputSource(),
         source_adapter=_SourceAdapter(),
         comparator=SchemaComparator(),
-        resolver=MockResolver(),
+        resolver=MantleResolver(),
         executor=SQLExecutor(DB_URL),
         verifier=SchemaVerifier(
             load_intended=lambda: load_intended_schema(_models_path()),
             load_actual=lambda: load_actual_schema(DB_URL),
         ),
         validator_sql=SQLValidator(),
-        validator_file=FilePatchValidator(REPO),
         persistence=Persistence(_reports_dir),
         cache=Cache(_cache_path),
         domain="database",
@@ -181,7 +180,10 @@ def apply(req: ApplyRequest):
     if not DB_URL:
         raise HTTPException(503, detail="DATABASE_URL not set")
     try:
-        outcome = orch.apply_one(req.difference_id)
+        # human_authorized=True: user clicked Exorcise — allows REVIEW_REQUIRED
+        # diffs (e.g. narrowing type changes, DROP operations) to execute after
+        # human review of the LLM-proposed SQL shown in the card.
+        outcome = orch.apply_one(req.difference_id, human_authorized=True)
     except KeyError:
         raise HTTPException(404, detail="difference not found")
     return _serialise_outcome(outcome)

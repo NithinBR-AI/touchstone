@@ -110,13 +110,17 @@ The validator rejects SET statements outright.
 ### Auth — Apply is OPEN (both apps)
 No `_require_write()` guard. All endpoints open.
 
-**Schema Drift**: `/apply` calls `orch.apply_one(req.difference_id)`,
+**Schema Drift**: `/apply` calls `orch.apply_one(req.difference_id, human_authorized=True)`,
 `/rollback` calls `orch.rollback(req.difference_id)`.
 
-**Contract Observer**: `/apply` bypasses `orch.apply_one()` — calls
-`ContractExecutor.execute(diff)` directly. All API diffs have `safe_fix=False`
-(PR-based fixes, not in-place); `apply_one()` would gate on REVIEW_REQUIRED/BLOCKED.
-State updated to RESOLVED or EXECUTION_FAILED; saved via `orch.persistence.save(report)`.
+**Contract Observer**: `/apply` calls `orch.apply_batch(same_kind_ids, human_authorized=True)`.
+Batches all non-terminal diffs of the same kind — one PR per kind (FIELD_EXTRA → openapi.yaml,
+FIELD_MISSING → main.py). `ContractExecutor.execute_batch()` handles grouping and idempotency.
+All state mutations owned by orchestrator.
+
+**The Poltergeist**: `/apply` calls `orch.apply_one(req.difference_id, human_authorized=True)`.
+`CacheExecutor` acts on the Difference directly (KEY_MISSING → POST /cache/warm,
+UNDECLARED_KEY → DELETE /cache/delete). No proposed_change required.
 
 Both serialise results via `_serialise_outcome()`.
 `/compare`, `/discover`, `/report/:id`, `/health`, `/config` all open on both apps.

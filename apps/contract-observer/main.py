@@ -38,12 +38,12 @@ from adapters.openapi.comparator import ContractComparator
 from adapters.openapi.executor import ContractExecutor
 from adapters.openapi.intended import load_from_url as load_intended
 from adapters.openapi.verifier import ContractVerifier
-from agents.resolver import MockResolver
+from agents.resolver import MantleResolver
 from core.cache import Cache
-from core.models import ApplyOutcome, ComparisonTarget, GhostState
+from core.models import ComparisonTarget, GhostState
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import FilePatchValidator, SQLValidator
+from core.validator import SQLValidator
 
 _reports_dir = HERE / ".reports"
 _cache_path = HERE / ".cache.json"
@@ -65,7 +65,16 @@ def _api_base_url() -> str:
 
 class _InputSource:
     def targets(self):
-        return [ComparisonTarget("api", _active_repo["id"], context={"openapi_url": _active_repo.get("openapi_url", "")})]
+        return [
+            ComparisonTarget(
+                "api",
+                _active_repo["id"],
+                context={
+                    "openapi_url": _active_repo.get("openapi_url", ""),
+                    "repo": _active_repo.get("github", ""),
+                },
+            )
+        ]
 
 
 class _SourceAdapter:
@@ -83,11 +92,10 @@ def _build_orch(repo: dict) -> Orchestrator:
         input_source=_InputSource(),
         source_adapter=_SourceAdapter(),
         comparator=ContractComparator(),
-        resolver=MockResolver(),
+        resolver=MantleResolver(),
         executor=executor,
         verifier=ContractVerifier(),
         validator_sql=SQLValidator(),
-        validator_file=FilePatchValidator(REPO),
         persistence=Persistence(_reports_dir),
         cache=Cache(_cache_path),
         domain="api",
@@ -189,56 +197,36 @@ def apply(req: ApplyRequest):
     Batch apply: when user clicks Exorcise on any diff, we batch ALL
     actionable diffs of the same kind into one PR — no per-field conflicts.
     """
-    report = orch._report
+    report = orch.report
     if report is None:
         raise HTTPException(503, detail="No report — run /compare first")
 
-    trigger_diff = next((d for d in report.differences if d.id == req.difference_id), None)
+    trigger_diff = next(
+        (d for d in report.differences if d.id == req.difference_id), None
+    )
     if trigger_diff is None:
         raise HTTPException(404, detail="difference not found")
 
-    # Collect all non-resolved diffs of the same kind to batch into one PR
-    same_kind_diffs = [
-        d for d in report.differences
-        if d.kind == trigger_diff.kind and d.state not in (
-            GhostState.RESOLVED, GhostState.SUPERSEDED, GhostState.EXECUTION_FAILED
-        )
+    # Collect all non-terminal diffs of the same kind to batch into one PR
+    same_kind_ids = [
+        d.id
+        for d in report.differences
+        if d.kind == trigger_diff.kind
+        and d.state
+        not in (GhostState.RESOLVED, GhostState.SUPERSEDED, GhostState.EXECUTION_FAILED)
     ]
 
-    try:
-        executions = orch.executor.execute_batch(same_kind_diffs)
-    except Exception as exc:
-        trigger_diff.state = GhostState.EXECUTION_FAILED
-        outcome = ApplyOutcome(
-            difference_id=req.difference_id,
-            state=GhostState.EXECUTION_FAILED,
-        )
-        report.outcomes[req.difference_id] = outcome
-        orch.persistence.save(report)
-        return {"difference_id": req.difference_id, "state": "EXECUTION_FAILED", "error": str(exc)}
+    # human_authorized=True: user clicked Exorcise after seeing the LLM proposal
+    outcomes = orch.apply_batch(same_kind_ids, human_authorized=True)
 
-    diff_map = {d.id: d for d in same_kind_diffs}
-    response_outcome = None
-    for execution in executions:
-        diff = diff_map.get(execution.difference_id)
-        if diff is None:
-            continue
-        diff.state = GhostState.RESOLVED if execution.success else GhostState.EXECUTION_FAILED
-        outcome = ApplyOutcome(
-            difference_id=execution.difference_id,
-            state=diff.state,
-            execution=execution,
-        )
-        report.outcomes[execution.difference_id] = outcome
-        if execution.difference_id == req.difference_id:
-            response_outcome = outcome
-
-    orch.persistence.save(report)
-
+    response_outcome = next(
+        (o for o in outcomes if o.difference_id == req.difference_id), None
+    )
     if response_outcome is None:
+        from core.models import ApplyOutcome
+
         response_outcome = ApplyOutcome(
-            difference_id=req.difference_id,
-            state=trigger_diff.state,
+            difference_id=req.difference_id, state=trigger_diff.state
         )
     return _serialise_outcome(response_outcome)
 

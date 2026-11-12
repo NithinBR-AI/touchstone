@@ -23,8 +23,9 @@ fi
 
 cd "$SCRIPT_DIR"
 
+cmd.exe /c "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :${PORT} ^| findstr LISTENING') do taskkill /F /PID %a" 2>/dev/null || true
+
 echo "Starting The Poltergeist on http://localhost:${PORT}"
 exec "$PYTHON" -m uvicorn main:app \
   --host 0.0.0.0 \
-  --port "$PORT" \
-  --reload
+  --port "$PORT"

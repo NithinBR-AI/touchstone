@@ -19,10 +19,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # State enum
 # ---------------------------------------------------------------------------
+
 
 class GhostState(str, Enum):
     PENDING = "PENDING"
@@ -38,18 +38,20 @@ class GhostState(str, Enum):
 # Comparison target
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ComparisonTarget:
     """Identifies one unit of comparison (e.g. a table column or endpoint)."""
 
-    domain: str          # "database" | "api" | "deps"
-    target: str          # e.g. "users.email", "GET /users/{id}", "sqlglot"
+    domain: str  # "database" | "api" | "deps"
+    target: str  # e.g. "users.email", "GET /users/{id}", "sqlglot"
     context: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
 # State (opaque carrier — adapters define their own subtypes)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class State:
@@ -67,6 +69,7 @@ class State:
 # Difference
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Difference:
     """
@@ -80,11 +83,11 @@ class Difference:
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    signature: str = ""          # set by comparator before returning
-    domain: str = ""             # "database" | "api" | "deps"
-    kind: str = ""               # e.g. "COLUMN_MISSING", "INDEX_MISSING"
-    target: str = ""             # canonical target string
-    severity: str = "HIGH"       # "LOW" | "MEDIUM" | "HIGH"
+    signature: str = ""  # set by comparator before returning
+    domain: str = ""  # "database" | "api" | "deps"
+    kind: str = ""  # e.g. "COLUMN_MISSING", "INDEX_MISSING"
+    target: str = ""  # canonical target string
+    severity: str = "HIGH"  # "LOW" | "MEDIUM" | "HIGH"
     state: GhostState = GhostState.PENDING
     context: dict[str, Any] = field(default_factory=dict)
     detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -94,13 +97,14 @@ class Difference:
 # Typed changes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SQLChange:
     """A single SQL statement to apply to the database."""
 
-    statement: str           # exactly one SQL statement
-    operation: str           # e.g. "CREATE_INDEX", "ALTER_COLUMN_TYPE"
-    target: str              # must match originating Difference.target exactly
+    statement: str  # exactly one SQL statement
+    operation: str  # e.g. "CREATE_INDEX", "ALTER_COLUMN_TYPE"
+    target: str  # must match originating Difference.target exactly
 
 
 @dataclass
@@ -108,10 +112,13 @@ class FilePatch:
     """An atomic patch to a single file."""
 
     file_path: str
-    before_sha256: str       # hex digest of the file before patching
-    after_sha256: str        # hex digest of the file after patching
-    forward_patch: bytes     # unified diff bytes to apply
-    reverse_patch: bytes     # unified diff bytes to roll back
+    content: str = ""  # full patched file content (LLM-generated)
+    before_sha256: str = ""  # hex digest of the file before patching
+    after_sha256: str = ""  # hex digest of the file after patching
+    forward_patch: bytes = field(default_factory=bytes)  # unified diff bytes to apply
+    reverse_patch: bytes = field(
+        default_factory=bytes
+    )  # unified diff bytes to roll back
 
 
 # Union — the only valid proposed_change types
@@ -121,6 +128,7 @@ TypedChange = SQLChange | FilePatch
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Resolution:
@@ -134,7 +142,7 @@ class Resolution:
 
     difference_id: str
     difference_signature: str
-    proposed_change: TypedChange | None    # None = review-only
+    proposed_change: TypedChange | None  # None = review-only
     rationale: str = ""
     prompt_sha256: str = ""
     cache_version: str = ""
@@ -147,6 +155,7 @@ class Resolution:
 # ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ExecutionResult:
@@ -161,9 +170,9 @@ class ExecutionResult:
     difference_id: str
     success: bool
     applied_change: TypedChange | None = None
-    error_code: str = ""           # never raw exception text
+    error_code: str = ""  # never raw exception text
     error_class: str = ""
-    error_summary: str = ""        # generated from code lookup table
+    error_summary: str = ""  # generated from code lookup table
     # File-domain fields
     rollback_bytes: bytes = b""
     post_apply_bytes: bytes = b""
@@ -176,6 +185,7 @@ class ExecutionResult:
 # Verification
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class VerificationResult:
     """
@@ -187,12 +197,13 @@ class VerificationResult:
     resolved: bool
     rechecked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     evidence: dict[str, Any] = field(default_factory=dict)
-    remaining: Difference | None = None   # populated when resolved=False
+    remaining: Difference | None = None  # populated when resolved=False
 
 
 # ---------------------------------------------------------------------------
 # Apply outcome
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ApplyOutcome:
@@ -207,6 +218,7 @@ class ApplyOutcome:
 # ---------------------------------------------------------------------------
 # Rollback
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class RollbackEvent:
@@ -226,6 +238,7 @@ class RollbackEvent:
 # Report
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Report:
     """
@@ -238,8 +251,12 @@ class Report:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     domain: str = ""
     differences: list[Difference] = field(default_factory=list)
-    resolutions: dict[str, Resolution] = field(default_factory=dict)   # keyed by difference_id
-    outcomes: dict[str, ApplyOutcome] = field(default_factory=dict)    # keyed by difference_id
+    resolutions: dict[str, Resolution] = field(
+        default_factory=dict
+    )  # keyed by difference_id
+    outcomes: dict[str, ApplyOutcome] = field(
+        default_factory=dict
+    )  # keyed by difference_id
     rollback_events: dict[str, list[RollbackEvent]] = field(default_factory=dict)
     requires_refresh: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

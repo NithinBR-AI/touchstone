@@ -12,7 +12,7 @@ import pytest
 
 import adapters.postgres.executor as executor_mod
 from adapters.postgres.executor import ERROR_SUMMARIES, SQLExecutor
-from core.models import FilePatch, Resolution, SQLChange
+from core.models import Difference, FilePatch, Resolution, SQLChange
 
 GOOD_SQL = "CREATE INDEX ix_users_email ON users (email)"
 
@@ -44,6 +44,16 @@ def _res(change) -> Resolution:
     )
 
 
+def _diff_stub() -> Difference:
+    return Difference(
+        id="d1",
+        signature="s1",
+        domain="database",
+        kind="INDEX_MISSING",
+        target="ix_users_email",
+    )
+
+
 def _sql(statement: str = GOOD_SQL) -> SQLChange:
     return SQLChange(
         statement=statement, operation="CREATE_INDEX", target="ix_users_email"
@@ -52,7 +62,9 @@ def _sql(statement: str = GOOD_SQL) -> SQLChange:
 
 def test_success_commits_and_closes() -> None:
     conn = FakeConn()
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()))
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
+        _res(_sql()), _diff_stub()
+    )
     assert result.success
     assert conn.executed == [GOOD_SQL]
     assert conn.committed and conn.closed and not conn.rolled_back
@@ -62,7 +74,9 @@ def test_success_commits_and_closes() -> None:
 
 def test_execution_error_rolls_back_without_raw_text() -> None:
     conn = FakeConn(RuntimeError("password=hunter2 leaked in driver message"))
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()))
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
+        _res(_sql()), _diff_stub()
+    )
     assert not result.success
     assert conn.rolled_back and conn.closed and not conn.committed
     assert result.error_code == "EXECUTION_ERROR"
@@ -74,7 +88,9 @@ def test_execution_error_rolls_back_without_raw_text() -> None:
 
 def test_statement_timeout_is_classified() -> None:
     conn = FakeConn(psycopg.errors.QueryCanceled("canceling statement due to timeout"))
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()))
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
+        _res(_sql()), _diff_stub()
+    )
     assert result.error_code == "STATEMENT_TIMEOUT"
     assert conn.rolled_back
 
@@ -83,7 +99,7 @@ def test_connect_failure_is_recorded() -> None:
     def boom(_: str):
         raise psycopg.OperationalError("could not connect to host secret.example")
 
-    result = SQLExecutor("dsn", connect=boom).execute(_res(_sql()))
+    result = SQLExecutor("dsn", connect=boom).execute(_res(_sql()), _diff_stub())
     assert result.error_code == "CONNECT_FAILED"
     assert "secret" not in result.error_summary
 
@@ -100,15 +116,17 @@ def test_prechecks_refuse_without_connecting(statement: str, code: str) -> None:
     def must_not_connect(_: str):
         raise AssertionError("executor connected despite a failed precheck")
 
-    result = SQLExecutor("dsn", connect=must_not_connect).execute(_res(_sql(statement)))
+    result = SQLExecutor("dsn", connect=must_not_connect).execute(
+        _res(_sql(statement)), _diff_stub()
+    )
     assert result.error_code == code
 
 
 def test_no_change_and_non_sql_change_refused() -> None:
     ex = SQLExecutor("dsn", connect=lambda _: FakeConn())
-    assert ex.execute(_res(None)).error_code == "NO_CHANGE"
+    assert ex.execute(_res(None), _diff_stub()).error_code == "NO_CHANGE"
     patch = FilePatch("f", "a", "b", b"", b"")
-    assert ex.execute(_res(patch)).error_code == "NOT_SQL"
+    assert ex.execute(_res(patch), _diff_stub()).error_code == "NOT_SQL"
 
 
 def test_default_connect_sets_timeouts_at_connection_level(monkeypatch) -> None:
@@ -119,6 +137,6 @@ def test_default_connect_sets_timeouts_at_connection_level(monkeypatch) -> None:
         return FakeConn()
 
     monkeypatch.setattr(executor_mod.psycopg, "connect", fake_connect)
-    SQLExecutor("postgresql://x").execute(_res(_sql()))
+    SQLExecutor("postgresql://x").execute(_res(_sql()), _diff_stub())
     assert captured["options"] == "-c statement_timeout=30000"
     assert captured["connect_timeout"] == 10

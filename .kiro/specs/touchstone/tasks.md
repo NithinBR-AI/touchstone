@@ -33,10 +33,10 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       test_sqlglot_ast_assumptions.py + target binding + widening
       (validator_sql 33 tests pass; sql_execution skipped until DB available;
        ast_assumptions 23 tests pass; all target binding and widening covered)
-- [x] 1.0c File patch validation — test_validator_file.py
-      (12 tests: valid patch, symlink skipped/Windows, path confinement, SHA256 before+after,
-       YAML single key/list root/wrong key, TOML single key/wrong key,
-       requirements single/unrelated line; all pass)
+- [x] 1.0c File patch validation — test_validator_file.py (deleted)
+      FilePatchValidator removed from core/validator.py. API patches are applied as GitHub
+    and  PRs by ContractExecutor (LLM-generated content via GitHub API). Cache fixes applied
+      by CacheExecutor via /cache/warm and /cache/delete. test_validator_file.py deleted.
   - _Req 17_
 - [x] 1.0d Rollback — test_rollback.py (file domain; DB unsupported; executor exception; double)
       (10 tests: DB refused, file resolved/still_present/state_unchanged, external edit,
@@ -115,16 +115,14 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       VERIFIED: 6 protocols (InputSource, SourceAdapter, Comparator, Resolver, Executor,
       Verifier) all @runtime_checkable. Only imports from core.models. PASS.
   - _Req 1_
-- [x] 2.4 core/validator.py — operation matrix, SQLValidator with target
-      binding + widening, FilePatchValidator
-      VERIFIED: OPERATION_MATRIX has 9 kinds covering DB+API+deps. SQLValidator checks:
-      matrix, single-statement, SET, forbidden nodes, UNIQUE/expression/partial index,
-      target binding, widening pairs. FilePatchValidator: symlink BEFORE resolve,
-      path confinement, before_sha256, format-aware YAML/TOML/requirements key check,
-      after_sha256. DEFECT: _apply_forward_patch is a week-1 stub — returns forward_patch
-      bytes as-is (no actual diff apply). Tracked in task 2.22. All 33 validator_sql +
-      12 validator_file tests pass. PASS (with known stub).
-  - _Req 17, 18_
+- [x] 2.4 core/validator.py — operation matrix, SQLValidator with target binding + widening
+      VERIFIED: OPERATION_MATRIX has 9 kinds. SQLValidator checks: matrix, single-statement,
+      SET, forbidden nodes, UNIQUE/expression/partial index, target binding, widening pairs.
+      human_authorized param threads through _validate_operation → _validate_alter_type,
+      allowing narrowing type changes and DROP ops when human clicks Exorcise.
+      FilePatchValidator removed — API patches applied as GitHub PRs (ContractExecutor),
+      cache fixes applied by CacheExecutor directly. All 33 validator_sql tests pass. PASS.
+  - _Req 17_
 - [x] 2.5 core/persistence.py
       VERIFIED: Persistence.save() uses atomic tmp+rename (os.replace). Full
       deserialise round-trip for all model types. No raw exception text stored.
@@ -225,11 +223,10 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       VERIFIED DONE (prior session): All 6 previously failing tests now pass.
       76/76 tests in test_state_transitions.py + test_rollback.py pass. PASS.
   - _Req 19, 24, 25_
-- [x] 2.21 test_validator_file.py — traversal, symlink-before-resolve, stale
-      hash, invalid YAML, YAML root as list, wrong-key, unrelated
-      requirements line, TOML key diff
-      VERIFIED DONE (prior session): 11 passed, 1 skipped (Windows symlink
-      privilege — expected). PASS.
+- [x] 2.21 test_validator_file.py — DELETED
+      FilePatchValidator removed from core/validator.py; test_validator_file.py deleted.
+      API domain patches are LLM-generated and applied as GitHub PRs.
+      Cache domain fixes bypass file patching entirely (HTTP API calls to target app).
   - _Req 18_
 - [x] 2.22 Replace `_apply_forward_patch` placeholder with real unified-diff apply
       VERIFIED DONE: core/validator.py _apply_forward_patch now implements a full
@@ -384,9 +381,9 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
         works on any FastAPI app), commits to branch, opens PR
       · GitHub helpers: _head_sha, _create_branch, _commit_file, _open_pr
       ContractVerifier re-fetches openapi.yaml and checks if field is now declared.
-      NOTE: executor.execute(diff) takes Difference directly (not Resolution) —
-      bypasses orchestrator resolver gate since safe_fix=False for all API diffs.
-      /apply endpoint in contract-observer/main.py calls executor directly.
+      ContractExecutor.execute_batch() takes list[(Resolution, Difference)] and handles
+      grouping by kind internally. /apply calls orch.apply_batch() — fully through orchestrator.
+      LLM patch generated at PR creation time (not at resolve time) with full file context.
   - _Req 21, 23_
 - [x] 5.6 test_ssrf.py — all cases
       DONE: 13 tests covering valid HTTPS, HTTP, blocked loopback (127.0.0.1,
@@ -409,12 +406,11 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       DONE: all 4 files present and verified.
       · config.json: {"domain":"api","accent":"#67e8f9","title":"The Séance"}
         (icy cyan accent — ethereal/spirit-world contrast to Crypt's warm orange)
-      · run.sh: port 8002, --reload, PYTHONPATH=REPO_ROOT
+      · run.sh: port 8002, PYTHONPATH=REPO_ROOT (no --reload — removed to prevent stale process)
       · main.py: ContractExecutor + ContractComparator + ContractVerifier wired;
-        /apply bypasses orchestrator resolver gate, calls executor.execute(diff)
-        directly (all API diffs have safe_fix=False → proposed_change=None →
-        apply_one() would refuse); repo selector via /repos/select; StaticFiles
-        last mount.
+        /apply calls orch.apply_batch(same_kind_ids, human_authorized=True) — batches all
+        non-terminal diffs of the same kind into one PR; repo selector via /repos/select;
+        StaticFiles last mount.
       · README.md: documents all endpoints, drift cases, SSRF, Render warmup.
       · UI: KIND_LABELS extended (Shadow Field, Vanished Field, Lost Endpoint,
         Phantom Endpoint); IDLE_COPY domain-aware ("The spirits are silent…");
@@ -435,9 +431,11 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       DONE: Full Redis cache adapter. actual.py fetches /cache/status via httpx (no TCP),
       warmup pattern matches adapters/openapi/actual.py (60s /health poll). intended.py
       fetches cache_config.yaml from GitHub raw URL. comparator.py emits KEY_MISSING
-      (PENDING, safe_fix=True) and UNDECLARED_KEY (BLOCKED, safe_fix=False).
-      executor.py calls POST /cache/warm?key=<diff.target> via _CLIENT from actual.py.
-      verifier.py re-fetches /cache/status and checks key presence.
+      (REVIEW_REQUIRED, safe_fix=True) and UNDECLARED_KEY (REVIEW_REQUIRED, safe_fix=False).
+      executor.py: KEY_MISSING → POST /cache/warm?key=<diff.target>;
+      UNDECLARED_KEY → DELETE /cache/delete?key=<diff.target> (calls target app's new endpoint).
+      verifier.py: KEY_MISSING → checks key present; UNDECLARED_KEY → checks key absent.
+      Target app (touchstone-demo-target-repo) has /cache/delete endpoint.
   - _Req 28, 30_
 - [x] 6.2 test_comparator_cache.py
       DONE: 9 tests — no-drift, KEY_MISSING (detected, description, multiple),
@@ -446,15 +444,13 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 - [x] 6.3 apps/poltergeist/{main.py, config.json, README.md, run.sh}
       DONE: all 4 files present and verified.
       · config.json: {"domain":"cache","accent":"#c084fc","title":"The Poltergeist"}
-      · run.sh: port 8003, .venv python detection matches schema-drift/contract-observer pattern.
-      · main.py: wires CacheComparator, CacheExecutor, CacheVerifier, MockResolver.
-        /compare post-processes safe_fix diffs from BLOCKED → PENDING (MockResolver returns
-        proposed_change=None for cache kinds; orchestrator blocks them; endpoint resets them).
-        /apply calls CacheExecutor directly. /demo/reset calls POST /cache/warm via _CLIENT.
+      · run.sh: port 8003, no --reload (removed to prevent stale process on restart).
+      · main.py: wires CacheComparator, CacheExecutor, CacheVerifier, MockResolver via
+        standard Orchestrator constructor. /apply calls orch.apply_one(id, human_authorized=True)
+        — fully through orchestrator. /demo/reset calls POST /cache/warm via _CLIENT.
         All imports at top of module. Uses _CLIENT from actual.py (no urllib).
       · UI: RENDERERS includes cache: renderCacheEvidence; KIND_LABELS for KEY_MISSING
-        (Missing Key) and UNDECLARED_KEY (Shadow Key); RITUAL_STAGES and IDLE_COPY
-        extended for cache domain; BLOCKED cache diffs show no Exorcise button.
+        and UNDECLARED_KEY; both kinds show Exorcise button (human_authorized path).
   - _Req 28, 30_
 - [x] 6.4 Verify `git diff core/` still empty
       DONE: No changes to core/ in Stage 6. All adapter code in adapters/redis/,
@@ -463,20 +459,110 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ### 7. Real resolver + orchestration (Week 4)
 
-- [ ] 7.1 Replace mock resolver with real Bedrock resolver + MCP
-      (agents/resolver.py and prompts.py exist and test_resolver.py passes;
-      confirm whether Bedrock path is implemented, else add it; temperature 0,
-      prompt SHA-256 on every Resolution)
+- [x] 7.1 Replace mock resolver with real Bedrock resolver + MCP
+      DONE 2026-11-12:
+      · agents/mantle_client.py — Mantle OpenAI-compatible client (verify=False,
+        openai-project header). temperature=0.0 on all calls. ultra() (QWEN 235B)
+        for database SQL proposals; deepseek_pro() (DeepSeek v3) for api/spec patches.
+        Fallbacks: QWEN_FALLBACK for ultra, QWEN_235B for deepseek. strip_llm_wrapper()
+        strips <think> blocks and markdown code fences before JSON parse.
+      · agents/resolver.py — MantleResolver added alongside MockResolver. Domain routing:
+        database → ultra() (safe_fix gate enforced); api/cache → deepseek_pro()/ultra()
+        (safe_fix gate bypassed — executor handles actual fix, LLM provides rationale).
+        2-attempt retry on bad JSON. Graceful fallback to MockResolver if MANTLE_API_KEY unset.
+        prompt_sha256 on every Resolution.
+      · agents/prompts.py — rewritten with domain-aware system prompts: _DB_SYSTEM_PROMPT
+        (SQL rules: CREATE_INDEX, ALTER_COLUMN_TYPE, forbidden ops), _API_SYSTEM_PROMPT
+        (FIELD_EXTRA/FIELD_MISSING/SCHEMA_CHANGED/ENDPOINT_MISSING rationale),
+        _CACHE_SYSTEM_PROMPT (TTL_DRIFT/KEY_MISSING/EVICTION_POLICY_MISMATCH rationale),
+        _GENERIC_SYSTEM_PROMPT fallback. PROMPT_VERSION bumped to resolver-v2.
+      · apps/schema-drift/main.py, apps/contract-observer/main.py — MantleResolver wired.
+        apps/poltergeist/main.py — stays MockResolver (cache fixes are deterministic).
+      · .env + .env_sample — MANTLE_API_KEY and MANTLE_BASE_URL added.
+      · pyproject.toml — openai>=1.54.0, urllib3>=2.0.0, pyyaml>=6.0 added.
+      · tests/test_mantle_resolver.py — 20 tests: fallback (no key), domain routing
+        (ultra/deepseek/cache), domain-aware prompts, safe_fix gate, wrapper stripping,
+        valid SQL/review responses, retry on bad JSON, block after 2 failures, LLM exception
+        handling, resolution fields (sha256, difference_id). All 20 pass.
+      · Full suite: 437 passed, 6 skipped (live DB only). PASS.
   - _Req 15, 16_
+- [x] 7.1a Stale-report fix — App 1 (Schema Drift)
+      DONE 2026-11-13:
+      · Removed `--reload` from apps/schema-drift/run.sh (and all other run.sh files).
+        --reload kept stale orchestrator state alive across terminal restarts; removing
+        it ensures each process starts with a clean orchestrator and fresh _latest_report_id.
+      · UI REPORT condition fixed: stale report_id from /config no longer renders phantom
+        ghost cards when no compare has run in the current process.
+  - _Req 28, 39_
+- [x] 7.1b Exorcise button on all 4 ghost card states — App 1
+      DONE 2026-11-13:
+      · apps/shared/ui/app.js canApply() logic extended: REVIEW_REQUIRED and BLOCKED
+        cards with a proposed_change.statement now show Exorcise (human_authorized path).
+      · /apply calls orch.apply_one(id, human_authorized=True) so the validator's
+        auto-fixability gate is bypassed when a human clicks.
+      · human_authorized flag threads through validator._validate_operation →
+        _validate_alter_type, permitting narrowing type changes at human discretion.
+      · LLM prompt cleanup: MantleResolver now calls ultra() for ALL database diffs
+        (including safe_fix=False) so the human can review the LLM proposal before
+        clicking Exorcise.
+  - _Req 14, 15, 26_
+- [x] 7.1c UNDECLARED_KEY made fixable — App 3 (The Poltergeist)
+      DONE 2026-11-13:
+      · adapters/redis/executor.py CacheExecutor.execute(): UNDECLARED_KEY now calls
+        DELETE /cache/delete on the target cache app instead of returning NOT_AUTO_FIXABLE.
+      · adapters/redis/verifier.py CacheVerifier: UNDECLARED_KEY verifies that the key
+        is ABSENT from the cache after deletion (absence check, not presence check).
+      · apps/poltergeist/main.py: /cache/delete endpoint added to the target app stub
+        so executor can reach it in demo mode.
+      · UI: both KEY_MISSING and UNDECLARED_KEY show Exorcise button (human_authorized).
+  - _Req 21, 28_
+- [x] 7.1d Batch PR executor, LLM-at-PR-time, orch.apply_batch() — App 2 (Contract Observer)
+      DONE 2026-11-13:
+      · ContractExecutor.execute_batch() signature changed to list[tuple[Resolution,Difference]].
+        Orchestrator passes (resolution, diff) pairs; executor groups by kind internally.
+      · LLM patch generation deferred to PR creation time (execute_batch), not resolve time.
+        MantleResolver.resolve() for api domain returns proposed_change=None with rationale
+        "Fix deferred to PR creation" — no LLM call at resolve time.
+      · ContractComparator now emits one Difference per path with context["fields"] list
+        (batch grouping), not one Difference per field. Comparator → executor → PR is now
+        field-aware and idempotent.
+      · apps/contract-observer/main.py /apply calls orch.apply_batch(same_kind_ids, human_authorized=True).
+      · /demo/reset calls POST /cache/warm via invalidate_remote() + fixture seed.
+  - _Req 18, 19, 28_
+- [x] 7.1e Test suite cleanup — all tests green after architecture changes
+      DONE 2026-11-13:
+      · tests/test_validator_file.py DELETED (FilePatchValidator removed from core/validator.py;
+        file patches now done as GitHub PRs by ContractExecutor).
+      · tests/test_rollback.py: removed FilePatchValidator mock and ValidationResult import.
+      · tests/test_executor_api.py: removed _add_field_to_api/_add_field_to_spec helpers
+        and their test classes; execute_batch() calls updated to (resolution, diff) tuple pairs.
+      · tests/test_comparator_api.py: assertions updated for batched context["fields"] list.
+      · tests/test_comparator_cache.py: test_executor_refuses_undeclared_key renamed to
+        test_executor_deletes_undeclared_key; asserts DELETE called, success=True.
+      · tests/test_mantle_resolver.py: api domain tests updated — no LLM call at resolve time,
+        "PR creation" in rationale, review action on db diff uses ultra not deepseek.
+      · Full suite: 426 passed, 5 skipped (live DB only). PASS.
+  - _Req 15, 16, 41_
 - [x] 7.2 ~~agents/cache.json — pre-recorded resolutions for all demo cases~~
       SUPERSEDED: cache is now populated organically by apply_one() after
       verification.resolved=True (never at resolve time, never for null proposals).
       7-day TTL (expires_at). Null proposed_change entries never written.
       Existing stale entries cleared. test_cache_reproducibility.py covers all cases.
   - _Req 15, 33_
-- [ ] 7.3 inputs/repo_discovery.py, manual_form.py
+- [x] 7.3 ~~inputs/repo_discovery.py, manual_form.py~~
+      SUPERSEDED: Req 3 is OPTIONAL per requirements spec. repos.json at repo root
+      serves as the static repo registry. UI repo selector dropdown (GET /repos +
+      POST /repos/select) is the manual form. Dynamic GitHub org discovery not needed
+      for demo submission. Already satisfies Req 3/4 intent.
   - _Req 3, 4_
-- [ ] 7.4 Superseded handling
+- [x] 7.4 Superseded handling
+      VERIFIED DONE: orchestrator._supersede_siblings() marks other PENDING diffs on
+      the same file as SUPERSEDED after a FilePatch applies (file domain). report.
+      requires_refresh=True set. UI state badges dim SUPERSEDED cards (data-state CSS).
+      App 2 batch strategy handles equivalent: all same-kind diffs (FIELD_EXTRA →
+      openapi.yaml, FIELD_MISSING → main.py) batched into one PR — all resolved
+      together, no siblings left in conflicting state. /apply refuses SUPERSEDED
+      (orchestrator state gate). PASS.
   - _Req 27_
 
 ### 8. Kiro integrations (Week 4)
@@ -487,7 +573,21 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       NOTE: demo-case-cache hook matcher updated from `demo/cases.json` →
       `fixtures/cases.json` (2026-11-11, folder renamed to fixtures/).
   - _Req 35_
-- [ ] 8.2 .kiro/settings/mcp.json — pinned version (see 0.7)
+- [ ] 8.2 MCP grounding — wire Context7 into MantleResolver for database domain
+      mcp.json is already pinned (task 0.7 done). This task covers the runtime
+      integration scoped to where it adds real value:
+      · database domain only: before building the ultra() user prompt, call
+        Context7 to fetch PostgreSQL DDL + sqlglot docs. Append fetched excerpt
+        to the user prompt (capped at ~2KB).
+      · api domain: LLM is called at PR-creation time inside
+        ContractExecutor.execute_batch() — not in the resolver. MCP grounding
+        there would require executor-level wiring; out of scope for this task.
+      · cache domain: MockResolver — no LLM call. MCP not applicable.
+      Graceful fallback: if Context7 unreachable or no coverage → proceed
+      without docs, append "confidence: LOW" to rationale. Validator enforces
+      safety independently — MCP improves proposal quality only.
+      Add test: mock Context7 response → confirm excerpt in prompt;
+      mock unreachable → confirm resolver proceeds with LOW confidence.
   - _Req 16_
 - [ ] 8.3 .kiro/agents/validator-reviewer.md — frontmatter + input contract
       + constraints (file exists; verify via task 0.5)
@@ -549,9 +649,9 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ## Notes
 
-- Progress verified by running `pytest -q`: **382 passed, 11 skipped** (offline run,
-  no DATABASE_URL). All 1.0a–1.0f, 2.1–2.23, 5.1–5.10, and 6.1–6.4 green.
-  New tests in Stage 6: test_comparator_cache.py (9 tests).
+- Progress verified by running `pytest -q`: **426 passed, 5 skipped** (offline run,
+  no DATABASE_URL). All 1.0a–1.0f, 2.1–2.23, 5.1–5.10, 6.1–6.4, 7.1 green.
+  Skips: 2 Neon DB integration tests (require DATABASE_URL), 3 e2e cache tests.
 - Real Neon run (2026-11-11): test_postgres_e2e + test_sql_execution → **9 passed, 1 skipped**
   (cache test skips when drift already applied by earlier tests in same run — expected).
   Seed with `fixtures/seed.py` before each full Neon run to restore drift state.

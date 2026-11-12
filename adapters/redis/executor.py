@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import urllib.parse
 
-from core.models import Difference, ExecutionResult
+from core.models import Difference, ExecutionResult, Resolution
 
 from .actual import _CLIENT
 
@@ -31,24 +31,29 @@ class CacheExecutor:
 
     def __init__(self, cache_warm_url: str) -> None:
         self.cache_warm_url = cache_warm_url
+        self.cache_delete_url = cache_warm_url.replace("/cache/warm", "/cache/delete")
 
-    def execute(self, diff: Difference) -> ExecutionResult:
-        if diff.kind != "KEY_MISSING":
+    def execute(
+        self, resolution: Resolution, difference: Difference
+    ) -> ExecutionResult:  # noqa: ARG002
+        if difference.kind == "UNDECLARED_KEY":
+            return self._delete_key(difference)
+        if difference.kind != "KEY_MISSING":
             return ExecutionResult(
-                difference_id=diff.id,
+                difference_id=difference.id,
                 success=False,
                 error_code="NOT_AUTO_FIXABLE",
                 error_class="PolicyError",
-                error_summary=f"kind={diff.kind} requires manual review; no automated fix",
+                error_summary=f"kind={difference.kind} requires manual review; no automated fix",
             )
 
-        key = diff.target
+        key = difference.target
         url = f"{self.cache_warm_url}?key={urllib.parse.quote(key, safe='')}"
         try:
             resp = _CLIENT.post(url, timeout=30.0)
             resp.raise_for_status()
             return ExecutionResult(
-                difference_id=diff.id,
+                difference_id=difference.id,
                 success=True,
                 applied_change=None,
                 error_code="",
@@ -60,11 +65,37 @@ class CacheExecutor:
                 getattr(exc, "response", None), "status_code", "CONNECTION_ERROR"
             )
             return ExecutionResult(
-                difference_id=diff.id,
+                difference_id=difference.id,
                 success=False,
                 error_code=str(code),
                 error_class=type(exc).__name__,
                 error_summary=f"warm endpoint failed: {type(exc).__name__}",
+            )
+
+    def _delete_key(self, difference: Difference) -> ExecutionResult:
+        key = difference.target
+        url = f"{self.cache_delete_url}?key={urllib.parse.quote(key, safe='')}"
+        try:
+            resp = _CLIENT.delete(url, timeout=30.0)
+            resp.raise_for_status()
+            return ExecutionResult(
+                difference_id=difference.id,
+                success=True,
+                applied_change=None,
+                error_code="",
+                error_class="",
+                error_summary="",
+            )
+        except Exception as exc:
+            code = getattr(
+                getattr(exc, "response", None), "status_code", "CONNECTION_ERROR"
+            )
+            return ExecutionResult(
+                difference_id=difference.id,
+                success=False,
+                error_code=str(code),
+                error_class=type(exc).__name__,
+                error_summary=f"delete endpoint failed: {type(exc).__name__}",
             )
 
     def rollback(self, result: ExecutionResult) -> bool:

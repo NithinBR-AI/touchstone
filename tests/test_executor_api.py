@@ -14,13 +14,24 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from adapters.openapi.executor import ContractExecutor, _add_field_to_api, _add_field_to_spec
-from core.models import Difference, GhostState
+from adapters.openapi.executor import ContractExecutor
+from core.models import Difference, GhostState, Resolution
+
+
+def _stub_resolution(diff: Difference) -> Resolution:
+    return Resolution(
+        difference_id=diff.id, difference_signature=diff.signature, proposed_change=None
+    )
+
+
+def _items(diffs: list) -> list:
+    return [(_stub_resolution(d), d) for d in diffs]
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _diff(kind: str, path: str = "/products", field: str = "sku") -> Difference:
     return Difference(
@@ -41,13 +52,16 @@ def _make_executor(repo: str = "owner/repo", token: str = "tok") -> ContractExec
 # ExecutionResult field correctness — no wrong kwargs
 # ---------------------------------------------------------------------------
 
+
 class TestExecutionResultFields:
     """Regression: executor previously used error= and raw_output= which don't
     exist on ExecutionResult — causing TypeError after PR was already created."""
 
-    def test_no_token_returns_valid_result(self):
+    def test_no_token_returns_valid_result(self, monkeypatch):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         ex = ContractExecutor(repo="owner/repo", token="")
-        result = ex.execute(_diff("FIELD_EXTRA"))
+        d = _diff("FIELD_EXTRA")
+        result = ex.execute(_stub_resolution(d), d)
         assert result.difference_id  # not empty
         assert result.success is False
         assert result.error_code == "NO_TOKEN"
@@ -56,8 +70,9 @@ class TestExecutionResultFields:
     def test_review_required_kind_returns_valid_result(self):
         """Non-batchable kinds return success=True with REVIEW_REQUIRED code."""
         ex = _make_executor()
+        d = _diff("PATH_MISSING", field="")
         with patch("adapters.openapi.executor._gh_request", return_value=[]):
-            result = ex.execute(_diff("PATH_MISSING", field=""))
+            result = ex.execute(_stub_resolution(d), d)
         assert result.success is True
         assert result.error_code == "REVIEW_REQUIRED"
         assert result.difference_id  # not empty
@@ -68,19 +83,27 @@ class TestExecutionResultFields:
         diff = _diff("FIELD_EXTRA")
 
         fake_pr = {"html_url": "https://github.com/owner/repo/pull/42"}
-        fake_file = {"content": __import__("base64").b64encode(b"paths: {}").decode(), "sha": "abc123"}
+        fake_file = {
+            "content": __import__("base64").b64encode(b"paths: {}").decode(),
+            "sha": "abc123",
+        }
         fake_ref = {"object": {"sha": "deadbeef"}}
 
-        with patch("adapters.openapi.executor._gh_request") as mock_gh:
+        with (
+            patch("adapters.openapi.executor._gh_request") as mock_gh,
+            patch.object(
+                ContractExecutor, "_llm_patch", return_value=("patched: content\n", "")
+            ),
+        ):
             mock_gh.side_effect = [
-                [],           # _find_existing_pr: list open PRs → none
-                fake_file,    # _get_file: openapi.yaml content
-                fake_ref,     # _head_sha
-                {},           # _create_branch
-                {},           # _commit_file
-                fake_pr,      # _open_pr
+                [],  # _find_existing_pr: list open PRs → none
+                fake_file,  # _get_file: openapi.yaml content
+                fake_ref,  # _head_sha
+                {},  # _create_branch
+                {},  # _commit_file
+                fake_pr,  # _open_pr
             ]
-            result = ex.execute(diff)
+            result = ex.execute(_stub_resolution(diff), diff)
 
         assert result.success is True
         assert result.file_path_ref == "https://github.com/owner/repo/pull/42"
@@ -89,6 +112,7 @@ class TestExecutionResultFields:
     def test_github_error_returns_failure_not_exception(self):
         """HTTPError from GitHub is caught and returned as success=False, not raised."""
         import urllib.error
+
         ex = _make_executor()
         diff = _diff("FIELD_EXTRA")
 
@@ -100,9 +124,17 @@ class TestExecutionResultFields:
             fp=None,
         )
 
-        with patch("adapters.openapi.executor._gh_request") as mock_gh:
-            mock_gh.side_effect = [[], err]  # find_existing_pr OK, then error
-            result = ex.execute(diff)
+        with (
+            patch("adapters.openapi.executor._gh_request") as mock_gh,
+            patch.object(
+                ContractExecutor, "_llm_patch", return_value=("patched\n", "")
+            ),
+        ):
+            mock_gh.side_effect = [
+                [],
+                err,
+            ]  # find_existing_pr OK, then error on _get_file
+            result = ex.execute(_stub_resolution(diff), diff)
 
         assert result.success is False
         assert result.error_code == "422"
@@ -113,6 +145,7 @@ class TestExecutionResultFields:
 # Batching — one PR per kind
 # ---------------------------------------------------------------------------
 
+
 class TestBatching:
 
     def test_multiple_field_extra_produce_one_pr(self):
@@ -121,59 +154,80 @@ class TestBatching:
         diffs = [
             _diff("FIELD_EXTRA", "/products", "sku"),
             _diff("FIELD_EXTRA", "/products", "weight"),
-            _diff("FIELD_EXTRA", "/orders",   "tracking_id"),
+            _diff("FIELD_EXTRA", "/orders", "tracking_id"),
         ]
 
-        fake_pr   = {"html_url": "https://github.com/owner/repo/pull/1"}
-        fake_file = {"content": __import__("base64").b64encode(b"paths: {}").decode(), "sha": "abc"}
-        fake_ref  = {"object": {"sha": "deadbeef"}}
+        fake_pr = {"html_url": "https://github.com/owner/repo/pull/1"}
+        fake_file = {
+            "content": __import__("base64").b64encode(b"paths: {}").decode(),
+            "sha": "abc",
+        }
+        fake_ref = {"object": {"sha": "deadbeef"}}
 
-        with patch("adapters.openapi.executor._gh_request") as mock_gh:
+        with (
+            patch("adapters.openapi.executor._gh_request") as mock_gh,
+            patch.object(
+                ContractExecutor, "_llm_patch", return_value=("patched\n", "")
+            ),
+        ):
             mock_gh.side_effect = [
-                [],        # find_existing_pr
-                fake_file, # get_file openapi.yaml
+                [],  # find_existing_pr
+                fake_file,  # get_file openapi.yaml
                 fake_ref,  # head_sha
-                {},        # create_branch
-                {},        # commit_file
-                fake_pr,   # open_pr
+                {},  # create_branch
+                {},  # commit_file
+                fake_pr,  # open_pr
             ]
-            results = ex.execute_batch(diffs)
+            results = ex.execute_batch(_items(diffs))
 
         assert len(results) == 3
         assert all(r.success for r in results)
         # All share the same PR URL
-        assert all(r.file_path_ref == "https://github.com/owner/repo/pull/1" for r in results)
+        assert all(
+            r.file_path_ref == "https://github.com/owner/repo/pull/1" for r in results
+        )
         # Each result maps to its own diff id
         assert {r.difference_id for r in results} == {d.id for d in diffs}
 
     def test_mixed_kinds_produce_separate_prs(self):
         """FIELD_EXTRA and FIELD_MISSING in one batch → two separate PRs."""
         ex = _make_executor()
-        extra   = _diff("FIELD_EXTRA",  "/products", "sku")
+        extra = _diff("FIELD_EXTRA", "/products", "sku")
         missing = _diff("FIELD_MISSING", "/products", "weight")
 
         fake_spec_pr = {"html_url": "https://github.com/owner/repo/pull/1"}
-        fake_api_pr  = {"html_url": "https://github.com/owner/repo/pull/2"}
-        fake_file = {"content": __import__("base64").b64encode(b"paths: {}").decode(), "sha": "abc"}
-        fake_main = {"content": __import__("base64").b64encode(b"# main").decode(), "sha": "def"}
-        fake_ref  = {"object": {"sha": "deadbeef"}}
+        fake_api_pr = {"html_url": "https://github.com/owner/repo/pull/2"}
+        fake_file = {
+            "content": __import__("base64").b64encode(b"paths: {}").decode(),
+            "sha": "abc",
+        }
+        fake_main = {
+            "content": __import__("base64").b64encode(b"# main").decode(),
+            "sha": "def",
+        }
+        fake_ref = {"object": {"sha": "deadbeef"}}
 
-        with patch("adapters.openapi.executor._gh_request") as mock_gh:
+        with (
+            patch("adapters.openapi.executor._gh_request") as mock_gh,
+            patch.object(
+                ContractExecutor, "_llm_patch", return_value=("patched\n", "")
+            ),
+        ):
             mock_gh.side_effect = [
-                [],           # find_existing_pr (spec)
-                fake_file,    # get_file openapi.yaml
-                fake_ref,     # head_sha (spec)
-                {},           # create_branch (spec)
-                {},           # commit_file (spec)
-                fake_spec_pr, # open_pr (spec)
-                [],           # find_existing_pr (api)
-                fake_main,    # get_file main.py
-                fake_ref,     # head_sha (api)
-                {},           # create_branch (api)
-                {},           # commit_file (api)
+                [],  # find_existing_pr (spec)
+                fake_file,  # get_file openapi.yaml
+                fake_ref,  # head_sha (spec)
+                {},  # create_branch (spec)
+                {},  # commit_file (spec)
+                fake_spec_pr,  # open_pr (spec)
+                [],  # find_existing_pr (api)
+                fake_main,  # get_file main.py
+                fake_ref,  # head_sha (api)
+                {},  # create_branch (api)
+                {},  # commit_file (api)
                 fake_api_pr,  # open_pr (api)
             ]
-            results = ex.execute_batch([extra, missing])
+            results = ex.execute_batch(_items([extra, missing]))
 
         assert len(results) == 2
         pr_urls = {r.file_path_ref for r in results}
@@ -188,7 +242,7 @@ class TestBatching:
             _diff("TYPE_MISMATCH", "/products", "price"),
         ]
         with patch("adapters.openapi.executor._gh_request") as mock_gh:
-            results = ex.execute_batch(diffs)
+            results = ex.execute_batch(_items(diffs))
 
         mock_gh.assert_not_called()
         assert all(r.success is True for r in results)
@@ -196,12 +250,13 @@ class TestBatching:
 
     def test_empty_batch_returns_empty(self):
         ex = _make_executor()
-        assert ex.execute_batch([]) == []
+        assert ex.execute_batch(_items([])) == []
 
 
 # ---------------------------------------------------------------------------
 # Idempotency — existing PR returned, no new branch/commit
 # ---------------------------------------------------------------------------
+
 
 class TestIdempotency:
 
@@ -220,7 +275,7 @@ class TestIdempotency:
 
         with patch("adapters.openapi.executor._gh_request") as mock_gh:
             mock_gh.return_value = existing_prs
-            result = ex.execute(diff)
+            result = ex.execute(_stub_resolution(diff), diff)
 
         # Only one GH call — the list PRs for idempotency check
         assert mock_gh.call_count == 1
@@ -242,7 +297,7 @@ class TestIdempotency:
 
         with patch("adapters.openapi.executor._gh_request") as mock_gh:
             mock_gh.return_value = existing_prs
-            result = ex.execute(diff)
+            result = ex.execute(_stub_resolution(diff), diff)
 
         assert mock_gh.call_count == 1
         assert result.success is True
@@ -261,9 +316,12 @@ class TestIdempotency:
             }
         ]
 
-        fake_pr   = {"html_url": "https://github.com/owner/repo/pull/51"}
-        fake_file = {"content": __import__("base64").b64encode(b"paths: {}").decode(), "sha": "abc"}
-        fake_ref  = {"object": {"sha": "deadbeef"}}
+        fake_pr = {"html_url": "https://github.com/owner/repo/pull/51"}
+        fake_file = {
+            "content": __import__("base64").b64encode(b"paths: {}").decode(),
+            "sha": "abc",
+        }
+        fake_ref = {"object": {"sha": "deadbeef"}}
 
         with patch("adapters.openapi.executor._gh_request") as mock_gh:
             mock_gh.side_effect = [
@@ -274,7 +332,7 @@ class TestIdempotency:
                 {},
                 fake_pr,
             ]
-            result = ex.execute(diff)
+            result = ex.execute(_stub_resolution(diff), diff)
 
         assert result.file_path_ref == "https://github.com/owner/repo/pull/51"
 
@@ -282,6 +340,7 @@ class TestIdempotency:
 # ---------------------------------------------------------------------------
 # Demo reset — close_touchstone_prs
 # ---------------------------------------------------------------------------
+
 
 class TestDemoReset:
 
@@ -303,13 +362,16 @@ class TestDemoReset:
         assert closed == 2  # only the 2 touchstone/* PRs
         # Verify PATCH was called for PR 1 and 2 but not 3
         patch_calls = [
-            c for c in mock_gh.call_args_list
-            if c.kwargs.get("method") == "PATCH" or (len(c.args) > 1 and c.args[1] == "PATCH")
+            c
+            for c in mock_gh.call_args_list
+            if c.kwargs.get("method") == "PATCH"
+            or (len(c.args) > 1 and c.args[1] == "PATCH")
         ]
         assert len(patch_calls) == 2
 
-    def test_no_token_returns_zero(self):
+    def test_no_token_returns_zero(self, monkeypatch):
         """close_touchstone_prs() with no token returns 0 without calling GH."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         ex = ContractExecutor(repo="owner/repo", token="")
         with patch("adapters.openapi.executor._gh_request") as mock_gh:
             closed = ex.close_touchstone_prs()
@@ -319,96 +381,9 @@ class TestDemoReset:
     def test_github_error_returns_zero_not_exception(self):
         """GH API failure during reset is swallowed — returns 0."""
         ex = _make_executor()
-        with patch("adapters.openapi.executor._gh_request", side_effect=Exception("network down")):
+        with patch(
+            "adapters.openapi.executor._gh_request",
+            side_effect=Exception("network down"),
+        ):
             closed = ex.close_touchstone_prs()
         assert closed == 0
-
-
-# ---------------------------------------------------------------------------
-# _add_field_to_spec helper
-# ---------------------------------------------------------------------------
-
-class TestAddFieldToSpec:
-
-    def test_adds_field_to_inline_schema(self):
-        spec_yaml = """
-openapi: "3.0.0"
-paths:
-  /products:
-    get:
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-"""
-        result = _add_field_to_spec(spec_yaml, "/products", "sku")
-        assert "sku" in result
-
-    def test_idempotent_on_existing_field(self):
-        """Adding a field that already exists doesn't duplicate it."""
-        spec_yaml = """
-openapi: "3.0.0"
-paths:
-  /products:
-    get:
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  sku:
-                    type: string
-"""
-        result = _add_field_to_spec(spec_yaml, "/products", "sku")
-        import yaml
-        parsed = yaml.safe_load(result)
-        props = (
-            parsed["paths"]["/products"]["get"]["responses"]["200"]
-            ["content"]["application/json"]["schema"]["properties"]
-        )
-        assert list(props.keys()).count("sku") == 1
-
-
-# ---------------------------------------------------------------------------
-# _add_field_to_api helper
-# ---------------------------------------------------------------------------
-
-class TestAddFieldToApi:
-
-    def test_inserts_field_into_return_dict(self):
-        main_py = '''\
-@app.get("/products")
-def products():
-    return {
-        "id": 1,
-        "name": "Widget",
-    }
-'''
-        result = _add_field_to_api(main_py, "/products", "sku")
-        assert '"sku"' in result
-        assert "TODO: implement" in result
-
-    def test_no_change_if_field_already_present(self):
-        main_py = '''\
-@app.get("/products")
-def products():
-    return {"id": 1, "sku": "ABC"}
-'''
-        result = _add_field_to_api(main_py, "/products", "sku")
-        assert result == main_py
-
-    def test_fallback_todo_comment_when_no_return_dict(self):
-        main_py = '''\
-@app.get("/products")
-def products():
-    return []
-'''
-        result = _add_field_to_api(main_py, "/products", "sku")
-        assert "TODO" in result

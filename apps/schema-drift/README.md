@@ -9,7 +9,7 @@ Touchstone points at it via the `MODELS_PATH` env var.
 
 ```bash
 # from repo root
-cp .env_sample .env           # add DATABASE_URL and MODELS_PATH
+cp .env_sample .env           # add DATABASE_URL (and optionally MANTLE_API_KEY)
 bash apps/schema-drift/run.sh
 ```
 
@@ -35,6 +35,7 @@ Then open <http://localhost:8001>.
 | Env var | Default | Description |
 |---------|---------|-------------|
 | `DATABASE_URL` | — | Postgres connection string (required) |
+| `MANTLE_API_KEY` | — | Mantle/Bedrock API key; falls back to MockResolver if unset |
 | `SCHEMA_DRIFT_PORT` | `8001` | Server port |
 
 Target repos are configured in `repos.json` at the repo root — no env var needed.

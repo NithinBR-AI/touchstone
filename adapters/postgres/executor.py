@@ -26,7 +26,7 @@ import psycopg
 import sqlglot
 import sqlglot.expressions as exp
 
-from core.models import ExecutionResult, Resolution, SQLChange
+from core.models import Difference, ExecutionResult, Resolution, SQLChange
 
 CONNECT_TIMEOUT_S = 10
 STATEMENT_TIMEOUT_MS = 30000
@@ -61,7 +61,9 @@ class SQLExecutor:
         self._dsn = dsn
         self._connect = connect or default_connect
 
-    def execute(self, resolution: Resolution) -> ExecutionResult:
+    def execute(
+        self, resolution: Resolution, difference: Difference
+    ) -> ExecutionResult:  # noqa: ARG002
         change = resolution.proposed_change
         if change is None:
             return self._fail(resolution, None, "NO_CHANGE")

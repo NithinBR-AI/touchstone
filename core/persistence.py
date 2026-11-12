@@ -17,23 +17,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.models import (
-    ApplyOutcome,
-    Difference,
-    ExecutionResult,
-    FilePatch,
-    GhostState,
-    Report,
-    Resolution,
-    RollbackEvent,
-    SQLChange,
-    VerificationResult,
-)
-
+from core.models import (ApplyOutcome, Difference, ExecutionResult, FilePatch,
+                         GhostState, Report, Resolution, RollbackEvent,
+                         SQLChange, VerificationResult)
 
 # ---------------------------------------------------------------------------
 # JSON helpers
 # ---------------------------------------------------------------------------
+
 
 def _default_serialiser(obj: Any) -> Any:
     if isinstance(obj, datetime):
@@ -46,14 +37,13 @@ def _default_serialiser(obj: Any) -> Any:
 
 
 def _serialise_report(report: Report) -> dict[str, Any]:
-    return json.loads(
-        json.dumps(asdict(report), default=_default_serialiser)
-    )
+    return json.loads(json.dumps(asdict(report), default=_default_serialiser))
 
 
 # ---------------------------------------------------------------------------
 # Persistence
 # ---------------------------------------------------------------------------
+
 
 class Persistence:
     """
@@ -114,9 +104,11 @@ class Persistence:
 # Deserialisation helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_dt(value: str | None) -> datetime:
     if not value:
         from datetime import timezone
+
         return datetime.now(timezone.utc)
     return datetime.fromisoformat(value)
 
@@ -125,14 +117,18 @@ def _deserialise_change(data: dict[str, Any] | None) -> SQLChange | FilePatch | 
     if data is None:
         return None
     if "statement" in data:
-        return SQLChange(**{k: v for k, v in data.items() if k in SQLChange.__dataclass_fields__})
+        return SQLChange(
+            **{k: v for k, v in data.items() if k in SQLChange.__dataclass_fields__}
+        )
     if "forward_patch" in data:
         fp = dict(data)
         for key in ("forward_patch", "reverse_patch"):
             val = fp.get(key)
             if isinstance(val, str):
                 fp[key] = bytes.fromhex(val)
-        return FilePatch(**{k: v for k, v in fp.items() if k in FilePatch.__dataclass_fields__})
+        return FilePatch(
+            **{k: v for k, v in fp.items() if k in FilePatch.__dataclass_fields__}
+        )
     return None
 
 
@@ -140,14 +136,18 @@ def _deserialise_difference(data: dict[str, Any]) -> Difference:
     d = dict(data)
     d["state"] = GhostState(d.get("state", "PENDING"))
     d["detected_at"] = _parse_dt(d.get("detected_at"))
-    return Difference(**{k: v for k, v in d.items() if k in Difference.__dataclass_fields__})
+    return Difference(
+        **{k: v for k, v in d.items() if k in Difference.__dataclass_fields__}
+    )
 
 
 def _deserialise_resolution(data: dict[str, Any]) -> Resolution:
     d = dict(data)
     d["proposed_change"] = _deserialise_change(d.get("proposed_change"))
     d["resolved_at"] = _parse_dt(d.get("resolved_at"))
-    return Resolution(**{k: v for k, v in d.items() if k in Resolution.__dataclass_fields__})
+    return Resolution(
+        **{k: v for k, v in d.items() if k in Resolution.__dataclass_fields__}
+    )
 
 
 def _deserialise_execution(data: dict[str, Any] | None) -> ExecutionResult | None:
@@ -160,7 +160,9 @@ def _deserialise_execution(data: dict[str, Any] | None) -> ExecutionResult | Non
         val = d.get(key)
         if isinstance(val, str):
             d[key] = bytes.fromhex(val)
-    return ExecutionResult(**{k: v for k, v in d.items() if k in ExecutionResult.__dataclass_fields__})
+    return ExecutionResult(
+        **{k: v for k, v in d.items() if k in ExecutionResult.__dataclass_fields__}
+    )
 
 
 def _deserialise_verification(data: dict[str, Any] | None) -> VerificationResult | None:
@@ -170,7 +172,9 @@ def _deserialise_verification(data: dict[str, Any] | None) -> VerificationResult
     d["rechecked_at"] = _parse_dt(d.get("rechecked_at"))
     remaining = d.get("remaining")
     d["remaining"] = _deserialise_difference(remaining) if remaining else None
-    return VerificationResult(**{k: v for k, v in d.items() if k in VerificationResult.__dataclass_fields__})
+    return VerificationResult(
+        **{k: v for k, v in d.items() if k in VerificationResult.__dataclass_fields__}
+    )
 
 
 def _deserialise_outcome(data: dict[str, Any]) -> ApplyOutcome:
@@ -178,13 +182,17 @@ def _deserialise_outcome(data: dict[str, Any]) -> ApplyOutcome:
     d["state"] = GhostState(d.get("state", "PENDING"))
     d["execution"] = _deserialise_execution(d.get("execution"))
     d["verification"] = _deserialise_verification(d.get("verification"))
-    return ApplyOutcome(**{k: v for k, v in d.items() if k in ApplyOutcome.__dataclass_fields__})
+    return ApplyOutcome(
+        **{k: v for k, v in d.items() if k in ApplyOutcome.__dataclass_fields__}
+    )
 
 
 def _deserialise_rollback_event(data: dict[str, Any]) -> RollbackEvent:
     d = dict(data)
     d["attempted_at"] = _parse_dt(d.get("attempted_at"))
-    return RollbackEvent(**{k: v for k, v in d.items() if k in RollbackEvent.__dataclass_fields__})
+    return RollbackEvent(
+        **{k: v for k, v in d.items() if k in RollbackEvent.__dataclass_fields__}
+    )
 
 
 def _deserialise_report(data: dict[str, Any]) -> Report:
@@ -199,12 +207,10 @@ def _deserialise_report(data: dict[str, Any]) -> Report:
         _deserialise_difference(d) for d in data.get("differences", [])
     ]
     report.resolutions = {
-        k: _deserialise_resolution(v)
-        for k, v in data.get("resolutions", {}).items()
+        k: _deserialise_resolution(v) for k, v in data.get("resolutions", {}).items()
     }
     report.outcomes = {
-        k: _deserialise_outcome(v)
-        for k, v in data.get("outcomes", {}).items()
+        k: _deserialise_outcome(v) for k, v in data.get("outcomes", {}).items()
     }
     report.rollback_events = {
         k: [_deserialise_rollback_event(e) for e in events]

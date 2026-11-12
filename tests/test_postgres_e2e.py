@@ -32,7 +32,7 @@ from core.cache import Cache
 from core.models import ComparisonTarget, GhostState, State
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import FilePatchValidator, SQLValidator
+from core.validator import SQLValidator
 
 load_dotenv()
 
@@ -70,7 +70,6 @@ def _build_orch(tmp_path: Path):
             load_actual=lambda: load_actual_schema(DB_URL),
         ),
         validator_sql=SQLValidator(),
-        validator_file=FilePatchValidator(tmp_path),
         persistence=Persistence(tmp_path / "reports"),
         cache=Cache(tmp_path / "cache.json"),
         domain="database",

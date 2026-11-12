@@ -26,5 +26,4 @@ cd "$SCRIPT_DIR"
 echo "Starting Schema Drift on http://localhost:${PORT}"
 exec "$PYTHON" -m uvicorn main:app \
   --host 0.0.0.0 \
-  --port "$PORT" \
-  --reload
+  --port "$PORT"

@@ -181,45 +181,47 @@ class ContractComparator:
         i_props = _intended_props(i_schema)
         a_props = _actual_props(a_schema)
 
-        # Fields in actual but not in spec — undocumented leakage
-        for field in sorted(a_props - i_props):
+        # Fields in actual but not in spec — group all into one diff
+        extra_fields = sorted(a_props - i_props)
+        if extra_fields:
             diffs.append(
                 _make(
                     "FIELD_EXTRA",
-                    f"{target_prefix}.{field}",
+                    f"{target_prefix}",
                     "MEDIUM",
                     POLICY_BLOCKED,
                     {
                         "path": path,
                         "method": method,
                         "status": status,
-                        "field": field,
-                        "description": f"Field '{field}' returned by API but not in spec",
+                        "fields": extra_fields,
+                        "description": f"Fields '{', '.join(extra_fields)}' returned by API but not in spec",
                     },
-                    {"path": path, "field": field},
+                    {"path": path, "kind": "FIELD_EXTRA"},
                 )
             )
 
-        # Fields in spec but absent from actual — missing from response
-        for field in sorted(i_props - a_props):
+        # Fields in spec but absent from actual — group all into one diff
+        missing_fields = sorted(i_props - a_props)
+        if missing_fields:
             diffs.append(
                 _make(
                     "FIELD_MISSING",
-                    f"{target_prefix}.{field}",
+                    f"{target_prefix}",
                     "HIGH",
                     POLICY_REVIEW,
                     {
                         "path": path,
                         "method": method,
                         "status": status,
-                        "field": field,
-                        "description": f"Field '{field}' in spec but not returned by API",
+                        "fields": missing_fields,
+                        "description": f"Fields '{', '.join(missing_fields)}' in spec but not returned by API",
                     },
-                    {"path": path, "field": field},
+                    {"path": path, "kind": "FIELD_MISSING"},
                 )
             )
 
-        # Fields present in both — check for type mismatch
+        # Fields present in both — check for type mismatch (one diff per field, different fix per field)
         i_props_dict = _schema_props(i_schema)
         a_props_dict = _schema_props(a_schema)
         for field in sorted(i_props & a_props):

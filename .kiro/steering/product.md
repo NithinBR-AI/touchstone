@@ -110,13 +110,11 @@ but does NOT implement the adapter itself.
 Apply is fully open — no 403, no password. Judges can apply fixes directly in the UI.
 Principal recorded in audit log as `"demo-sandbox"`. No bearer token.
 
-**Schema Drift** (`/apply`): calls `orch.apply_one()` — standard orchestrator path.
+**Schema Drift** (`/apply`): calls `orch.apply_one(id, human_authorized=True)` — standard orchestrator path. `human_authorized=True` allows REVIEW_REQUIRED diffs (e.g. narrowing type changes, DROP operations) to execute after human review.
 
-**Contract Observer** (`/apply`): bypasses `orch.apply_one()` and calls
-`ContractExecutor.execute(diff)` directly. Reason: all API diffs have `safe_fix=False`
-(changes require a PR, never auto-applied), so `apply_one()` would refuse with
-REVIEW_REQUIRED. The executor opens a GitHub PR instead of touching the live system.
-State is updated to RESOLVED or EXECUTION_FAILED and saved via `orch.persistence`.
+**Contract Observer** (`/apply`): calls `orch.apply_batch(same_kind_ids, human_authorized=True)`. Batches all non-terminal diffs of the same kind into one PR (one PR for all FIELD_EXTRA, one for all FIELD_MISSING). `ContractExecutor.execute_batch()` handles grouping and idempotency internally. State managed entirely by orchestrator.
+
+**The Poltergeist** (`/apply`): calls `orch.apply_one(id, human_authorized=True)`. `CacheExecutor` derives the action from the Difference directly (KEY_MISSING → POST /cache/warm, UNDECLARED_KEY → DELETE /cache/delete). No proposed_change needed.
 
 ### Demo-target repo — `touchstone-demo-target`
 The declared schema lives in a separate repo:

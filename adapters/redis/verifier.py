@@ -51,9 +51,14 @@ class CacheVerifier:
                 },
             )
 
-        # UNDECLARED_KEY — not auto-fixable, requires manual review
+        # UNDECLARED_KEY — resolved when the key is no longer in Redis
+        resolved = difference.target not in actual_keys
         return VerificationResult(
             difference_id=difference.id,
-            resolved=False,
-            evidence={"kind": difference.kind, "requires_manual_review": True},
+            resolved=resolved,
+            evidence={
+                "key": difference.target,
+                "found_in_redis": not resolved,
+                "all_keys": sorted(actual_keys),
+            },
         )

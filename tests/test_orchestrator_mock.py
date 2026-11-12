@@ -19,7 +19,7 @@ from core.cache import Cache
 from core.models import ComparisonTarget, ExecutionResult, GhostState, State
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import FilePatchValidator, SQLValidator
+from core.validator import SQLValidator
 
 INTENDED = {
     "users": {
@@ -77,7 +77,7 @@ class FakeExecutor:
     def __init__(self, db: FakeDB, apply: bool = True) -> None:
         self.db, self.apply = db, apply
 
-    def execute(self, resolution):
+    def execute(self, resolution, difference=None):
         stmt = resolution.proposed_change.statement
         if self.apply:
             if stmt.startswith("CREATE INDEX"):
@@ -104,7 +104,6 @@ def _orch(tmp_path: Path, db: FakeDB, resolver=None, apply=True) -> Orchestrator
         executor=FakeExecutor(db, apply=apply),
         verifier=SchemaVerifier(lambda: source.intended(None), db.state),
         validator_sql=SQLValidator(),
-        validator_file=FilePatchValidator(tmp_path),
         persistence=Persistence(tmp_path / "reports"),
         cache=Cache(tmp_path / "cache.json"),
         domain="database",
@@ -181,7 +180,8 @@ def test_second_run_hits_cache(tmp_path: Path) -> None:
     report2 = _orch(tmp_path, db2, resolver=MockResolver(counting)).run()
     assert len(calls) == first, "Responder called again on second run — cache miss"
     resolved_sigs = {
-        r.difference_signature for r in report1.resolutions.values()
+        r.difference_signature
+        for r in report1.resolutions.values()
         if r.proposed_change is not None
     }
     for sig, res in report2.resolutions.items():
@@ -203,6 +203,7 @@ def test_cache_not_populated_before_apply(tmp_path: Path) -> None:
 def test_cache_populated_after_successful_apply(tmp_path: Path) -> None:
     """Cache is written only after apply_one verifies the fix worked."""
     import json as _json
+
     db = FakeDB()
     orch = _orch(tmp_path, db)
     report = orch.run()
@@ -214,5 +215,7 @@ def test_cache_populated_after_successful_apply(tmp_path: Path) -> None:
     data = _json.loads(cache_file.read_text(encoding="utf-8"))
     assert len(data) >= 1, "Expected at least one cache entry after successful apply"
     for entry in data.values():
-        assert entry.get("proposed_change") is not None, "Cached entry has no proposed_change"
+        assert (
+            entry.get("proposed_change") is not None
+        ), "Cached entry has no proposed_change"
         assert "expires_at" in entry, "Cached entry missing expires_at TTL field"

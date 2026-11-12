@@ -35,9 +35,10 @@ Runs on `http://localhost:8002` by default. Set `CONTRACT_OBSERVER_PORT` to over
 | POST | /repos/select | Switch active repo `{"repo_id": "..."}` |
 | GET | /discover | Active repo's openapi_url + api_base_url |
 | POST | /compare | Probe live API and detect contract drift |
-| POST | /apply | Open GitHub PR for a drift item `{"difference_id": "..."}` |
+| POST | /apply | Batch-open GitHub PRs for all diffs of the same kind |
 | POST | /rollback | Mark a drift item rolled back `{"difference_id": "..."}` |
 | GET | /report/{id} | Fetch a stored report |
+| POST | /demo/reset | Re-seed drift and invalidate remote cache for judge replays |
 
 ## Config
 
@@ -45,7 +46,7 @@ Runs on `http://localhost:8002` by default. Set `CONTRACT_OBSERVER_PORT` to over
 ```json
 {
   "domain": "api",
-  "accent": "#a855f7",
+  "accent": "#67e8f9",
   "title": "The Séance"
 }
 ```

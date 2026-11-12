@@ -71,9 +71,9 @@ function renderApiEvidence(diff, resolution) {
 
   if (ctx.method) pills.push(pill("method", esc(ctx.method), "pill-code"));
   if (ctx.path)   pills.push(pill("path",   esc(ctx.path),   "pill-code"));
-  if (ctx.field)  pills.push(pill("field",  esc(ctx.field),  "pill-code"));
-  // comparator stores status as ctx.status (e.g. "200"), not ctx.status_code
   if (ctx.status) pills.push(pill("status", esc(String(ctx.status)), "pill-warn"));
+  // Single field (TYPE_MISMATCH) or legacy
+  if (ctx.field)  pills.push(pill("field",  esc(ctx.field),  "pill-code"));
   if (diff.kind === "TYPE_MISMATCH") {
     if (ctx.actual_type)   pills.push(pill("live",     esc(ctx.actual_type),   "pill-warn"));
     if (ctx.declared_type) pills.push(pill("declared", esc(ctx.declared_type), "pill-code"));
@@ -82,13 +82,20 @@ function renderApiEvidence(diff, resolution) {
 
   const pillsHtml = `<div class="card-pills">${pills.join("")}</div>`;
 
-  // For PATH_MISSING / PATH_EXTRA there is no field — show the description instead
+  // Multiple fields (FIELD_EXTRA / FIELD_MISSING) — render each as a pill
+  let fieldsHtml = "";
+  if (ctx.fields && ctx.fields.length > 0) {
+    const fieldPills = ctx.fields.map(f => pill("field", esc(f), "pill-code")).join("");
+    fieldsHtml = `<div class="card-pills">${fieldPills}</div>`;
+  }
+
+  // PATH_MISSING / PATH_EXTRA — show description
   let descHtml = "";
-  if (!ctx.field && ctx.description) {
+  if (!ctx.field && !ctx.fields && ctx.description) {
     descHtml = `<div class="card-desc">${esc(ctx.description)}</div>`;
   }
 
-  return pillsHtml + descHtml;
+  return pillsHtml + fieldsHtml + descHtml;
 }
 
 function renderCacheEvidence(diff, resolution) {
@@ -275,9 +282,19 @@ function renderCard(diff, report, index) {
   const renderer     = RENDERERS[CONFIG.domain] || renderDatabaseEvidence;
   const evidenceHtml = renderer(diff, resolution);
 
-  // API domain: executor handles everything — Apply is always available for non-resolved ghosts
-  const canApply    = (state === "PENDING" || state === "REVIEW_REQUIRED" || (state === "BLOCKED" && CONFIG.domain !== "cache")) &&
-    (CONFIG.domain === "api" || CONFIG.domain === "cache" || (resolution && resolution.proposed_change));
+  // Exorcise is available when:
+  //   - State is PENDING (auto-fix path)
+  //   - State is REVIEW_REQUIRED or BLOCKED and there is a proposed_change
+  //     (human-authorized path — human sees the SQL and clicks to authorize)
+  //   - API/cache domains: executor handles everything — always available for non-terminal ghosts
+  const hasProposal = resolution && resolution.proposed_change && resolution.proposed_change.statement;
+  const isTerminal  = state === "RESOLVED" || state === "SUPERSEDED" || state === "EXECUTION_FAILED";
+  const canApply    = !isTerminal && (
+    CONFIG.domain === "api" ||
+    CONFIG.domain === "cache" ||
+    state === "PENDING" ||
+    ((state === "REVIEW_REQUIRED" || state === "BLOCKED") && hasProposal)
+  );
   const canRollback = (state === "RESOLVED" || state === "STILL_PRESENT") && CONFIG.domain !== "database";
 
   const applyBtn = canApply
@@ -547,9 +564,9 @@ async function apiApply(diffId) {
       }
     }
 
-    // Show PR popup BEFORE re-render — outcome is from the server response
-    if (isBatchKind && outcome.state === "RESOLVED") {
-      const prUrl = outcome.execution && outcome.execution.file_path_ref;
+    // Show PR popup BEFORE re-render — trigger when PR was opened (file_path_ref set)
+    const prUrl = outcome.execution && outcome.execution.file_path_ref;
+    if (isBatchKind && prUrl) {
       showPrPopup(prUrl, triggerDiff.kind, batchIds.length);
     }
 
@@ -809,11 +826,11 @@ async function boot() {
   // scan line on load
   triggerScanLine();
 
-  // restore previous report if available
+  // restore previous report if server has one from this session
   await loadLatestReport();
 
-  // show demo banner if no report yet
-  if (!CONFIG.latest_report_id) {
+  // show demo banner if no report loaded
+  if (!REPORT) {
     const grid2 = document.getElementById("card-grid");
     if (grid2) grid2.innerHTML = `
       <div class="state-empty">

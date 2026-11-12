@@ -18,18 +18,17 @@ touchstone/
 ├── adapters/
 │   ├── postgres/{intended,actual,normalize,comparator,executor,verifier}.py
 │   ├── openapi/{intended,actual,comparator,executor,verifier,ssrf}.py
-│   └── deps/{intended,actual,comparator,executor,verifier}.py
+│   └── redis/{intended,actual,comparator,executor,verifier}.py
 ├── agents/
 │   ├── resolver.py
 │   ├── prompts.py
-│   ├── mcp_client.py
-│   ├── redaction.py
-│   └── cache.json
+│   ├── mantle_client.py
+│   └── redaction.py
 ├── apps/
 │   ├── shared/ui/{index.html, app.js, style.css}
 │   ├── schema-drift/{main.py, config.json, README.md, run.sh}
 │   ├── contract-observer/{main.py, config.json, README.md, run.sh}
-│   └── dependency-auditor/{main.py, config.json, README.md, run.sh}
+│   └── poltergeist/{main.py, config.json, README.md, run.sh}
 ├── scripts/
 │   └── run_comparator_test.py      # helper for hook command action
 ├── repos.json
@@ -168,8 +167,10 @@ Validator
 · SQL: operation matrix + canonical target + target binding + widening
   table (from Difference.context, not resolver). Reject multi-statement,
   SET, USING, expression/partial indexes. Fail closed.
-· File: symlink-before-resolve + path confinement + hash verify +
-  format-aware key diff + atomic_write above.
+· File: FilePatchValidator removed from core/validator.py. API patches are
+  now applied as GitHub PRs by ContractExecutor (LLM-generated patched
+  content committed via GitHub API). Cache fixes applied directly by
+  CacheExecutor via /cache/warm and /cache/delete endpoints.
 · HTTP: SSRF pinning per above.
 
 State machine
@@ -192,16 +193,17 @@ test_normalize.py 30 triples; unsupported raises
 test_sqlglot_ast_assumptions.py AST shapes verified for pinned version
 test_validator_sql.py Matrix rows + injection + target binding + widening
 test_sql_execution.py Auto-fixable cases run against real Postgres
-test_validator_file.py Traversal/symlink/hash/parse/wrong-key blocked
 test_ssrf.py Blocked ranges, DNS rebinding, redirect, proxy, IPv6
 test_redaction.py All surfaces, token boundaries, error evidence
 test_comparator_pg.py 5 diffs, 0 false positives on control
-test_comparator_api.py safe_fix classification
-test_comparator_deps.py 3 diffs, mismatch → review
-test_orchestrator.py Full loop; apply refuses non-PENDING
+test_comparator_api.py safe_fix classification, batched fields
+test_comparator_cache.py KEY_MISSING/UNDECLARED_KEY, executor DELETE behaviour
+test_executor_api.py ContractExecutor batch, idempotency, demo reset
+test_orchestrator_mock.py Full loop; apply refuses non-PENDING
 test_state_transitions.py 56-cell matrix + invariants + persisted-state
-test_rollback.py File success, external edit, double rollback, DB refusal, inode race
+test_rollback.py File success, external edit, double rollback, DB refusal
 test_cache_reproducibility.py Signature match, cache hits
+test_mantle_resolver.py MantleResolver domain routing, retries, fallback
 test_demo_repeatability.py Two runs → identical
 test_skeleton.py 7 files, no external imports
 test_properties.py Reference round-trip, SQL positive+negative, state machine, redaction variants
@@ -234,9 +236,9 @@ Maps technical drift kind names to Halloween names for card display:
 - SUPERSEDED → "🌫 FADED"
 
 **Per-app names**
-- schema-drift → title "The Crypt", accent #f97316
-- contract-observer → title "The Séance", accent #8b5cf6 (violet)
-- dependency-auditor → title "The Haunting", accent #f97316
+- schema-drift → title "The Crypt", accent #f97316 (pumpkin orange)
+- contract-observer → title "The Séance", accent #67e8f9 (icy cyan)
+- poltergeist → title "The Poltergeist", accent #c084fc (violet)
 
 **Card state theming (CSS)**
 Per-state: declare --state-color + --state-bg-tint. Single shared rule:
@@ -264,9 +266,13 @@ Ghosts cleared (stopGhosts) when all drifts resolved.
 
 Out of scope (v1)
 
-Node/TS, MySQL/SQLite/MongoDB/Redis, data/row-level drift, multi-schema,
+Node/TS, MySQL/SQLite/MongoDB, data/row-level drift, multi-schema,
 apply-all, auth (beyond Req 26), real-time watch, hosted multi-tenant,
-automatic PR creation, React or any framework, fourth domain.
+React or any framework, fourth domain.
+
+Note: Redis cache domain IS in scope (The Poltergeist, App 3).
+Automatic PR creation IS in scope for Contract Observer (ContractExecutor
+opens GitHub PRs for FIELD_EXTRA and FIELD_MISSING drift).
 
 ```
 

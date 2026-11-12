@@ -139,7 +139,7 @@ def test_validate_payload_rules() -> None:
                 "rationale": "x",
             }
         )
-        == "invalid operation"
+        == ""  # DROP_TABLE is now a valid operation (human-authorized path)
     )
     assert (
         validate_payload(

@@ -6,20 +6,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.cache import Cache
-from core.models import (
-    ComparisonTarget,
-    Difference,
-    ExecutionResult,
-    GhostState,
-    Resolution,
-    RollbackEvent,
-    SQLChange,
-    State,
-    VerificationResult,
-)
+from core.models import (ComparisonTarget, Difference, ExecutionResult,
+                         GhostState, Resolution, RollbackEvent, SQLChange,
+                         State, VerificationResult)
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import FilePatchValidator, SQLValidator
+from core.validator import SQLValidator
 
 
 def create_orchestrator(domain: str = "database"):
@@ -76,7 +68,6 @@ def create_orchestrator(domain: str = "database"):
         difference_id=diff.id, resolved=True, evidence={"email": "varchar(100)"}
     )
     validator_sql = SQLValidator()
-    validator_file = FilePatchValidator(Path("tests").parent)
     persistence = MagicMock(spec=Persistence)
     cache = MagicMock(spec=Cache)
     cache.get.return_value = None
@@ -88,7 +79,6 @@ def create_orchestrator(domain: str = "database"):
         executor=executor,
         verifier=verifier,
         validator_sql=validator_sql,
-        validator_file=validator_file,
         persistence=persistence,
         cache=cache,
         domain=domain,

@@ -55,7 +55,7 @@ class TestSQLExecution:
             operation="CREATE_INDEX",
             target="ix_users_email_exec_test",
         )
-        result = ex.execute(_res(diff, change))
+        result = ex.execute(_res(diff, change), diff)
         assert result.success, f"Expected success, got error_code={result.error_code}"
         assert result.applied_change is not None
 
@@ -82,7 +82,7 @@ class TestSQLExecution:
             operation="ALTER_COLUMN_TYPE",
             target="users.email",
         )
-        result = ex.execute(_res(diff, change))
+        result = ex.execute(_res(diff, change), diff)
         assert result.success, f"Expected success, got error_code={result.error_code}"
 
         # Verify type changed in DB
@@ -109,7 +109,7 @@ class TestSQLExecution:
             operation="CREATE_INDEX",
             target="ix_test_slow",
         )
-        result = ex.execute(_res(diff, change))
+        result = ex.execute(_res(diff, change), diff)
         assert not result.success
         assert result.error_code == "STATEMENT_TIMEOUT"
 
@@ -120,7 +120,7 @@ class TestSQLExecution:
         change = SQLChange(
             statement="SELECT 1", operation="CREATE_INDEX", target="ix_test"
         )
-        result = ex.execute(_res(diff, change))
+        result = ex.execute(_res(diff, change), diff)
         assert not result.success
         assert result.error_code == "CONNECT_FAILED"
         assert result.error_class != ""
@@ -134,6 +134,6 @@ class TestSQLExecution:
             operation="CREATE_INDEX",
             target="ix_test",
         )
-        result = ex.execute(_res(diff, change))
+        result = ex.execute(_res(diff, change), diff)
         assert not result.success
         assert result.error_code == "SET_FORBIDDEN"

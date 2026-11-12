@@ -68,7 +68,7 @@ def test_field_extra_detected():
     d = diffs[0]
     assert d.kind == "FIELD_EXTRA"
     assert d.domain == DOMAIN
-    assert "account_status" in d.target
+    assert "account_status" in d.context["fields"]
     assert d.state == GhostState.BLOCKED
     assert d.context["safe_fix"] is False
 
@@ -111,8 +111,8 @@ def test_field_extra_multiple():
     )
     diffs = ContractComparator().compare(intended, actual)
     kinds = [d.kind for d in diffs]
-    assert kinds.count("FIELD_EXTRA") == 2
-    fields = {d.context["field"] for d in diffs}
+    assert kinds.count("FIELD_EXTRA") == 1
+    fields = diffs[0].context["fields"]
     assert "sku" in fields
     assert "internal_code" in fields
 
@@ -144,7 +144,7 @@ def test_field_missing_detected():
     diffs = ContractComparator().compare(intended, actual)
     missing = [d for d in diffs if d.kind == "FIELD_MISSING"]
     assert len(missing) == 1
-    assert missing[0].context["field"] == "email"
+    assert "email" in missing[0].context["fields"]
     assert missing[0].state == GhostState.REVIEW_REQUIRED
 
 
@@ -292,7 +292,10 @@ def test_type_mismatch_context_has_status_not_status_code():
                 "get": {
                     "responses": {
                         "200": {
-                            "schema": {"type": "object", "properties": {"count": {"type": "integer"}}}
+                            "schema": {
+                                "type": "object",
+                                "properties": {"count": {"type": "integer"}},
+                            }
                         }
                     }
                 }
@@ -305,7 +308,10 @@ def test_type_mismatch_context_has_status_not_status_code():
                 "get": {
                     "responses": {
                         "200": {
-                            "schema": {"type": "object", "properties": {"count": {"type": "string"}}}
+                            "schema": {
+                                "type": "object",
+                                "properties": {"count": {"type": "string"}},
+                            }
                         }
                     }
                 }
@@ -331,7 +337,9 @@ def test_field_extra_context_has_description():
     path_missing = [d for d in diffs if d.kind == "PATH_MISSING"]
     assert len(path_missing) == 1
     # PATH_MISSING has no field — UI falls back to ctx.description
-    assert "description" not in path_missing[0].context  # PATH_MISSING has no description field currently
+    assert (
+        "description" not in path_missing[0].context
+    )  # PATH_MISSING has no description field currently
     # target is the path itself
     assert path_missing[0].target == "/orders"
 

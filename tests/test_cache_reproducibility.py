@@ -22,19 +22,12 @@ import pytest
 
 from agents.resolver import MockResolver, canned_responder
 from core.cache import CACHE_VERSION, VALIDATOR_CONTRACT, Cache
-from core.models import (
-    ComparisonTarget,
-    Difference,
-    ExecutionResult,
-    GhostState,
-    Resolution,
-    SQLChange,
-    State,
-    VerificationResult,
-)
+from core.models import (ComparisonTarget, Difference, ExecutionResult,
+                         GhostState, Resolution, SQLChange, State,
+                         VerificationResult)
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import FilePatchValidator, SQLValidator
+from core.validator import SQLValidator
 
 # ---------------------------------------------------------------------------
 # In-memory fake DB (same pattern as test_orchestrator_mock.py)
@@ -91,12 +84,13 @@ class _FakeExecutor:
     def __init__(self, db: _FakeDB) -> None:
         self._db = db
 
-    def execute(self, resolution):
+    def execute(self, resolution, difference=None):
         stmt = resolution.proposed_change.statement
         # Actually mutate the in-memory DB so the verifier sees the fix
         if stmt.startswith("CREATE INDEX"):
             self._db.tables["users"]["indexes"]["ix_users_email"] = {
-                "columns": ["email"], "unique": False
+                "columns": ["email"],
+                "unique": False,
             }
         return ExecutionResult(
             difference_id=resolution.difference_id,
@@ -125,7 +119,6 @@ def _build_orch(tmp_path: Path, db: _FakeDB, responder=None) -> Orchestrator:
         executor=_FakeExecutor(db),
         verifier=SchemaVerifier(lambda: source.intended(None), db.state),
         validator_sql=SQLValidator(),
-        validator_file=FilePatchValidator(tmp_path),
         persistence=Persistence(tmp_path / "reports"),
         cache=Cache(tmp_path / "cache.json"),
         domain="database",
@@ -232,12 +225,16 @@ class TestCacheReproducibility:
 
         for sig, entry in data.items():
             assert "cache_version" in entry, f"cache_version missing for {sig}"
-            assert "validator_contract" in entry, f"validator_contract missing for {sig}"
+            assert (
+                "validator_contract" in entry
+            ), f"validator_contract missing for {sig}"
             assert "prompt_hash" in entry, f"prompt_hash missing for {sig}"
             assert "expires_at" in entry, f"expires_at TTL missing for {sig}"
             assert entry["cache_version"] == CACHE_VERSION
             assert entry["validator_contract"] == VALIDATOR_CONTRACT
-            assert entry["proposed_change"] is not None, f"null proposed_change cached for {sig}"
+            assert (
+                entry["proposed_change"] is not None
+            ), f"null proposed_change cached for {sig}"
 
     def test_cache_lookup_skips_on_version_mismatch(self, tmp_path: Path) -> None:
         """Cache.get returns None when cache_version in file differs."""
@@ -281,7 +278,9 @@ class TestCacheReproducibility:
 
         db2 = _FakeDB()
         _build_orch(tmp_path, db2, counting).run()
-        assert len(calls) >= 1, "Expected responder to be called after prompt_hash mismatch"
+        assert (
+            len(calls) >= 1
+        ), "Expected responder to be called after prompt_hash mismatch"
 
     def test_first_run_no_cached_flag(self, tmp_path: Path) -> None:
         """First run resolutions are NOT marked cached (they came from the resolver)."""
@@ -289,7 +288,9 @@ class TestCacheReproducibility:
         report = _build_orch(tmp_path, db).run()
 
         for sig, res in report.resolutions.items():
-            assert res.cached is False, f"Resolution {sig} wrongly marked cached on first run"
+            assert (
+                res.cached is False
+            ), f"Resolution {sig} wrongly marked cached on first run"
 
     def test_cache_not_written_before_apply(self, tmp_path: Path) -> None:
         """run() alone must not write to cache — only apply+verify does."""
@@ -302,7 +303,9 @@ class TestCacheReproducibility:
 
     def test_cache_ttl_expiry_forces_fresh_call(self, tmp_path: Path) -> None:
         """Expired cache entries are evicted and the responder is called again."""
-        from datetime import datetime, timedelta, timezone as tz
+        from datetime import datetime, timedelta
+        from datetime import timezone as tz
+
         db = _FakeDB()
         _run_and_apply_all(tmp_path, db)
 
@@ -327,14 +330,23 @@ class TestCacheReproducibility:
     def test_null_proposed_change_never_cached(self, tmp_path: Path) -> None:
         """Review-only resolutions (proposed_change=None) must never appear in cache."""
         import json as _json
+
         # Use a responder that always returns review-only
         db = _FakeDB()
-        _run_and_apply_all(tmp_path, db, responder=lambda p, d: {
-            "action": "review", "statement": None, "operation": None, "rationale": "manual"
-        })
+        _run_and_apply_all(
+            tmp_path,
+            db,
+            responder=lambda p, d: {
+                "action": "review",
+                "statement": None,
+                "operation": None,
+                "rationale": "manual",
+            },
+        )
         cache_file = tmp_path / "cache.json"
         if cache_file.exists():
             data = _json.loads(cache_file.read_text(encoding="utf-8"))
             for sig, entry in data.items():
-                assert entry.get("proposed_change") is not None, \
-                    f"Null proposed_change was cached for {sig}"
+                assert (
+                    entry.get("proposed_change") is not None
+                ), f"Null proposed_change was cached for {sig}"

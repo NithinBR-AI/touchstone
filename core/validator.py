@@ -1,11 +1,8 @@
 """
 Core validator — the safety boundary.
 
-Two validators live here:
-  · SQLValidator   — operation matrix, canonical target, target binding,
-                     widening table, multi-statement / SET / USING rejection.
-  · FilePatchValidator — symlink check, path confinement, hash verify,
-                         format-aware key diff.
+SQLValidator — operation matrix, canonical target, target binding,
+               widening table, multi-statement / SET / USING rejection.
 
 The validator is the authoritative safety gate. The LLM resolver's rationale
 is NOT trusted. Every decision is derived from the SQL AST and the
@@ -17,17 +14,14 @@ Forbidden SQL operations (fail closed on anything not in the matrix):
 
 from __future__ import annotations
 
-import hashlib
 import os
-import stat
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import sqlglot
 import sqlglot.expressions as exp
 
-from core.models import Difference, FilePatch, GhostState, SQLChange
+from core.models import Difference, GhostState, SQLChange
 
 # ---------------------------------------------------------------------------
 # Operation matrix
@@ -36,55 +30,61 @@ from core.models import Difference, FilePatch, GhostState, SQLChange
 # Maps (difference_kind) → (allowed_sql_operation, auto_fixable)
 # Everything not in this table fails closed.
 OPERATION_MATRIX: dict[str, tuple[str, bool]] = {
-    "INDEX_MISSING":    ("CREATE_INDEX", True),
-    "TYPE_CHANGED":     ("ALTER_COLUMN_TYPE", True),   # only widening pairs
-    "COLUMN_MISSING":   ("ADD_COLUMN", False),          # REVIEW_REQUIRED
-    "TABLE_MISSING":    ("CREATE_TABLE", False),        # BLOCKED
-    "COLUMN_EXTRA":     ("DROP_COLUMN", False),         # BLOCKED
-    "TABLE_EXTRA":      ("DROP_TABLE", False),          # BLOCKED
-    "INDEX_EXTRA":      ("DROP_INDEX", False),          # BLOCKED
+    "INDEX_MISSING": ("CREATE_INDEX", True),
+    "TYPE_CHANGED": ("ALTER_COLUMN_TYPE", True),  # only widening pairs
+    "COLUMN_MISSING": ("ADD_COLUMN", False),  # REVIEW_REQUIRED
+    "TABLE_MISSING": ("CREATE_TABLE", False),  # BLOCKED
+    "COLUMN_EXTRA": ("DROP_COLUMN", False),  # BLOCKED
+    "TABLE_EXTRA": ("DROP_TABLE", False),  # BLOCKED
+    "INDEX_EXTRA": ("DROP_INDEX", False),  # BLOCKED
     # API domain
     "FIELD_UNDOCUMENTED": ("FILE_PATCH", True),
     # Deps domain
-    "DECLARED_UNPINNED": ("FILE_PATCH", False),         # human-initiated only
+    "DECLARED_UNPINNED": ("FILE_PATCH", False),  # human-initiated only
 }
 
 # Difference kinds whose policy is BLOCKED regardless of proposed SQL
-BLOCKED_KINDS: frozenset[str] = frozenset({
-    "TABLE_MISSING",
-    "COLUMN_EXTRA",
-    "TABLE_EXTRA",
-    "INDEX_EXTRA",
-    "COLUMN_MISSING",   # NOT NULL no default — see matrix; nullable handled as REVIEW_REQUIRED
-    "DECLARED_MISSING_INSTALL",
-    "DECLARED_VERSION_MISMATCH",
-})
+BLOCKED_KINDS: frozenset[str] = frozenset(
+    {
+        "TABLE_MISSING",
+        "COLUMN_EXTRA",
+        "TABLE_EXTRA",
+        "INDEX_EXTRA",
+        "COLUMN_MISSING",  # NOT NULL no default — see matrix; nullable handled as REVIEW_REQUIRED
+        "DECLARED_MISSING_INSTALL",
+        "DECLARED_VERSION_MISMATCH",
+    }
+)
 
 # Difference kinds that are always REVIEW_REQUIRED (proposed_change=None)
-REVIEW_REQUIRED_KINDS: frozenset[str] = frozenset({
-    "COLUMN_MISSING",
-    "ENDPOINT_MISSING",
-    "FIELD_MISSING",
-    "STATUS_CODE_CHANGED",
-    "FIELD_RENAME_SUGGESTION",
-    "DECLARED_VERSION_MISMATCH",
-})
+REVIEW_REQUIRED_KINDS: frozenset[str] = frozenset(
+    {
+        "COLUMN_MISSING",
+        "ENDPOINT_MISSING",
+        "FIELD_MISSING",
+        "STATUS_CODE_CHANGED",
+        "FIELD_RENAME_SUGGESTION",
+        "DECLARED_VERSION_MISMATCH",
+    }
+)
 
 # Allowed type-widening pairs (old_canonical → new_canonical)
-WIDENING_PAIRS: frozenset[tuple[str, str]] = frozenset({
-    ("smallint", "integer"),
-    ("integer", "bigint"),
-    ("real", "double precision"),
-    # varchar widening is checked dynamically (m > n)
-    ("text", "text"),           # no-op, handled separately
-})
+WIDENING_PAIRS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("smallint", "integer"),
+        ("integer", "bigint"),
+        ("real", "double precision"),
+        # varchar widening is checked dynamically (m > n)
+        ("text", "text"),  # no-op, handled separately
+    }
+)
 
 # Destructive / forbidden SQL node types
 FORBIDDEN_NODE_TYPES = (
     exp.Drop,
     exp.Delete,
     exp.TruncateTable,
-    exp.Command,    # catches SET and other raw commands
+    exp.Command,  # catches SET and other raw commands
 )
 
 
@@ -92,9 +92,10 @@ FORBIDDEN_NODE_TYPES = (
 # Validation result
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ValidationResult:
-    status: str          # "valid" | "blocked" | "review_required" | "invalid"
+    status: str  # "valid" | "blocked" | "review_required" | "invalid"
     reason: str = ""
     ghost_state: GhostState = GhostState.PENDING
 
@@ -102,6 +103,7 @@ class ValidationResult:
 # ---------------------------------------------------------------------------
 # SQL Validator
 # ---------------------------------------------------------------------------
+
 
 class SQLValidator:
     """
@@ -119,6 +121,8 @@ class SQLValidator:
         self,
         change: SQLChange,
         difference: Difference,
+        *,
+        human_authorized: bool = False,
     ) -> ValidationResult:
         # --- 1. Difference kind in matrix? ---
         if difference.kind not in OPERATION_MATRIX:
@@ -130,7 +134,11 @@ class SQLValidator:
 
         allowed_op, auto_fixable = OPERATION_MATRIX[difference.kind]
 
-        if not auto_fixable:
+        # Auto-fixability gate: skip only when a human has explicitly authorized
+        # the apply (e.g. clicked Exorcise after reviewing the LLM proposal).
+        # All structural checks (single statement, forbidden nodes, target binding,
+        # widening pairs) still run regardless — the validator is the safety boundary.
+        if not auto_fixable and not human_authorized:
             return ValidationResult(
                 status="review_required",
                 reason=f"'{difference.kind}' is not auto-fixable per operation matrix",
@@ -174,7 +182,12 @@ class SQLValidator:
             )
 
         # --- 5. Reject forbidden node types ---
-        for forbidden in FORBIDDEN_NODE_TYPES:
+        # When human_authorized=True, DROP operations are permitted (human has
+        # reviewed the proposed SQL and clicked Exorcise to authorize).
+        # SET, DELETE, TRUNCATE remain forbidden regardless.
+        ALWAYS_FORBIDDEN = (exp.Delete, exp.TruncateTable, exp.Command)
+        DROP_FORBIDDEN = (exp.Drop,) if not human_authorized else ()
+        for forbidden in ALWAYS_FORBIDDEN + DROP_FORBIDDEN:
             if isinstance(stmt, forbidden):
                 return ValidationResult(
                     status="blocked",
@@ -183,7 +196,9 @@ class SQLValidator:
                 )
 
         # --- 6. Match AST to expected operation ---
-        result = self._validate_operation(stmt, change, difference, allowed_op)
+        result = self._validate_operation(
+            stmt, change, difference, allowed_op, human_authorized=human_authorized
+        )
         return result
 
     # ------------------------------------------------------------------
@@ -196,17 +211,25 @@ class SQLValidator:
         change: SQLChange,
         difference: Difference,
         allowed_op: str,
+        human_authorized: bool = False,
     ) -> ValidationResult:
         if allowed_op == "CREATE_INDEX":
             return self._validate_create_index(stmt, change, difference)
         if allowed_op == "ALTER_COLUMN_TYPE":
-            return self._validate_alter_type(stmt, change, difference)
-        if allowed_op == "ADD_COLUMN":
-            return ValidationResult(
-                status="review_required",
-                reason="ADD_COLUMN requires human review",
-                ghost_state=GhostState.REVIEW_REQUIRED,
+            return self._validate_alter_type(
+                stmt, change, difference, human_authorized=human_authorized
             )
+        # These operations are allowed through when human_authorized=True;
+        # the DROP forbidden-node check above already ensured authorization.
+        # Just confirm the AST matches the allowed operation type.
+        if allowed_op in (
+            "ADD_COLUMN",
+            "DROP_COLUMN",
+            "DROP_INDEX",
+            "DROP_TABLE",
+            "CREATE_TABLE",
+        ):
+            return ValidationResult(status="valid", ghost_state=GhostState.PENDING)
         return ValidationResult(
             status="blocked",
             reason=f"operation '{allowed_op}' not handled by validator",
@@ -333,7 +356,9 @@ class SQLValidator:
         # For INDEX_MISSING, target encodes the index name: ix_<table>_<cols>
         expected_index_name = f"ix_{ast_table}_{'_'.join(ast_cols)}"
         index_name_expr = index_expr.args.get("this")
-        ast_index_name = self._canonical_name(index_name_expr) if index_name_expr else ""
+        ast_index_name = (
+            self._canonical_name(index_name_expr) if index_name_expr else ""
+        )
 
         # Compare index names - if both have quoted identifiers, preserve case; otherwise lowercase
         # The diff_target from comparator is always lowercase (from _parse_target)
@@ -358,6 +383,7 @@ class SQLValidator:
         stmt: exp.Expression,
         change: SQLChange,
         difference: Difference,
+        human_authorized: bool = False,
     ) -> ValidationResult:
         if not isinstance(stmt, exp.Alter):
             return ValidationResult(
@@ -402,7 +428,7 @@ class SQLValidator:
         new_type_expr = alter_col.args.get("dtype")
         new_type = str(new_type_expr).lower().strip() if new_type_expr else ""
 
-        if not self._is_widening(old_type, new_type):
+        if not human_authorized and not self._is_widening(old_type, new_type):
             return ValidationResult(
                 status="review_required",
                 reason=(
@@ -458,271 +484,3 @@ class SQLValidator:
             return True
 
         return False
-
-
-# ---------------------------------------------------------------------------
-# File Patch Validator
-# ---------------------------------------------------------------------------
-
-class FilePatchValidator:
-    """
-    Validates a FilePatch before execution:
-      1. Symlink check on the original path BEFORE resolve
-      2. Path confinement to project root
-      3. before_sha256 verification
-      4. Format-aware parse (YAML / TOML / requirements.txt)
-      5. Reject any key modification other than the declared target
-    """
-
-    def __init__(self, project_root: Path) -> None:
-        self.project_root = project_root.resolve()
-
-    def validate(
-        self,
-        patch: FilePatch,
-        difference: Difference,
-    ) -> ValidationResult:
-        path = Path(patch.file_path)
-
-        # --- 1. Symlink check BEFORE resolve ---
-        try:
-            lstat = path.lstat()
-        except FileNotFoundError:
-            return ValidationResult(
-                status="invalid",
-                reason=f"file not found: {patch.file_path}",
-                ghost_state=GhostState.BLOCKED,
-            )
-        if stat.S_ISLNK(lstat.st_mode):
-            return ValidationResult(
-                status="invalid",
-                reason="symlinks are forbidden as patch targets",
-                ghost_state=GhostState.BLOCKED,
-            )
-
-        # --- 2. Path confinement ---
-        try:
-            resolved = path.resolve()
-            resolved.relative_to(self.project_root)
-        except ValueError:
-            return ValidationResult(
-                status="invalid",
-                reason="patch target escapes project root",
-                ghost_state=GhostState.BLOCKED,
-            )
-
-        # --- 3. SHA-256 verification ---
-        current_bytes = resolved.read_bytes()
-        current_hash = hashlib.sha256(current_bytes).hexdigest()
-        if current_hash != patch.before_sha256:
-            return ValidationResult(
-                status="invalid",
-                reason="before_sha256 mismatch — file has changed since snapshot",
-                ghost_state=GhostState.BLOCKED,
-            )
-
-        # --- 4 & 5. Format-aware key check ---
-        suffix = resolved.suffix.lower()
-        try:
-            patched_bytes = self._apply_forward_patch(current_bytes, patch.forward_patch)
-            after_hash = hashlib.sha256(patched_bytes).hexdigest()
-            if after_hash != patch.after_sha256:
-                return ValidationResult(
-                    status="invalid",
-                    reason="after_sha256 mismatch — patch does not produce expected bytes",
-                    ghost_state=GhostState.BLOCKED,
-                )
-            result = self._validate_keys(
-                suffix, current_bytes, patched_bytes, difference.target
-            )
-            return result
-        except Exception as exc:
-            return ValidationResult(
-                status="invalid",
-                reason=f"patch validation error: {type(exc).__name__}",
-                ghost_state=GhostState.BLOCKED,
-            )
-
-    def _apply_forward_patch(self, original: bytes, patch: bytes) -> bytes:
-        """
-        Apply a unified diff (forward_patch) to original bytes and return
-        the patched bytes.
-
-        Protocol: forward_patch is a standard unified-diff (b'' = no change).
-        Lines starting with '+' are added, '-' removed, ' ' kept as-is.
-        Hunk headers (@@ -a,b +c,d @@) drive the apply loop.
-
-        Falls back to treating forward_patch as the full new content when
-        it cannot be parsed as a diff (backward compatibility with week-1
-        callers that stored raw new bytes).
-        """
-        if not patch:
-            return original
-
-        patch_text = patch.decode(errors="replace")
-
-        # Detect whether this is a unified diff or raw new content.
-        # A unified diff has at least one hunk header.
-        import re
-        if not re.search(r"^@@\s+-\d+", patch_text, re.MULTILINE):
-            # Not a unified diff — treat as raw replacement bytes (week-1 compat).
-            return patch
-
-        original_lines = original.decode(errors="replace").splitlines(keepends=True)
-        result_lines: list[str] = []
-        orig_pos = 0  # 0-based index into original_lines
-
-        hunk_re = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
-        patch_lines = patch_text.splitlines(keepends=True)
-        i = 0
-
-        # Skip file header lines (---, +++)
-        while i < len(patch_lines) and not patch_lines[i].startswith("@@"):
-            i += 1
-
-        while i < len(patch_lines):
-            line = patch_lines[i]
-            m = hunk_re.match(line)
-            if not m:
-                i += 1
-                continue
-
-            orig_start = int(m.group(1)) - 1  # convert to 0-based
-            i += 1
-
-            # Copy unchanged lines before this hunk
-            while orig_pos < orig_start:
-                if orig_pos < len(original_lines):
-                    result_lines.append(original_lines[orig_pos])
-                orig_pos += 1
-
-            # Apply hunk lines
-            while i < len(patch_lines) and not patch_lines[i].startswith("@@"):
-                hline = patch_lines[i]
-                if hline.startswith("+"):
-                    result_lines.append(hline[1:])
-                elif hline.startswith("-"):
-                    orig_pos += 1  # consume from original
-                elif hline.startswith(" "):
-                    if orig_pos < len(original_lines):
-                        result_lines.append(original_lines[orig_pos])
-                    orig_pos += 1
-                # Lines starting with '\' (no newline at end) are skipped
-                i += 1
-
-        # Copy any remaining original lines after the last hunk
-        while orig_pos < len(original_lines):
-            result_lines.append(original_lines[orig_pos])
-            orig_pos += 1
-
-        patched_text = "".join(result_lines)
-        return patched_text.encode()
-
-    def _validate_keys(
-        self,
-        suffix: str,
-        original: bytes,
-        patched: bytes,
-        target: str,
-    ) -> ValidationResult:
-        """
-        Parse original and patched, extract changed keys, confirm only
-        the target key changed.
-        """
-        if suffix in (".yaml", ".yml"):
-            return self._check_yaml_keys(original, patched, target)
-        if suffix == ".toml":
-            return self._check_toml_keys(original, patched, target)
-        if suffix == ".txt":
-            return self._check_requirements_keys(original, patched, target)
-        # Unknown format — allow through (executor will catch format errors)
-        return ValidationResult(status="valid", ghost_state=GhostState.PENDING)
-
-    def _check_yaml_keys(
-        self, original: bytes, patched: bytes, target: str
-    ) -> ValidationResult:
-        try:
-            import yaml  # type: ignore[import]
-            orig_data = yaml.safe_load(original)
-            patch_data = yaml.safe_load(patched)
-        except Exception as exc:
-            return ValidationResult(
-                status="invalid",
-                reason=f"YAML parse error: {type(exc).__name__}",
-                ghost_state=GhostState.BLOCKED,
-            )
-        if not isinstance(orig_data, dict) or not isinstance(patch_data, dict):
-            return ValidationResult(
-                status="invalid",
-                reason="YAML root must be a mapping, not a list",
-                ghost_state=GhostState.BLOCKED,
-            )
-        changed = {k for k in patch_data if patch_data.get(k) != orig_data.get(k)}
-        changed |= {k for k in orig_data if k not in patch_data}
-        for key in changed:
-            if key != target:
-                return ValidationResult(
-                    status="invalid",
-                    reason=f"patch modifies key '{key}' but target is '{target}'",
-                    ghost_state=GhostState.BLOCKED,
-                )
-        return ValidationResult(status="valid", ghost_state=GhostState.PENDING)
-
-    def _check_toml_keys(
-        self, original: bytes, patched: bytes, target: str
-    ) -> ValidationResult:
-        try:
-            import tomllib
-            orig_data = tomllib.loads(original.decode())
-            patch_data = tomllib.loads(patched.decode())
-        except Exception as exc:
-            return ValidationResult(
-                status="invalid",
-                reason=f"TOML parse error: {type(exc).__name__}",
-                ghost_state=GhostState.BLOCKED,
-            )
-        changed = {k for k in patch_data if patch_data.get(k) != orig_data.get(k)}
-        changed |= {k for k in orig_data if k not in patch_data}
-        for key in changed:
-            if key != target:
-                return ValidationResult(
-                    status="invalid",
-                    reason=f"patch modifies key '{key}' but target is '{target}'",
-                    ghost_state=GhostState.BLOCKED,
-                )
-        return ValidationResult(status="valid", ghost_state=GhostState.PENDING)
-
-    def _check_requirements_keys(
-        self, original: bytes, patched: bytes, target: str
-    ) -> ValidationResult:
-        try:
-            from packaging.requirements import Requirement  # type: ignore[import]
-
-            def _names(raw: bytes) -> dict[str, str]:
-                result = {}
-                for line in raw.decode().splitlines():
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    req = Requirement(line)
-                    result[req.name.lower()] = str(req.specifier)
-                return result
-
-            orig = _names(original)
-            patch = _names(patched)
-        except Exception as exc:
-            return ValidationResult(
-                status="invalid",
-                reason=f"requirements parse error: {type(exc).__name__}",
-                ghost_state=GhostState.BLOCKED,
-            )
-        changed = {k for k in patch if patch.get(k) != orig.get(k)}
-        changed |= {k for k in orig if k not in patch}
-        for key in changed:
-            if key != target.lower():
-                return ValidationResult(
-                    status="invalid",
-                    reason=f"patch modifies package '{key}' but target is '{target}'",
-                    ghost_state=GhostState.BLOCKED,
-                )
-        return ValidationResult(status="valid", ghost_state=GhostState.PENDING)

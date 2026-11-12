@@ -16,11 +16,9 @@ from __future__ import annotations
 
 import pytest
 
-from adapters.postgres.normalize import (
-    UnsupportedTypeError,
-    normalize_pg_type,
-    normalize_sqlalchemy_type,
-)
+from adapters.postgres.normalize import (UnsupportedTypeError,
+                                         normalize_pg_type,
+                                         normalize_sqlalchemy_type)
 
 # ---------------------------------------------------------------------------
 # Reference table: (pg_type_string, expected_canonical)

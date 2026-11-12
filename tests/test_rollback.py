@@ -11,7 +11,7 @@ from core.models import (ComparisonTarget, Difference, ExecutionResult,
                          SQLChange, State, VerificationResult)
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import FilePatchValidator, SQLValidator, ValidationResult
+from core.validator import SQLValidator
 
 
 def create_orchestrator(domain: str = "api"):
@@ -73,10 +73,6 @@ def create_orchestrator(domain: str = "api"):
     )
 
     validator_sql = SQLValidator()
-    # Mock the file validator so it always passes — rollback tests are testing
-    # orchestrator rollback behaviour, not the file patch validator itself.
-    validator_file = MagicMock(spec=FilePatchValidator)
-    validator_file.validate.return_value = ValidationResult(status="valid")
 
     persistence = MagicMock(spec=Persistence)
     cache = MagicMock(spec=Cache)
@@ -90,7 +86,6 @@ def create_orchestrator(domain: str = "api"):
         executor=executor,
         verifier=verifier,
         validator_sql=validator_sql,
-        validator_file=validator_file,
         persistence=persistence,
         cache=cache,
         domain=domain,

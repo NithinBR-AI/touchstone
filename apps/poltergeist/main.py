@@ -20,17 +20,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from adapters.redis.actual import _CLIENT, load_from_url as load_actual
+from adapters.redis.actual import _CLIENT
+from adapters.redis.actual import load_from_url as load_actual
 from adapters.redis.comparator import CacheComparator
 from adapters.redis.executor import CacheExecutor
 from adapters.redis.intended import load_from_url as load_intended
 from adapters.redis.verifier import CacheVerifier
 from agents.resolver import MockResolver
 from core.cache import Cache
-from core.models import ApplyOutcome, ComparisonTarget, GhostState
+from core.models import ComparisonTarget
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import FilePatchValidator, SQLValidator
+from core.validator import SQLValidator
 
 load_dotenv()
 
@@ -90,9 +91,10 @@ def _build_orch() -> Orchestrator:
         comparator=CacheComparator(),
         resolver=MockResolver(),
         executor=CacheExecutor(cache_warm_url=_active_repo.get("cache_warm_url", "")),
-        verifier=CacheVerifier(cache_status_url=_active_repo.get("cache_status_url", "")),
+        verifier=CacheVerifier(
+            cache_status_url=_active_repo.get("cache_status_url", "")
+        ),
         validator_sql=SQLValidator(),
-        validator_file=FilePatchValidator(REPO),
         persistence=Persistence(_reports_dir),
         cache=Cache(_cache_path),
         domain="cache",
@@ -179,61 +181,18 @@ def compare():
         report = orch.run()
     except Exception as exc:
         raise HTTPException(503, detail=f"compare failed: {exc}") from exc
-
-    # Cache domain bypasses the SQL resolver — reset safe_fix diffs that the
-    # orchestrator incorrectly flipped to BLOCKED (MockResolver returns no SQL
-    # for cache kinds; core sees proposed_change=None and blocks them).
-    for diff in report.differences:
-        if diff.context.get("safe_fix") and diff.state == GhostState.BLOCKED:
-            diff.state = GhostState.PENDING
-
     _latest_report_id = report.id
     return _serialise_report(report)
 
 
 @app.post("/apply")
 def apply(req: ApplyRequest):
-    report = orch._report
-    if report is None:
-        raise HTTPException(503, detail="No report — run /compare first")
-    diff = next((d for d in report.differences if d.id == req.difference_id), None)
-    if diff is None:
-        raise HTTPException(404, detail="difference not found")
-
+    # human_authorized=True: user clicked Exorcise — cache executor acts on
+    # the Difference directly (no SQL/file proposed_change needed).
     try:
-        execution = orch.executor.execute(diff)
-    except Exception as exc:
-        diff.state = GhostState.EXECUTION_FAILED
-        outcome = ApplyOutcome(
-            difference_id=req.difference_id,
-            state=GhostState.EXECUTION_FAILED,
-        )
-        report.outcomes[req.difference_id] = outcome
-        orch.persistence.save(report)
-        return {
-            "difference_id": req.difference_id,
-            "state": "EXECUTION_FAILED",
-            "error": str(exc),
-        }
-
-    if execution.success:
-        diff.state = GhostState.RESOLVED
-        target = orch._find_target(diff)
-        verification = orch.verifier.verify(target, diff)
-        if not verification.resolved:
-            diff.state = GhostState.STILL_PRESENT
-    else:
-        diff.state = GhostState.EXECUTION_FAILED
-        verification = None
-
-    outcome = ApplyOutcome(
-        difference_id=req.difference_id,
-        state=diff.state,
-        execution=execution,
-        verification=verification,
-    )
-    report.outcomes[req.difference_id] = outcome
-    orch.persistence.save(report)
+        outcome = orch.apply_one(req.difference_id, human_authorized=True)
+    except KeyError:
+        raise HTTPException(404, detail="difference not found")
     return _serialise_outcome(outcome)
 
 

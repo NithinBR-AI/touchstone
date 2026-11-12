@@ -225,6 +225,7 @@ def test_executor_uses_diff_target_as_key() -> None:
     from unittest.mock import MagicMock, patch
 
     from adapters.redis.executor import CacheExecutor
+    from core.models import Resolution
 
     diff = _by_kind(
         CacheComparator().compare(
@@ -234,24 +235,28 @@ def test_executor_uses_diff_target_as_key() -> None:
     )[0]
 
     executor = CacheExecutor(cache_warm_url="http://example.com/cache/warm")
+    stub_resolution = Resolution(
+        difference_id=diff.id, difference_signature=diff.signature, proposed_change=None
+    )
 
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()
 
     with patch("adapters.redis.executor._CLIENT") as mock_client:
         mock_client.post.return_value = mock_resp
-        result = executor.execute(diff)
+        result = executor.execute(stub_resolution, diff)
 
     assert result.success is True
     call_url = mock_client.post.call_args[0][0]
     assert "orders%3Alist" in call_url or "orders:list" in call_url
 
 
-def test_executor_refuses_undeclared_key() -> None:
-    """CacheExecutor must refuse UNDECLARED_KEY without making a network call."""
-    from unittest.mock import patch
+def test_executor_deletes_undeclared_key() -> None:
+    """CacheExecutor must call DELETE for UNDECLARED_KEY (not POST warm)."""
+    from unittest.mock import MagicMock, patch
 
     from adapters.redis.executor import CacheExecutor
+    from core.models import Resolution
 
     diff = _by_kind(
         CacheComparator().compare(_intended({}), _actual(["debug:dump"])),
@@ -259,10 +264,19 @@ def test_executor_refuses_undeclared_key() -> None:
     )[0]
 
     executor = CacheExecutor(cache_warm_url="http://example.com/cache/warm")
+    stub_resolution = Resolution(
+        difference_id=diff.id, difference_signature=diff.signature, proposed_change=None
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status.return_value = None
 
     with patch("adapters.redis.executor._CLIENT") as mock_client:
-        result = executor.execute(diff)
+        mock_client.delete.return_value = mock_resp
+        result = executor.execute(stub_resolution, diff)
         mock_client.post.assert_not_called()
+        mock_client.delete.assert_called_once()
 
-    assert result.success is False
-    assert result.error_code == "NOT_AUTO_FIXABLE"
+    assert result.success is True
+    call_url = mock_client.delete.call_args[0][0]
+    assert "debug" in call_url

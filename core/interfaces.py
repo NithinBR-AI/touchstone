@@ -9,14 +9,8 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from core.models import (
-    ComparisonTarget,
-    Difference,
-    Resolution,
-    ExecutionResult,
-    VerificationResult,
-    State,
-)
+from core.models import (ComparisonTarget, Difference, ExecutionResult,
+                         Resolution, State, VerificationResult)
 
 
 @runtime_checkable
@@ -69,7 +63,9 @@ class Resolver(Protocol):
 class Executor(Protocol):
     """Applies a validated Resolution atomically."""
 
-    def execute(self, resolution: Resolution) -> ExecutionResult:
+    def execute(
+        self, resolution: Resolution, difference: Difference
+    ) -> ExecutionResult:
         """Apply the proposed change. Raise on failure."""
         ...
 
