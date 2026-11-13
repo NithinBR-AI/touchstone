@@ -7,18 +7,17 @@
 
 touchstone/
 ├── .kiro/
-├── core/                           # frozen at week 2, 7 files
-│   ├── init.py
+├── core/                           # 6 files (5 substantive + __init__.py); no domain logic
+│   ├── __init__.py
 │   ├── interfaces.py
 │   ├── models.py
 │   ├── orchestrator.py
-│   ├── validator.py
 │   ├── persistence.py
 │   └── cache.py
 ├── adapters/
 │   ├── postgres/{intended,actual,normalize,comparator,executor,verifier,models,validator}.py
-│   ├── openapi/{intended,actual,comparator,executor,verifier,ssrf}.py
-│   └── redis/{intended,actual,comparator,executor,verifier}.py
+│   ├── openapi/{intended,actual,comparator,executor,verifier,ssrf,validator}.py
+│   └── redis/{intended,actual,comparator,executor,verifier,validator}.py
 ├── agents/
 │   ├── resolver.py
 │   ├── prompts.py
@@ -164,18 +163,20 @@ def atomic_write(path: Path, content: bytes, expected_current: bytes) -> bool:
 
 Validator
 
-· SQL (adapters/postgres/validator.py — Skeleton Crew refactor):
-  SQLValidator, SQLChange, FilePatch moved out of core/ into adapter layer.
-  core/validator.py retained for FilePatchValidator stub only (unused).
-  Operation matrix + canonical target + target binding + widening table
-  (from Difference.context, not resolver). Reject multi-statement, SET,
-  USING, expression/partial indexes. Fail closed.
-  human_authorized=True skips auto-fixability gate + DROP forbidden-node
-  check; SET/DELETE/TRUNCATE always forbidden regardless of authorization.
-· API patch validation: ultra() called at execute time with SCOPE-constrained
-  prompt (check only the specific schema/function; ignore rest of file).
-  Two-attempt retry; draft PR on double failure. No FilePatchValidator.
-· Cache: deterministic — no validator, no LLM. CacheExecutor acts directly.
+· SQL (adapters/postgres/validator.py):
+  SQLValidator, SQLChange, FilePatch live in adapter layer — not core.
+  core/validator.py deleted. Operation matrix + canonical target + target
+  binding + widening table (from Difference.context, not resolver). Reject
+  multi-statement, SET, USING, expression/partial indexes. Fail closed.
+  human_authorized=True skips auto-fixability gate; SET/DELETE/TRUNCATE
+  always forbidden regardless of authorization.
+· API (adapters/openapi/validator.py — ContractValidator):
+  Validates ChangeProposal payload has patched_content + file_path, operation
+  is FILE_PATCH, target matches difference. ultra() validation at execute time
+  with SCOPE-constrained prompt. Two-attempt retry; draft PR on double failure.
+· Cache (adapters/redis/validator.py — CacheValidator):
+  Validates operation is SET_KEY or CACHE_DELETE, target matches difference,
+  payload has required fields. Deterministic — no LLM.
 · HTTP: SSRF pinning per above.
 
 State machine
@@ -209,8 +210,9 @@ test_state_transitions.py 56-cell matrix + invariants + persisted-state
 test_rollback.py File success, external edit, double rollback, DB refusal
 test_cache_reproducibility.py Signature match, cache hits
 test_mantle_resolver.py MantleResolver domain routing, retries, fallback, deferred API proposal
-test_demo_repeatability.py Two runs → identical
-test_skeleton.py 7 files, no external imports
+test_demo_repeatability.py Two runs → identical semantic outcomes by signature
+test_skeleton.py AST-enforced: 6 files, no external imports, no sqlglot, no domain-string comparisons
+test_fourth_domain.py Full lifecycle with in-memory config domain — zero core changes required
 test_properties.py Reference round-trip, SQL positive+negative, state machine, redaction variants
 test_apps_structure.py 2 or 3 apps; each has 4 files; shared UI has 3 files
 
@@ -273,7 +275,11 @@ Out of scope (v1)
 
 Node/TS, MySQL/SQLite/MongoDB, data/row-level drift, multi-schema,
 apply-all, auth (beyond Req 26), real-time watch, hosted multi-tenant,
-React or any framework, fourth domain.
+React or any framework.
+
+Note: A fourth domain is NOT shipped as a production app but IS proven via
+test_fourth_domain.py — full lifecycle integration test with an in-memory
+config domain, zero core changes, independently implemented adapters.
 
 Note: Redis cache domain IS in scope (The Poltergeist, App 3).
 Automatic PR creation IS in scope for Contract Observer (ContractExecutor

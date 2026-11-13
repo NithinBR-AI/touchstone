@@ -33,19 +33,21 @@ Three-app submission shipped. Two mandatory apps satisfy Skeleton Crew.
 
 ## Requirements
 
-### Requirement 1: Six-Interface Core
-1. `core/interfaces.py` defines six protocols: `InputSource`, `SourceAdapter`,
-   `Comparator`, `Resolver`, `Executor`, `Verifier`.
-2. `core/` contains exactly six files: `__init__.py` (not `init.py`),
-   `interfaces.py`, `models.py`, `orchestrator.py`, `persistence.py`,
-   `cache.py`. `validator.py` was moved to `adapters/postgres/validator.py`
-   as part of the Skeleton Crew refactor — domain validators live in adapters.
+### Requirement 1: Seven-Interface Core
+1. `core/interfaces.py` defines seven base protocols: `InputSource`, `SourceAdapter`,
+   `Comparator`, `Resolver`, `Validator`, `Executor`, `Verifier`. Plus two optional
+   capability protocols: `BatchExecutor`, `RollbackSupport`.
+2. `core/` contains exactly six files: `__init__.py`, `interfaces.py`, `models.py`,
+   `orchestrator.py`, `persistence.py`, `cache.py`. `validator.py` was deleted from
+   core/ as part of the Skeleton Crew refactor — domain validators live in adapters:
+   `adapters/postgres/validator.py`, `adapters/openapi/validator.py`,
+   `adapters/redis/validator.py`.
 3. Core modules may import from other core modules.
 4. No module outside `core/` imported by any module inside `core/`.
-5. `git log --oneline core/` shows exactly one freeze commit after the week-2
-   initial.
-6. `git diff core/` empty after all apps complete.
-7. `tests/test_skeleton.py` asserts file count and import rule.
+5. `git diff core/` empty after all apps complete.
+6. `tests/test_skeleton.py` asserts the exact file set, the no-external-import rule,
+   no `sqlglot` imports in core/ (AST walk), and no domain-string comparisons in
+   core/ (AST Compare node check). All checks use `ast.walk` — no raw text search.
 
 ### Requirement 2: Core Data Models
 1. `GhostState` enum: `PENDING`, `REVIEW_REQUIRED`, `BLOCKED`, `RESOLVED`,
@@ -426,11 +428,12 @@ until Jan 29, 2027.
 
 Requirement 38: Category Proof Artifacts
 
-One freeze commit touching core/ after week 2 (plus week-1 initial). README
-"Skeleton proof" section with three verification commands. test_skeleton.py
-asserts 7 files and no external imports. README states git log proves commit
-discipline, NOT architectural completeness. GitHub LICENSE (MIT) visible in
-About section.
+README "Skeleton Crew entry" section (at top of README) documents: what the
+skeleton is, what the apps are, the fourth-domain extensibility proof
+(test_fourth_domain.py — full lifecycle with zero core changes), and AST
+enforcement details. test_skeleton.py asserts exact file set, no external
+imports, no sqlglot imports, no domain-string comparisons — all via ast.walk.
+GitHub LICENSE (MIT) visible in About section.
 
 Requirement 39: Repeatability and Demo Mode
 
@@ -442,12 +445,14 @@ cached=True with CACHED badge.
 Requirement 40: Skeleton Crew Structural Compliance
 
 1. At least two app folders under apps/, each containing runnable app.
-2. core/ as clearly identifiable shared skeleton.
-3. git log --oneline core/ shows only freeze commit.
-4. git diff core/ empty after all apps.
-5. README "Skeleton proof" section: what the skeleton is, what the apps are,
-   the three verification commands.
-6. Apps share one UI template and differ only via config.
+2. core/ as clearly identifiable shared skeleton (6 files, 5 substantive).
+3. git diff core/ empty after all apps.
+4. README "Skeleton Crew entry" section at top: what the skeleton is, what
+   the apps are, fourth-domain extensibility proof, AST enforcement, test count.
+5. Apps share one UI template and differ only via config.
+6. test_fourth_domain.py proves a new domain can be added with zero core
+   changes — full lifecycle, independently implemented adapters, no imports
+   from existing adapter packages.
 
 Requirement 41: Property-Based Testing (Non-Tautological)
 

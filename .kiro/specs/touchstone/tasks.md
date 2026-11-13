@@ -1,4 +1,4 @@
-# Implementation Plan: Touchstone
+﻿# Implementation Plan: Touchstone
 
 ## Overview
 
@@ -677,33 +677,89 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ## Notes
 
-- Progress verified by running `pytest -q`: **426 passed, 5 skipped** (offline run,
-  no DATABASE_URL). All 1.0a–1.0f, 2.1–2.23, 5.1–5.10, 6.1–6.4, 7.1 green.
-  Skips: 2 Neon DB integration tests (require DATABASE_URL), 3 e2e cache tests.
-- Real Neon run (2026-11-11): test_postgres_e2e + test_sql_execution → **9 passed, 1 skipped**
-  (cache test skips when drift already applied by earlier tests in same run — expected).
+- Current test count: **449 passed, 5 skipped** (offline run, no DATABASE_URL).
+  Skips: 2 Neon DB integration tests (require DATABASE_URL), 3 e2e cache/Redis tests.
+- Real Neon run (2026-11-11): test_postgres_e2e + test_sql_execution → 9 passed, 1 skipped.
   Seed with `fixtures/seed.py` before each full Neon run to restore drift state.
 - .venv at project root (Python 3.12). git safe.directory configured for CORP domain.
-- Items 2.20–2.23 were added from this verification pass.
-- `git log core/` could not be read (git "dubious ownership" error); verify
-  freeze commit discipline separately.
+- core/ has 5 substantive files + __init__.py. core/validator.py deleted — SQLValidator
+  lives in adapters/postgres/validator.py. Skeleton Crew proof is test_skeleton.py AST
+  checks (run every test pass), not git freeze commit history.
+- 10.1 (CI), 10.2, 10.3, 12.2 → "What's next" in submission write-up, not blocking.
 
 ## Task Dependency Graph
+
+Each wave can be worked in parallel within it; each wave depends on all prior waves.
 
 ```json
 {
   "waves": [
-    { "id": 0, "tasks": ["0.1", "0.2", "0.7", "2.20", "2.22", "2.23", "5.1", "5.3", "4.1"] },
-    { "id": 1, "tasks": ["2.7", "2.14", "2.18", "2.21", "0.4", "0.5", "5.2", "5.6", "5.7"] },
-    { "id": 2, "tasks": ["2.15", "2.16", "2.19", "5.4", "5.5", "7.1", "8.2"] },
-    { "id": 3, "tasks": ["1.0a", "1.0b", "1.0c", "1.0d", "1.0f", "5.8", "7.2", "8.1", "8.3"] },
-    { "id": 4, "tasks": ["3.1", "7.3", "7.4", "1.0e"] },
-    { "id": 5, "tasks": ["3.2"] },
-    { "id": 6, "tasks": ["4.2", "5.9", "6.1"] },
-    { "id": 7, "tasks": ["4.3", "4.4", "4.5", "5.10", "6.2", "6.3", "9.1", "12.1"] },
-    { "id": 8, "tasks": ["6.4", "6.5", "9.2", "10.1", "11.1", "12.2", "8.4", "1.0g"] },
-    { "id": 9, "tasks": ["10.2", "10.3", "10.4", "11.2"] },
-    { "id": 10, "tasks": ["11.3", "13.1", "13.2", "13.3", "13.4", "13.5", "13.6"] }
+    {
+      "id": 0,
+      "label": "Day-1 setup + scaffold",
+      "tasks": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7"]
+    },
+    {
+      "id": 1,
+      "label": "Core foundation",
+      "tasks": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6"]
+    },
+    {
+      "id": 2,
+      "label": "Postgres adapter + tests",
+      "tasks": ["2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14"]
+    },
+    {
+      "id": 3,
+      "label": "Core test suite + week-1 acceptance",
+      "tasks": ["2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23",
+                "1.0a", "1.0b", "1.0c", "1.0d", "1.0e", "1.0f"]
+    },
+    {
+      "id": 4,
+      "label": "Freeze + scope audit",
+      "tasks": ["3.1", "3.2", "1.0g"]
+    },
+    {
+      "id": 5,
+      "label": "App 1 — Schema Drift + shared UI",
+      "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6"]
+    },
+    {
+      "id": 6,
+      "label": "App 2 — Contract Observer",
+      "tasks": ["5.1", "5.2", "5.3", "5.4", "5.5", "5.6", "5.7", "5.8", "5.9", "5.10"]
+    },
+    {
+      "id": 7,
+      "label": "App 3 — The Poltergeist",
+      "tasks": ["6.1", "6.2", "6.3", "6.4"]
+    },
+    {
+      "id": 8,
+      "label": "Real resolver + orchestration",
+      "tasks": ["7.1", "7.1a", "7.1b", "7.1c", "7.1d", "7.1e", "7.2", "7.3", "7.4"]
+    },
+    {
+      "id": 9,
+      "label": "Kiro integrations + extensibility + repeatability",
+      "tasks": ["8.1", "8.2", "8.3", "8.4", "12.1"]
+    },
+    {
+      "id": 10,
+      "label": "PBT",
+      "tasks": ["9.1", "9.2"]
+    },
+    {
+      "id": 11,
+      "label": "Deployment",
+      "tasks": ["11.1", "11.2", "11.3"]
+    },
+    {
+      "id": 12,
+      "label": "Submission assets",
+      "tasks": ["13.1", "13.2", "13.3", "13.4", "13.5", "13.6"]
+    }
   ]
 }
 ```
