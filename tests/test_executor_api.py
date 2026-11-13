@@ -83,21 +83,20 @@ class TestExecutionResultFields:
         diff = _diff("FIELD_EXTRA")
 
         fake_pr = {"html_url": "https://github.com/owner/repo/pull/42"}
-        fake_file = {
-            "content": __import__("base64").b64encode(b"paths: {}").decode(),
-            "sha": "abc123",
-        }
+        fake_sha = {"sha": "abc123"}
         fake_ref = {"object": {"sha": "deadbeef"}}
 
         with (
             patch("adapters.openapi.executor._gh_request") as mock_gh,
             patch.object(
-                ContractExecutor, "_llm_patch", return_value=("patched: content\n", "")
+                ContractExecutor,
+                "_llm_patch_and_validate",
+                return_value=("patched: content\n", True),
             ),
         ):
             mock_gh.side_effect = [
                 [],  # _find_existing_pr: list open PRs → none
-                fake_file,  # _get_file: openapi.yaml content
+                fake_sha,  # _get_file_sha
                 fake_ref,  # _head_sha
                 {},  # _create_branch
                 {},  # _commit_file
@@ -127,7 +126,7 @@ class TestExecutionResultFields:
         with (
             patch("adapters.openapi.executor._gh_request") as mock_gh,
             patch.object(
-                ContractExecutor, "_llm_patch", return_value=("patched\n", "")
+                ContractExecutor, "_llm_patch_and_validate", return_value=("patched\n", True)
             ),
         ):
             mock_gh.side_effect = [
@@ -158,21 +157,18 @@ class TestBatching:
         ]
 
         fake_pr = {"html_url": "https://github.com/owner/repo/pull/1"}
-        fake_file = {
-            "content": __import__("base64").b64encode(b"paths: {}").decode(),
-            "sha": "abc",
-        }
+        fake_sha = {"sha": "abc"}
         fake_ref = {"object": {"sha": "deadbeef"}}
 
         with (
             patch("adapters.openapi.executor._gh_request") as mock_gh,
             patch.object(
-                ContractExecutor, "_llm_patch", return_value=("patched\n", "")
+                ContractExecutor, "_llm_patch_and_validate", return_value=("patched\n", True)
             ),
         ):
             mock_gh.side_effect = [
                 [],  # find_existing_pr
-                fake_file,  # get_file openapi.yaml
+                fake_sha,  # _get_file_sha
                 fake_ref,  # head_sha
                 {},  # create_branch
                 {},  # commit_file
@@ -183,9 +179,7 @@ class TestBatching:
         assert len(results) == 3
         assert all(r.success for r in results)
         # All share the same PR URL
-        assert all(
-            r.file_path_ref == "https://github.com/owner/repo/pull/1" for r in results
-        )
+        assert all(r.file_path_ref == "https://github.com/owner/repo/pull/1" for r in results)
         # Each result maps to its own diff id
         assert {r.difference_id for r in results} == {d.id for d in diffs}
 
@@ -197,31 +191,24 @@ class TestBatching:
 
         fake_spec_pr = {"html_url": "https://github.com/owner/repo/pull/1"}
         fake_api_pr = {"html_url": "https://github.com/owner/repo/pull/2"}
-        fake_file = {
-            "content": __import__("base64").b64encode(b"paths: {}").decode(),
-            "sha": "abc",
-        }
-        fake_main = {
-            "content": __import__("base64").b64encode(b"# main").decode(),
-            "sha": "def",
-        }
+        fake_sha = {"sha": "abc"}
         fake_ref = {"object": {"sha": "deadbeef"}}
 
         with (
             patch("adapters.openapi.executor._gh_request") as mock_gh,
             patch.object(
-                ContractExecutor, "_llm_patch", return_value=("patched\n", "")
+                ContractExecutor, "_llm_patch_and_validate", return_value=("patched\n", True)
             ),
         ):
             mock_gh.side_effect = [
                 [],  # find_existing_pr (spec)
-                fake_file,  # get_file openapi.yaml
+                fake_sha,  # _get_file_sha openapi.yaml
                 fake_ref,  # head_sha (spec)
                 {},  # create_branch (spec)
                 {},  # commit_file (spec)
                 fake_spec_pr,  # open_pr (spec)
                 [],  # find_existing_pr (api)
-                fake_main,  # get_file main.py
+                fake_sha,  # _get_file_sha main.py
                 fake_ref,  # head_sha (api)
                 {},  # create_branch (api)
                 {},  # commit_file (api)
@@ -317,20 +304,22 @@ class TestIdempotency:
         ]
 
         fake_pr = {"html_url": "https://github.com/owner/repo/pull/51"}
-        fake_file = {
-            "content": __import__("base64").b64encode(b"paths: {}").decode(),
-            "sha": "abc",
-        }
+        fake_sha = {"sha": "abc"}
         fake_ref = {"object": {"sha": "deadbeef"}}
 
-        with patch("adapters.openapi.executor._gh_request") as mock_gh:
+        with (
+            patch("adapters.openapi.executor._gh_request") as mock_gh,
+            patch.object(
+                ContractExecutor, "_llm_patch_and_validate", return_value=("patched\n", True)
+            ),
+        ):
             mock_gh.side_effect = [
                 non_touchstone_prs,  # find_existing_pr — no match
-                fake_file,
-                fake_ref,
-                {},
-                {},
-                fake_pr,
+                fake_sha,  # _get_file_sha
+                fake_ref,  # _head_sha
+                {},  # _create_branch
+                {},  # _commit_file
+                fake_pr,  # _open_pr
             ]
             result = ex.execute(_stub_resolution(diff), diff)
 
@@ -364,8 +353,7 @@ class TestDemoReset:
         patch_calls = [
             c
             for c in mock_gh.call_args_list
-            if c.kwargs.get("method") == "PATCH"
-            or (len(c.args) > 1 and c.args[1] == "PATCH")
+            if c.kwargs.get("method") == "PATCH" or (len(c.args) > 1 and c.args[1] == "PATCH")
         ]
         assert len(patch_calls) == 2
 

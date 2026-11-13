@@ -28,8 +28,8 @@ import hashlib
 import json
 from typing import Any
 
+from adapters.postgres.validator import OPERATION_MATRIX, SQLValidator
 from core.models import Difference, GhostState, State
-from core.validator import SQLValidator
 
 DOMAIN = "database"
 
@@ -93,9 +93,7 @@ class SchemaComparator:
         for table in sorted(i_tables):
             if table not in a_tables:
                 diffs.append(
-                    _make(
-                        "TABLE_MISSING", table, "HIGH", POLICY_BLOCKED, {"table": table}
-                    )
+                    _make("TABLE_MISSING", table, "HIGH", POLICY_BLOCKED, {"table": table})
                 )
                 continue
             diffs.extend(self._compare_columns(table, i_tables[table], a_tables[table]))
@@ -104,9 +102,7 @@ class SchemaComparator:
         for table in sorted(a_tables):
             if table not in i_tables:
                 diffs.append(
-                    _make(
-                        "TABLE_EXTRA", table, "MEDIUM", POLICY_BLOCKED, {"table": table}
-                    )
+                    _make("TABLE_EXTRA", table, "MEDIUM", POLICY_BLOCKED, {"table": table})
                 )
 
         return diffs
@@ -150,12 +146,10 @@ class SchemaComparator:
             old_type = a_cols[col]["type"]
             new_type = spec["type"]
             if old_type != new_type:
-                unsupported = old_type.startswith(
+                unsupported = old_type.startswith("UNSUPPORTED:") or new_type.startswith(
                     "UNSUPPORTED:"
-                ) or new_type.startswith("UNSUPPORTED:")
-                widening = (not unsupported) and _WIDENING._is_widening(
-                    old_type, new_type
                 )
+                widening = (not unsupported) and _WIDENING._is_widening(old_type, new_type)
                 diffs.append(
                     _make(
                         "TYPE_CHANGED",

@@ -15,8 +15,20 @@ import pytest
 import sqlglot
 import sqlglot.expressions as exp
 
-from core.models import Difference, GhostState, SQLChange
-from core.validator import SQLValidator, ValidationResult
+from adapters.postgres.models import SQLChange
+from adapters.postgres.validator import SQLValidator, ValidationResult
+from core.models import ChangeProposal, Difference, GhostState
+
+
+def _proposal(change: SQLChange) -> ChangeProposal:
+    """Wrap SQLChange into a ChangeProposal for the validator."""
+    return ChangeProposal(
+        domain="database",
+        target=change.target,
+        operation=change.operation,
+        payload={"statement": change.statement, "operation": change.operation},
+    )
+
 
 # --------------------------------------------------------------------------
 # Fixtures
@@ -61,16 +73,14 @@ def type_changed_diff() -> Difference:
 # --------------------------------------------------------------------------
 
 
-def test_operation_matrix_positive(
-    validator: SQLValidator, index_missing_diff: Difference
-):
+def test_operation_matrix_positive(validator: SQLValidator, index_missing_diff: Difference):
     """Valid CREATE INDEX passes."""
     change = SQLChange(
         statement="CREATE INDEX ix_users_email ON users (email)",
         operation="CREATE_INDEX",
         target="ix_users_email",
     )
-    result = validator.validate(change, index_missing_diff)
+    result = validator.validate(_proposal(change), index_missing_diff)
     assert result.status == "valid"
     assert result.ghost_state == GhostState.PENDING
 
@@ -83,7 +93,7 @@ def test_operation_matrix_blocked_kind(validator: SQLValidator):
         operation="CREATE_TABLE",
         target="new_table",
     )
-    result = validator.validate(change, diff)
+    result = validator.validate(_proposal(change), diff)
     # TABLE_MISSING has auto_fixable=False in matrix, so it goes to REVIEW_REQUIRED
     assert result.status == "review_required"
     assert "not auto-fixable" in result.reason
@@ -98,7 +108,7 @@ def test_operation_matrix_review_required(validator: SQLValidator):
         operation="ADD_COLUMN",
         target="users.middle_name",
     )
-    result = validator.validate(change, diff)
+    result = validator.validate(_proposal(change), diff)
     assert result.status == "review_required"
     assert "not auto-fixable" in result.reason
     assert result.ghost_state == GhostState.REVIEW_REQUIRED
@@ -116,7 +126,7 @@ def test_single_statement_rule(validator: SQLValidator, index_missing_diff: Diff
         operation="CREATE_INDEX",
         target="ix_users_email",
     )
-    result = validator.validate(change, index_missing_diff)
+    result = validator.validate(_proposal(change), index_missing_diff)
     assert result.status == "invalid"
     assert "expected exactly 1 statement" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
@@ -135,7 +145,7 @@ def test_set_statement_rejected(validator: SQLValidator):
         operation="SET_STATEMENT",
         target="timeout",
     )
-    result = validator.validate(change, diff)
+    result = validator.validate(_proposal(change), diff)
     assert result.status == "invalid"
     assert "SET statements are forbidden" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
@@ -150,10 +160,8 @@ def test_forbidden_node_types(validator: SQLValidator):
         "DROP INDEX ix_users_email",
     ]:
         diff = Difference(kind="INDEX_MISSING", target="ix_users_email", context={})
-        change = SQLChange(
-            statement=forbidden_sql, operation="DROP", target="ix_users_email"
-        )
-        result = validator.validate(change, diff)
+        change = SQLChange(statement=forbidden_sql, operation="DROP", target="ix_users_email")
+        result = validator.validate(_proposal(change), diff)
         assert result.status == "blocked"
         assert "forbidden SQL operation" in result.reason
         assert result.ghost_state == GhostState.BLOCKED
@@ -164,39 +172,33 @@ def test_forbidden_node_types(validator: SQLValidator):
 # --------------------------------------------------------------------------
 
 
-def test_create_index_unique_rejected(
-    validator: SQLValidator, index_missing_diff: Difference
-):
+def test_create_index_unique_rejected(validator: SQLValidator, index_missing_diff: Difference):
     """UNIQUE indexes are forbidden."""
     change = SQLChange(
         statement="CREATE UNIQUE INDEX ix_users_email ON users (email)",
         operation="CREATE_INDEX",
         target="ix_users_email",
     )
-    result = validator.validate(change, index_missing_diff)
+    result = validator.validate(_proposal(change), index_missing_diff)
     assert result.status == "invalid"
     assert "UNIQUE indexes are not auto-fixable" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_expression_rejected(
-    validator: SQLValidator, index_missing_diff: Difference
-):
+def test_create_index_expression_rejected(validator: SQLValidator, index_missing_diff: Difference):
     """Expression indexes are forbidden."""
     change = SQLChange(
         statement="CREATE INDEX idx ON users (LOWER(email))",
         operation="CREATE_INDEX",
         target="idx",
     )
-    result = validator.validate(change, index_missing_diff)
+    result = validator.validate(_proposal(change), index_missing_diff)
     assert result.status == "invalid"
     assert "expression indexes are forbidden" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_partial_rejected(
-    validator: SQLValidator, index_missing_diff: Difference
-):
+def test_create_index_partial_rejected(validator: SQLValidator, index_missing_diff: Difference):
     """Partial indexes (WHERE) are forbidden."""
     # sqlglot 30.29.0 represents WHERE clause in IndexParameters
     change = SQLChange(
@@ -204,22 +206,20 @@ def test_create_index_partial_rejected(
         operation="CREATE_INDEX",
         target="ix_active_users",
     )
-    result = validator.validate(change, index_missing_diff)
+    result = validator.validate(_proposal(change), index_missing_diff)
     assert result.status == "invalid"
     assert "partial indexes (WHERE) are forbidden" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_name_mismatch(
-    validator: SQLValidator, index_missing_diff: Difference
-):
+def test_create_index_name_mismatch(validator: SQLValidator, index_missing_diff: Difference):
     """Index name must match difference target."""
     change = SQLChange(
         statement="CREATE INDEX wrong_name ON users (email)",
         operation="CREATE_INDEX",
         target="wrong_name",
     )
-    result = validator.validate(change, index_missing_diff)
+    result = validator.validate(_proposal(change), index_missing_diff)
     assert result.status == "invalid"
     assert "does not match difference target" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
@@ -230,16 +230,14 @@ def test_create_index_name_mismatch(
 # --------------------------------------------------------------------------
 
 
-def test_alter_type_us_clause_rejected(
-    validator: SQLValidator, type_changed_diff: Difference
-):
+def test_alter_type_us_clause_rejected(validator: SQLValidator, type_changed_diff: Difference):
     """USING clause is forbidden."""
     change = SQLChange(
         statement="ALTER TABLE users ALTER COLUMN age TYPE bigint USING (age::bigint)",
         operation="ALTER_COLUMN_TYPE",
         target="users.age",
     )
-    result = validator.validate(change, type_changed_diff)
+    result = validator.validate(_proposal(change), type_changed_diff)
     assert result.status == "invalid"
     assert "USING clause is forbidden" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
@@ -257,12 +255,9 @@ def test_alter_type_target_binding(validator: SQLValidator):
         operation="ALTER_COLUMN_TYPE",
         target="orders.total",
     )
-    result = validator.validate(change, diff)
+    result = validator.validate(_proposal(change), diff)
     assert result.status == "invalid"
-    assert (
-        "targets 'users.age'" in result.reason
-        or "targets 'orders.total'" in result.reason
-    )
+    assert "targets 'users.age'" in result.reason or "targets 'orders.total'" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
 
 
@@ -296,7 +291,7 @@ def test_widening_pairs_allowed(validator: SQLValidator, old_type: str, new_type
         operation="ALTER_COLUMN_TYPE",
         target="users.column",
     )
-    result = validator.validate(change, diff)
+    result = validator.validate(_proposal(change), diff)
     assert result.status == "valid"
     assert result.ghost_state == GhostState.PENDING
 
@@ -313,9 +308,7 @@ def test_widening_pairs_allowed(validator: SQLValidator, old_type: str, new_type
         ("numeric", "integer"),  # not in matrix
     ],
 )
-def test_non_widening_review_required(
-    validator: SQLValidator, old_type: str, new_type: str
-):
+def test_non_widening_review_required(validator: SQLValidator, old_type: str, new_type: str):
     """Non-widening pairs yield REVIEW_REQUIRED."""
     diff = Difference(
         kind="TYPE_CHANGED",
@@ -330,7 +323,7 @@ def test_non_widening_review_required(
         operation="ALTER_COLUMN_TYPE",
         target="users.column",
     )
-    result = validator.validate(change, diff)
+    result = validator.validate(_proposal(change), diff)
     assert result.status == "review_required"
     assert "not a permitted widening pair" in result.reason
     assert result.ghost_state == GhostState.REVIEW_REQUIRED
@@ -352,7 +345,7 @@ def test_widening_verification_from_context_not_rationale(validator: SQLValidato
         operation="ALTER_COLUMN_TYPE",
         target="users.column",
     )
-    result = validator.validate(change, diff)
+    result = validator.validate(_proposal(change), diff)
     assert result.status == "review_required"
     assert "'integer'" in result.reason
     assert result.ghost_state == GhostState.REVIEW_REQUIRED
@@ -386,7 +379,7 @@ def test_canonical_identifier_binding(
         context={"table": "users", "columns": ["email"]},
     )
     change = SQLChange(statement=sql, operation="CREATE_INDEX", target=target)
-    result = validator.validate(change, diff)
+    result = validator.validate(_proposal(change), diff)
     if should_pass:
         assert result.status == "valid"
     else:
@@ -399,9 +392,7 @@ def test_canonical_identifier_binding(
 # --------------------------------------------------------------------------
 
 
-def test_sql_injection_attempt_blocked(
-    validator: SQLValidator, index_missing_diff: Difference
-):
+def test_sql_injection_attempt_blocked(validator: SQLValidator, index_missing_diff: Difference):
     """SQL with injection attempt should be blocked by structural rules."""
     # This tries to sneak in a DROP via a comment + multi-statement
     change = SQLChange(
@@ -409,31 +400,28 @@ def test_sql_injection_attempt_blocked(
         operation="CREATE_INDEX",
         target="ix_users_email",
     )
-    result = validator.validate(change, index_missing_diff)
+    result = validator.validate(_proposal(change), index_missing_diff)
     assert result.status == "invalid"
     assert "expected exactly 1 statement" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
 
 
 def test_empty_sql_rejected(validator: SQLValidator, index_missing_diff: Difference):
-    """Empty SQL string."""
+    """Empty SQL string is blocked at payload check."""
     change = SQLChange(statement="", operation="CREATE_INDEX", target="ix_users_email")
-    result = validator.validate(change, index_missing_diff)
-    assert result.status == "invalid"
-    assert "expected exactly 1 statement, got 0" in result.reason
+    result = validator.validate(_proposal(change), index_missing_diff)
+    assert result.status == "blocked"
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_malformed_sql_rejected(
-    validator: SQLValidator, index_missing_diff: Difference
-):
+def test_malformed_sql_rejected(validator: SQLValidator, index_missing_diff: Difference):
     """Malformed SQL."""
     change = SQLChange(
         statement="CREAT INDEX ix ON users (email)",
         operation="CREATE_INDEX",
         target="ix",
     )  # typo
-    result = validator.validate(change, index_missing_diff)
+    result = validator.validate(_proposal(change), index_missing_diff)
     assert result.status == "invalid"
     assert "SQL parse error" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
@@ -447,9 +435,7 @@ def test_malformed_sql_rejected(
 def test_sqlglot_ast_assumptions_regression(validator: SQLValidator):
     """Verify sqlglot 30.29.0 AST assumptions still hold."""
     # Check that sqlglot still parses CREATE INDEX with WHERE as IndexParameters
-    stmt = sqlglot.parse_one(
-        "CREATE INDEX idx ON t (col) WHERE cond", dialect="postgres"
-    )
+    stmt = sqlglot.parse_one("CREATE INDEX idx ON t (col) WHERE cond", dialect="postgres")
     assert isinstance(stmt, exp.Create)
     assert isinstance(stmt.this, exp.Index)
     params = stmt.this.args.get("params")

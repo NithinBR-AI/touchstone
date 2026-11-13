@@ -1,21 +1,18 @@
 """
 adapters/postgres/executor.py — Req 20
 
-Applies one validated SQLChange to Postgres.
+Applies one validated ChangeProposal (SQL statement) to Postgres.
 
-Rules (tech.md / Req 20):
-  · Statement timeout is set at the CONNECTION level via options, never as a
-    SET statement:  psycopg.connect(dsn, options="-c statement_timeout=30000")
-  · Exactly one parsed statement, inside a transaction. Commit on success,
-    rollback on error.
-  · No automatic rollback of applied changes and no inverse statement is
-    generated. The originally observed state lives in Difference.context and
-    the executed SQL lives in ExecutionResult.applied_change.
-  · Raw exception text is never stored. Errors are recorded as a code, the
-    exception class name, and a summary taken from ERROR_SUMMARIES.
+Rules:
+  · Statement timeout is set at the CONNECTION level via options, never as SET.
+  · Exactly one parsed statement, inside a transaction.
+  · No automatic rollback of applied changes — database domain does not implement
+    RollbackSupport. The orchestrator checks isinstance(executor, RollbackSupport)
+    before attempting rollback; this executor does not implement that protocol.
+  · Raw exception text is never stored.
 
-The orchestrator validates before calling execute(). The single-statement and
-SET checks here are defence in depth, not the safety boundary.
+The core validator (SQLValidator in adapters/postgres/validator.py) validates
+before the orchestrator calls execute(). The precheck here is defence-in-depth.
 """
 
 from __future__ import annotations
@@ -26,7 +23,7 @@ import psycopg
 import sqlglot
 import sqlglot.expressions as exp
 
-from core.models import Difference, ExecutionResult, Resolution, SQLChange
+from core.models import ChangeProposal, Difference, ExecutionResult, Resolution
 
 CONNECT_TIMEOUT_S = 10
 STATEMENT_TIMEOUT_MS = 30000
@@ -46,7 +43,6 @@ ConnectFn = Callable[[str], Any]
 
 
 def default_connect(dsn: str) -> psycopg.Connection:
-    """Open a connection with connect and statement timeouts at connection level."""
     return psycopg.connect(
         dsn,
         connect_timeout=CONNECT_TIMEOUT_S,
@@ -55,58 +51,61 @@ def default_connect(dsn: str) -> psycopg.Connection:
 
 
 class SQLExecutor:
-    """Executor protocol implementation for the database domain."""
+    """
+    Executor protocol implementation for the database domain.
+
+    Does NOT implement RollbackSupport — database rollback is not supported.
+    The orchestrator checks isinstance(executor, RollbackSupport) before
+    attempting rollback; since SQLExecutor does not implement it, rollback
+    is refused automatically without any domain-string check in core.
+    """
 
     def __init__(self, dsn: str, connect: ConnectFn | None = None) -> None:
         self._dsn = dsn
         self._connect = connect or default_connect
 
-    def execute(
-        self, resolution: Resolution, difference: Difference
-    ) -> ExecutionResult:  # noqa: ARG002
-        change = resolution.proposed_change
-        if change is None:
+    def execute(self, resolution: Resolution, difference: Difference) -> ExecutionResult:
+        proposal = resolution.proposed_change
+        if proposal is None:
             return self._fail(resolution, None, "NO_CHANGE")
-        if not isinstance(change, SQLChange):
-            return self._fail(resolution, change, "NOT_SQL")
 
-        precheck = self._precheck(change.statement)
+        statement = proposal.payload.get("statement", "")
+        if not statement:
+            return self._fail(resolution, proposal, "NOT_SQL")
+
+        precheck = self._precheck(statement)
         if precheck:
-            return self._fail(resolution, change, precheck)
+            return self._fail(resolution, proposal, precheck)
 
         try:
             conn = self._connect(self._dsn)
-        except Exception as exc:  # noqa: BLE001 — recorded as class name only
-            return self._fail(resolution, change, "CONNECT_FAILED", exc)
+        except Exception as exc:
+            return self._fail(resolution, proposal, "CONNECT_FAILED", exc)
 
         try:
             try:
-                conn.execute(change.statement)
+                conn.execute(statement)
                 conn.commit()
             except psycopg.errors.QueryCanceled as exc:
                 conn.rollback()
-                return self._fail(resolution, change, "STATEMENT_TIMEOUT", exc)
-            except Exception as exc:  # noqa: BLE001
+                return self._fail(resolution, proposal, "STATEMENT_TIMEOUT", exc)
+            except Exception as exc:
                 conn.rollback()
-                return self._fail(resolution, change, "EXECUTION_ERROR", exc)
+                return self._fail(resolution, proposal, "EXECUTION_ERROR", exc)
         finally:
             conn.close()
 
         return ExecutionResult(
             difference_id=resolution.difference_id,
             success=True,
-            applied_change=change,
+            applied_change=proposal,
         )
-
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _precheck(statement: str) -> str:
         try:
-            parsed = [
-                s for s in sqlglot.parse(statement, dialect="postgres") if s is not None
-            ]
-        except Exception:  # noqa: BLE001
+            parsed = [s for s in sqlglot.parse(statement, dialect="postgres") if s is not None]
+        except Exception:
             return "PARSE_ERROR"
         if len(parsed) != 1:
             return "MULTI_STATEMENT"
@@ -120,15 +119,15 @@ class SQLExecutor:
     @staticmethod
     def _fail(
         resolution: Resolution,
-        change: Any,
+        proposal: ChangeProposal | None,
         code: str,
         exc: BaseException | None = None,
     ) -> ExecutionResult:
         return ExecutionResult(
             difference_id=resolution.difference_id,
             success=False,
-            applied_change=change,
+            applied_change=proposal,
             error_code=code,
             error_class=type(exc).__name__ if exc is not None else "",
-            error_summary=ERROR_SUMMARIES[code][:200],
+            error_summary=ERROR_SUMMARIES.get(code, code)[:200],
         )

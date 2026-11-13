@@ -3,12 +3,12 @@ Core data models — all domain-agnostic.
 
 Rules:
   · GhostState is the single source of truth for state names.
-  · TypedChange = SQLChange | FilePatch (union, not base class).
-  · Resolution.proposed_change is None for review-only resolutions.
+  · ChangeProposal is the generic opaque change carrier — core never inspects payload.
+  · Resolution.proposed_change is None for review-only resolutions (no fix available).
   · Every Resolution carries the prompt's SHA-256.
   · VerificationResult carries the exact re-read state, not just a bool.
   · Rollback is an event (RollbackEvent), not a state transition.
-  · Database rollback is not supported — RollbackEvent records the refusal.
+  · ValidationResult is the return type of the Validator protocol.
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ class GhostState(str, Enum):
 class ComparisonTarget:
     """Identifies one unit of comparison (e.g. a table column or endpoint)."""
 
-    domain: str  # "database" | "api" | "deps"
-    target: str  # e.g. "users.email", "GET /users/{id}", "sqlglot"
+    domain: str
+    target: str
     context: dict[str, Any] = field(default_factory=dict)
 
 
@@ -79,14 +79,13 @@ class Difference:
     · signature: stable hash of (domain, kind, target, context_key_fields).
                  Used as cache key; must be deterministic for same inputs.
     · context["safe_fix"]: True only for operations in the auto-fixable matrix.
-    · context["original_actual_type"]: populated for TYPE_CHANGED differences.
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     signature: str = ""  # set by comparator before returning
-    domain: str = ""  # "database" | "api" | "deps"
-    kind: str = ""  # e.g. "COLUMN_MISSING", "INDEX_MISSING"
-    target: str = ""  # canonical target string
+    domain: str = ""
+    kind: str = ""
+    target: str = ""
     severity: str = "HIGH"  # "LOW" | "MEDIUM" | "HIGH"
     state: GhostState = GhostState.PENDING
     context: dict[str, Any] = field(default_factory=dict)
@@ -94,35 +93,42 @@ class Difference:
 
 
 # ---------------------------------------------------------------------------
-# Typed changes
+# Generic change proposal — opaque to core
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class SQLChange:
-    """A single SQL statement to apply to the database."""
+class ChangeProposal:
+    """
+    Generic carrier for a proposed change — core never inspects payload contents.
 
-    statement: str  # exactly one SQL statement
-    operation: str  # e.g. "CREATE_INDEX", "ALTER_COLUMN_TYPE"
-    target: str  # must match originating Difference.target exactly
+    · operation : domain-owned label (e.g. "CREATE_INDEX", "FILE_PATCH") — treated
+                  as an opaque string by core; adapters give it meaning.
+    · payload   : opaque dict — domain adapter owns schema and interpretation.
+                  Must be JSON-serialisable. Core serialises/deserialises as-is.
+    · domain    : informational — core must never use this for routing decisions.
+    · target    : informational — mirrors Difference.target for traceability.
+    """
+
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    domain: str = ""
+    target: str = ""
+    operation: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Validation result
+# ---------------------------------------------------------------------------
 
 
 @dataclass
-class FilePatch:
-    """An atomic patch to a single file."""
+class ValidationResult:
+    """Return type of the Validator protocol."""
 
-    file_path: str
-    content: str = ""  # full patched file content (LLM-generated)
-    before_sha256: str = ""  # hex digest of the file before patching
-    after_sha256: str = ""  # hex digest of the file after patching
-    forward_patch: bytes = field(default_factory=bytes)  # unified diff bytes to apply
-    reverse_patch: bytes = field(
-        default_factory=bytes
-    )  # unified diff bytes to roll back
-
-
-# Union — the only valid proposed_change types
-TypedChange = SQLChange | FilePatch
+    status: str  # "valid" | "blocked" | "review_required" | "invalid"
+    reason: str = ""
+    ghost_state: GhostState = GhostState.PENDING
 
 
 # ---------------------------------------------------------------------------
@@ -135,14 +141,15 @@ class Resolution:
     """
     The resolver's proposal for one Difference.
 
-    · proposed_change is None for REVIEW_REQUIRED / BLOCKED differences.
+    · proposed_change is None when no fix is available (REVIEW_REQUIRED / BLOCKED).
+      None must never reach execution — the orchestrator enforces this.
     · prompt_sha256 is the SHA-256 of the exact prompt sent to the LLM.
     · cached=True when served from cache (no live LLM call).
     """
 
     difference_id: str
     difference_signature: str
-    proposed_change: TypedChange | None  # None = review-only
+    proposed_change: ChangeProposal | None  # None = no fix available
     rationale: str = ""
     prompt_sha256: str = ""
     cache_version: str = ""
@@ -161,19 +168,15 @@ class Resolution:
 class ExecutionResult:
     """
     Result of applying a Resolution.
-
-    File domain: rollback_bytes / post_apply_bytes / post_apply_sha256 /
-                 file_path_ref are all populated.
-    Database domain: rollback_bytes is empty (rollback not supported).
+    Domain-specific details are carried in applied_change.payload.
     """
 
     difference_id: str
     success: bool
-    applied_change: TypedChange | None = None
+    applied_change: ChangeProposal | None = None
     error_code: str = ""  # never raw exception text
     error_class: str = ""
     error_summary: str = ""  # generated from code lookup table
-    # File-domain fields
     rollback_bytes: bytes = b""
     post_apply_bytes: bytes = b""
     post_apply_sha256: str = ""
@@ -224,8 +227,7 @@ class ApplyOutcome:
 class RollbackEvent:
     """
     Rollback is an event, not a state transition.
-    Database domain: success=False, reason="rollback not supported for database domain".
-    File domain: success reflects whether the atomic write succeeded.
+    Executors that do not implement RollbackSupport always produce success=False.
     """
 
     difference_id: str
@@ -245,18 +247,14 @@ class Report:
     Full run report — persisted after every state-changing event.
 
     · rollback_events: keyed by difference_id.
-    · requires_refresh: True after any file patch succeeds (siblings superseded).
+    · requires_refresh: True after any patch succeeds (siblings superseded).
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     domain: str = ""
     differences: list[Difference] = field(default_factory=list)
-    resolutions: dict[str, Resolution] = field(
-        default_factory=dict
-    )  # keyed by difference_id
-    outcomes: dict[str, ApplyOutcome] = field(
-        default_factory=dict
-    )  # keyed by difference_id
+    resolutions: dict[str, Resolution] = field(default_factory=dict)  # keyed by difference_id
+    outcomes: dict[str, ApplyOutcome] = field(default_factory=dict)  # keyed by difference_id
     rollback_events: dict[str, list[RollbackEvent]] = field(default_factory=dict)
     requires_refresh: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

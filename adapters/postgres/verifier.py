@@ -35,17 +35,13 @@ class SchemaVerifier:
         self._comparator = comparator or SchemaComparator()
 
     @classmethod
-    def for_database(
-        cls, models_path: Path, dsn: str, schema: str = "public"
-    ) -> "SchemaVerifier":
+    def for_database(cls, models_path: Path, dsn: str, schema: str = "public") -> "SchemaVerifier":
         return cls(
             load_intended=lambda: load_intended_schema(models_path),
             load_actual=lambda: load_actual_schema(dsn, schema),
         )
 
-    def verify(
-        self, target: ComparisonTarget, difference: Difference
-    ) -> VerificationResult:
+    def verify(self, target: ComparisonTarget, difference: Difference) -> VerificationResult:
         intended = self._load_intended()
         actual = self._load_actual()
         remaining = next(

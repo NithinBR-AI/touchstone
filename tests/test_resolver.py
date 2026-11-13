@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import re
 
+from adapters.postgres.validator import SQLValidator
 from agents.prompts import build_prompt, prompt_sha256
 from agents.resolver import MockResolver, canned_responder, validate_payload
 from core.models import Difference, GhostState
-from core.validator import SQLValidator
 
 
 def _index_diff(**ctx) -> Difference:
@@ -53,7 +53,7 @@ def test_index_missing_proposal_passes_validator() -> None:
     diff = _index_diff()
     res = MockResolver().resolve(diff)
     assert (
-        res.proposed_change.statement == "CREATE INDEX ix_users_email ON users (email)"
+        res.proposed_change.payload["statement"] == "CREATE INDEX ix_users_email ON users (email)"
     )
     assert SQLValidator().validate(res.proposed_change, diff).status == "valid"
 
@@ -62,7 +62,7 @@ def test_widening_type_proposal_passes_validator() -> None:
     diff = _type_diff("varchar(100)", "varchar(255)")
     res = MockResolver().resolve(diff)
     assert (
-        res.proposed_change.statement
+        res.proposed_change.payload["statement"]
         == "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
     )
     assert SQLValidator().validate(res.proposed_change, diff).status == "valid"

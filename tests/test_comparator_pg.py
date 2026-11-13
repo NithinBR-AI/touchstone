@@ -89,9 +89,7 @@ def test_column_missing_nullable_is_review_required() -> None:
 def test_column_missing_not_null_no_default_is_blocked() -> None:
     actual = copy.deepcopy(BASE)
     del actual["users"]["columns"]["email"]
-    d = _by_kind(
-        SchemaComparator().compare(_state(BASE), _state(actual)), "COLUMN_MISSING"
-    )[0]
+    d = _by_kind(SchemaComparator().compare(_state(BASE), _state(actual)), "COLUMN_MISSING")[0]
     assert d.state == GhostState.BLOCKED
 
 

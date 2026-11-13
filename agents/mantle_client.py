@@ -19,9 +19,7 @@ os.environ.setdefault("PYTHONHTTPSVERIFY", "0")
 
 logger = logging.getLogger(__name__)
 
-MANTLE_BASE_URL = os.environ.get(
-    "MANTLE_BASE_URL", "https://bedrock-mantle.us-east-1.api.aws/v1"
-)
+MANTLE_BASE_URL = os.environ.get("MANTLE_BASE_URL", "https://bedrock-mantle.us-east-1.api.aws/v1")
 
 # Model IDs
 _QWEN_235B = "qwen.qwen3-235b-a22b-2507"  # reasoning — SQL fix proposals (App 1)
@@ -76,18 +74,14 @@ def _call_with_fallback(
         return _call(fallback, system, user, temperature, max_tokens=max_tokens)
 
 
-def ultra(
-    system: str, user: str, temperature: float = 0.0, max_tokens: int = 8192
-) -> str:
+def ultra(system: str, user: str, temperature: float = 0.0, max_tokens: int = 8192) -> str:
     """QWEN 235B — reasoning model for SQL fix proposals (App 1)."""
     return _call_with_fallback(
         _QWEN_235B, _QWEN_FALLBACK, system, user, temperature, max_tokens=max_tokens
     )
 
 
-def deepseek_pro(
-    system: str, user: str, temperature: float = 0.0, max_tokens: int = 16384
-) -> str:
+def deepseek_pro(system: str, user: str, temperature: float = 0.0, max_tokens: int = 16384) -> str:
     """DeepSeek v3 — patch generator for spec/API patches (App 2)."""
     return _call_with_fallback(
         _DEEPSEEK, _DEEPSEEK_FALLBACK, system, user, temperature, max_tokens=max_tokens

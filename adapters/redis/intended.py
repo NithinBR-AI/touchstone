@@ -27,9 +27,7 @@ from core.models import State
 def load_from_url(url: str) -> State:
     """Fetch cache_config.yaml from *url* and return an intended State."""
     req = urllib.request.Request(url, headers={"User-Agent": "touchstone/1.0"})
-    with urllib.request.urlopen(
-        req, timeout=15
-    ) as resp:  # noqa: S310 — public GitHub raw URL
+    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 — public GitHub raw URL
         raw = resp.read().decode()
     return _build_state(raw, source=url)
 

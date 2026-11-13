@@ -121,9 +121,7 @@ def test_field_extra_multiple():
 
 
 def test_field_missing_detected():
-    intended = _state(
-        {"/users": {"get": {"responses": {"200": {"schema": _user_schema()}}}}}
-    )
+    intended = _state({"/users": {"get": {"responses": {"200": {"schema": _user_schema()}}}}})
     # actual returns only id, not email
     actual = _state(
         {
@@ -197,11 +195,7 @@ def test_signatures_are_stable():
     intended = _state(
         {
             "/users": {
-                "get": {
-                    "responses": {
-                        "200": {"schema": _list_schema({"id": {"type": "integer"}})}
-                    }
-                }
+                "get": {"responses": {"200": {"schema": _list_schema({"id": {"type": "integer"}})}}}
             }
         }
     )
@@ -371,15 +365,7 @@ def test_verifier_accepts_comparison_target():
 
 def test_safe_fix_always_false():
     intended = _state(
-        {
-            "/x": {
-                "get": {
-                    "responses": {
-                        "200": {"schema": {"type": "object", "properties": {}}}
-                    }
-                }
-            }
-        }
+        {"/x": {"get": {"responses": {"200": {"schema": {"type": "object", "properties": {}}}}}}}
     )
     actual = _state(
         {

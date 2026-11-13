@@ -75,8 +75,6 @@ def test_still_present_when_ghost_remains() -> None:
 def test_unrelated_differences_do_not_block_resolution() -> None:
     diff = _index_diff()
     other_drift = copy.deepcopy(INTENDED)
-    other_drift["users"]["columns"]["email"][
-        "type"
-    ] = "varchar(100)"  # a different ghost
+    other_drift["users"]["columns"]["email"]["type"] = "varchar(100)"  # a different ghost
     v = SchemaVerifier(lambda: _state(INTENDED), lambda: _state(other_drift))
     assert v.verify(ComparisonTarget("database", diff.target), diff).resolved is True

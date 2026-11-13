@@ -20,7 +20,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from adapters.postgres.executor import STATEMENT_TIMEOUT_MS, SQLExecutor
-from core.models import Difference, GhostState, Resolution, SQLChange
+from adapters.postgres.models import SQLChange
+from core.models import ChangeProposal, Difference, GhostState, Resolution
 
 DB_URL = os.environ.get("DATABASE_URL", "")
 
@@ -35,10 +36,16 @@ def _diff(kind: str, target: str, context: dict) -> Difference:
 
 
 def _res(diff: Difference, change: SQLChange) -> Resolution:
+    proposal = ChangeProposal(
+        domain=diff.domain,
+        target=change.target,
+        operation=change.operation,
+        payload={"statement": change.statement, "operation": change.operation},
+    )
     return Resolution(
         difference_id=diff.id,
         difference_signature=diff.signature or "",
-        proposed_change=change,
+        proposed_change=proposal,
         prompt_sha256="test",
     )
 
@@ -98,9 +105,7 @@ class TestSQLExecution:
         """A long-running statement is cancelled by the connection-level timeout."""
 
         def fast_timeout_connect(dsn):
-            return psycopg.connect(
-                dsn, connect_timeout=10, options="-c statement_timeout=1"
-            )
+            return psycopg.connect(dsn, connect_timeout=10, options="-c statement_timeout=1")
 
         ex = SQLExecutor(DB_URL, connect=fast_timeout_connect)
         diff = _diff("INDEX_MISSING", "ix_test_slow", {})
@@ -117,9 +122,7 @@ class TestSQLExecution:
         """Connection failure stores error_code, not raw exception text."""
         ex = SQLExecutor("postgresql://bad:bad@localhost:9999/nonexistent")
         diff = _diff("INDEX_MISSING", "ix_test", {})
-        change = SQLChange(
-            statement="SELECT 1", operation="CREATE_INDEX", target="ix_test"
-        )
+        change = SQLChange(statement="SELECT 1", operation="CREATE_INDEX", target="ix_test")
         result = ex.execute(_res(diff, change), diff)
         assert not result.success
         assert result.error_code == "CONNECT_FAILED"

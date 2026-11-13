@@ -6,12 +6,58 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.cache import Cache
-from core.models import (ComparisonTarget, Difference, ExecutionResult,
-                         FilePatch, GhostState, Resolution, RollbackEvent,
-                         SQLChange, State, VerificationResult)
+from core.interfaces import RollbackSupport
+from core.models import (
+    ChangeProposal,
+    ComparisonTarget,
+    Difference,
+    ExecutionResult,
+    GhostState,
+    Resolution,
+    RollbackEvent,
+    State,
+    VerificationResult,
+)
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import SQLValidator
+
+
+class _FakeExecutor:
+    """Concrete executor implementing RollbackSupport for rollback tests."""
+
+    def __init__(self):
+        self._rollback_side_effect = None
+        self._rollback_return = True
+
+    def execute(self, resolution, difference):
+        return ExecutionResult(
+            difference_id=difference.id,
+            success=True,
+            applied_change=resolution.proposed_change,
+        )
+
+    def rollback(self, execution: ExecutionResult) -> bool:
+        if self._rollback_side_effect is not None:
+            exc = self._rollback_side_effect
+            if isinstance(exc, list):
+                result = exc.pop(0)
+                if isinstance(result, BaseException):
+                    raise result
+                return result
+            if isinstance(exc, BaseException):
+                raise exc
+        return self._rollback_return
+
+
+class _FakeSQLExecutor:
+    """Executor without RollbackSupport — simulates database domain."""
+
+    def execute(self, resolution, difference):
+        return ExecutionResult(
+            difference_id=difference.id,
+            success=True,
+            applied_change=resolution.proposed_change,
+        )
 
 
 def create_orchestrator(domain: str = "api"):
@@ -41,29 +87,22 @@ def create_orchestrator(domain: str = "api"):
     comparator.compare.return_value = [diff]
 
     resolver = MagicMock()
-    _patch = FilePatch(
-        file_path="file.yml",
-        before_sha256="abc123",
-        after_sha256="def456",
-        forward_patch=b"key: value",
-        reverse_patch=b"key: old",
+    _proposal = ChangeProposal(
+        domain=domain,
+        target="file.yml",
+        operation="FILE_PATCH",
+        payload={"patched_content": "key: value", "file_path": "file.yml"},
     )
 
     resolver.resolve.return_value = Resolution(
         difference_id=diff.id,
         difference_signature=diff.signature,
-        proposed_change=_patch,
+        proposed_change=_proposal,
         rationale="Test",
         prompt_sha256="abc123",
     )
 
-    executor = MagicMock()
-    executor.execute.return_value = ExecutionResult(
-        difference_id=diff.id,
-        success=True,
-        applied_change=_patch,
-    )
-    executor.rollback.return_value = True
+    executor = _FakeSQLExecutor() if domain == "database" else _FakeExecutor()
 
     verifier = MagicMock()
     verifier.verify.return_value = VerificationResult(
@@ -72,24 +111,33 @@ def create_orchestrator(domain: str = "api"):
         evidence={"key": "value"},
     )
 
-    validator_sql = SQLValidator()
+    validator = MagicMock()
+    mock_vr = MagicMock()
+    mock_vr.status = "valid"
+    mock_vr.ghost_state = GhostState.PENDING
+    mock_vr.reason = ""
+    validator.validate.return_value = mock_vr
 
     persistence = MagicMock(spec=Persistence)
     cache = MagicMock(spec=Cache)
     cache.get.return_value = None
 
-    return Orchestrator(
+    orch = Orchestrator(
         input_source=input_source,
         source_adapter=source_adapter,
         comparator=comparator,
         resolver=resolver,
         executor=executor,
         verifier=verifier,
-        validator_sql=validator_sql,
+        validator=validator,
         persistence=persistence,
         cache=cache,
         domain=domain,
     )
+    # Expose executor for test customisation
+    orch.executor = executor
+    orch.verifier = verifier
+    return orch
 
 
 class TestRollbackDBRefusal:
@@ -164,7 +212,7 @@ class TestRollbackExternalEdit:
     def test_rollback_external_edit(self):
         """Rollback fails when executor.rollback returns False."""
         orch = create_orchestrator(domain="api")
-        orch.executor.rollback.return_value = False
+        orch.executor._rollback_return = False
 
         report = orch.run()
         orch.apply_one(report.differences[0].id)
@@ -176,7 +224,7 @@ class TestRollbackExternalEdit:
     def test_rollback_executor_exception(self):
         """Rollback fails when executor raises."""
         orch = create_orchestrator(domain="api")
-        orch.executor.rollback.side_effect = Exception("Disk error")
+        orch.executor._rollback_side_effect = Exception("Disk error")
 
         report = orch.run()
         orch.apply_one(report.differences[0].id)
@@ -194,7 +242,7 @@ class TestRollbackDouble:
         """Second rollback is refused when executor signals failure on second call."""
         orch = create_orchestrator(domain="api")
         # First call succeeds, second call fails (simulates file already restored)
-        orch.executor.rollback.side_effect = [True, False]
+        orch.executor._rollback_side_effect = [True, False]
 
         report = orch.run()
         orch.apply_one(report.differences[0].id)

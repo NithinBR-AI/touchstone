@@ -6,8 +6,7 @@ Rules:
   · Each entry carries cache_version, validator_contract, prompt_hash.
   · Lookup skips on any field mismatch (version, contract, prompt_hash).
   · Cache hits are marked cached=True and CACHED badge shown in UI.
-  · Demo mode serves pre-recorded resolutions; no live LLM call.
-  · The cache is stored as JSON — agents/cache.json by default.
+  · ChangeProposal.payload is serialised as-is — core never inspects contents.
 """
 
 from __future__ import annotations
@@ -18,28 +17,24 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from core.models import FilePatch, Resolution, SQLChange
+from core.models import ChangeProposal, Resolution
 
 # Bump this when the validator contract or prompt schema changes.
-CACHE_VERSION = "1.0.0"
+CACHE_VERSION = "2.0.0"
 
 # Increment when the validator's operation matrix or binding rules change.
-VALIDATOR_CONTRACT = "v1"
+VALIDATOR_CONTRACT = "v2"
 
 # Verified fixes expire after this many days — forces a fresh LLM call after expiry.
 CACHE_TTL_DAYS = 7
-
-
-# ---------------------------------------------------------------------------
-# Cache
-# ---------------------------------------------------------------------------
 
 
 class Cache:
     """
     JSON-backed resolution cache.
 
-    Typical path: agents/cache.json
+    ChangeProposal.payload is treated as opaque — serialised and deserialised
+    as a plain dict without inspection.
     """
 
     def __init__(self, cache_path: Path) -> None:
@@ -47,20 +42,11 @@ class Cache:
         self._data: dict[str, Any] = {}
         self._load()
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def get(
-        self,
-        signature: str,
-        prompt_hash: str,
-    ) -> Resolution | None:
+    def get(self, signature: str, prompt_hash: str) -> Resolution | None:
         """
-        Return a cached Resolution if the signature matches AND
-        cache_version, validator_contract, prompt_hash all match AND
-        the entry has not expired.
-        Returns None on any mismatch (falls through to live call).
+        Return a cached Resolution if signature, cache_version, validator_contract,
+        and prompt_hash all match and the entry has not expired.
+        Returns None on any mismatch.
         """
         entry = self._data.get(signature)
         if entry is None:
@@ -71,7 +57,6 @@ class Cache:
             return None
         if entry.get("prompt_hash") != prompt_hash:
             return None
-        # TTL check — expired entries fall through to a fresh LLM call
         expires_at_raw = entry.get("expires_at")
         if expires_at_raw:
             expires_at = datetime.fromisoformat(expires_at_raw)
@@ -90,8 +75,6 @@ class Cache:
         return signature in self._data
 
     # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
 
     def _load(self) -> None:
         if self.cache_path.exists():
@@ -109,28 +92,20 @@ class Cache:
         os.replace(tmp, self.cache_path)
 
     def _serialise(self, resolution: Resolution) -> dict[str, Any]:
-        change = resolution.proposed_change
-        serialised_change: dict[str, Any] | None = None
-        if isinstance(change, SQLChange):
-            serialised_change = {
-                "type": "sql",
-                "statement": change.statement,
-                "operation": change.operation,
-                "target": change.target,
-            }
-        elif isinstance(change, FilePatch):
-            serialised_change = {
-                "type": "file",
-                "file_path": change.file_path,
-                "before_sha256": change.before_sha256,
-                "after_sha256": change.after_sha256,
-                "forward_patch": change.forward_patch.hex(),
-                "reverse_patch": change.reverse_patch.hex(),
+        proposal = resolution.proposed_change
+        serialised_proposal: dict[str, Any] | None = None
+        if proposal is not None:
+            serialised_proposal = {
+                "id": proposal.id,
+                "domain": proposal.domain,
+                "target": proposal.target,
+                "operation": proposal.operation,
+                "payload": proposal.payload,  # opaque — stored as-is
             }
         return {
             "difference_id": resolution.difference_id,
             "difference_signature": resolution.difference_signature,
-            "proposed_change": serialised_change,
+            "proposed_change": serialised_proposal,
             "rationale": resolution.rationale,
             "prompt_sha256": resolution.prompt_sha256,
             "cache_version": CACHE_VERSION,
@@ -138,33 +113,24 @@ class Cache:
             "prompt_hash": resolution.prompt_hash,
             "cached": True,
             "resolved_at": resolution.resolved_at.isoformat(),
-            "expires_at": (
-                datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS)
-            ).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS)).isoformat(),
         }
 
     def _deserialise(self, entry: dict[str, Any]) -> Resolution:
-        change_data = entry.get("proposed_change")
-        change: SQLChange | FilePatch | None = None
-        if change_data:
-            if change_data.get("type") == "sql":
-                change = SQLChange(
-                    statement=change_data["statement"],
-                    operation=change_data["operation"],
-                    target=change_data["target"],
-                )
-            elif change_data.get("type") == "file":
-                change = FilePatch(
-                    file_path=change_data["file_path"],
-                    before_sha256=change_data["before_sha256"],
-                    after_sha256=change_data["after_sha256"],
-                    forward_patch=bytes.fromhex(change_data["forward_patch"]),
-                    reverse_patch=bytes.fromhex(change_data["reverse_patch"]),
-                )
+        proposal_data = entry.get("proposed_change")
+        proposal: ChangeProposal | None = None
+        if proposal_data:
+            proposal = ChangeProposal(
+                id=proposal_data.get("id", ""),
+                domain=proposal_data.get("domain", ""),
+                target=proposal_data.get("target", ""),
+                operation=proposal_data.get("operation", ""),
+                payload=proposal_data.get("payload", {}),
+            )
         return Resolution(
             difference_id=entry.get("difference_id", ""),
             difference_signature=entry.get("difference_signature", ""),
-            proposed_change=change,
+            proposed_change=proposal,
             rationale=entry.get("rationale", ""),
             prompt_sha256=entry.get("prompt_sha256", ""),
             cache_version=entry.get("cache_version", ""),

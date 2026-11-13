@@ -25,13 +25,13 @@ from adapters.redis.actual import load_from_url as load_actual
 from adapters.redis.comparator import CacheComparator
 from adapters.redis.executor import CacheExecutor
 from adapters.redis.intended import load_from_url as load_intended
+from adapters.redis.validator import CacheValidator
 from adapters.redis.verifier import CacheVerifier
 from agents.resolver import MockResolver
 from core.cache import Cache
 from core.models import ComparisonTarget
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import SQLValidator
 
 load_dotenv()
 
@@ -49,18 +49,14 @@ _cache_path = HERE / ".cache.json"
 def _cache_config_url() -> str:
     url = _active_repo.get("cache_config_url", "")
     if not url:
-        raise HTTPException(
-            503, detail="No cache_config_url configured for active repo"
-        )
+        raise HTTPException(503, detail="No cache_config_url configured for active repo")
     return url
 
 
 def _cache_status_url() -> str:
     url = _active_repo.get("cache_status_url", "")
     if not url:
-        raise HTTPException(
-            503, detail="No cache_status_url configured for active repo"
-        )
+        raise HTTPException(503, detail="No cache_status_url configured for active repo")
     return url
 
 
@@ -91,10 +87,8 @@ def _build_orch() -> Orchestrator:
         comparator=CacheComparator(),
         resolver=MockResolver(),
         executor=CacheExecutor(cache_warm_url=_active_repo.get("cache_warm_url", "")),
-        verifier=CacheVerifier(
-            cache_status_url=_active_repo.get("cache_status_url", "")
-        ),
-        validator_sql=SQLValidator(),
+        verifier=CacheVerifier(cache_status_url=_active_repo.get("cache_status_url", "")),
+        validator=CacheValidator(),
         persistence=Persistence(_reports_dir),
         cache=Cache(_cache_path),
         domain="cache",
@@ -135,10 +129,7 @@ def get_config():
         **CONFIG,
         "latest_report_id": _latest_report_id,
         "active_repo": _active_repo["id"],
-        "repos": [
-            {"id": r["id"], "name": r["name"], "github": r.get("github", "")}
-            for r in REPOS
-        ],
+        "repos": [{"id": r["id"], "name": r["name"], "github": r.get("github", "")} for r in REPOS],
     }
 
 

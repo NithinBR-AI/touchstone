@@ -88,9 +88,7 @@ def _read_tables(conn: psycopg.Connection, schema: str) -> dict[str, Any]:
         if table_name not in tables:
             tables[table_name] = {"columns": {}, "indexes": {}, "primary_key": []}
 
-        pg_type = _resolve_pg_type(
-            data_type, char_max_len, num_precision, num_scale, udt_name
-        )
+        pg_type = _resolve_pg_type(data_type, char_max_len, num_precision, num_scale, udt_name)
         try:
             canonical = normalize_pg_type(pg_type)
         except UnsupportedTypeError:

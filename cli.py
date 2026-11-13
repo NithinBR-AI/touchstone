@@ -36,9 +36,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
     _load_env()
     db_url = os.environ.get("DATABASE_URL", "")
     if not db_url:
-        print(
-            "ERROR: DATABASE_URL not set. Add it to .env or export it.", file=sys.stderr
-        )
+        print("ERROR: DATABASE_URL not set. Add it to .env or export it.", file=sys.stderr)
         return 1
 
     target = args.target
@@ -124,9 +122,7 @@ def main() -> None:
 
     # touchstone compare
     p_compare = sub.add_parser("compare", help="Compare declared vs actual schema")
-    p_compare.add_argument(
-        "--target", default="", help="Filter to this target (e.g. users.email)"
-    )
+    p_compare.add_argument("--target", default="", help="Filter to this target (e.g. users.email)")
     p_compare.add_argument(
         "--domain",
         default="database",

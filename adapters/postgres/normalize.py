@@ -239,9 +239,7 @@ def normalize_sqlalchemy_type(sa_type: object) -> str:
     except UnsupportedTypeError:
         pass
 
-    raise UnsupportedTypeError(
-        f"Unsupported SQLAlchemy type: {type(sa_type).__name__!r}"
-    )
+    raise UnsupportedTypeError(f"Unsupported SQLAlchemy type: {type(sa_type).__name__!r}")
 
 
 # ---------------------------------------------------------------------------

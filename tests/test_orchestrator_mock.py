@@ -13,13 +13,13 @@ import copy
 from pathlib import Path
 
 from adapters.postgres.comparator import SchemaComparator
+from adapters.postgres.validator import SQLValidator
 from adapters.postgres.verifier import SchemaVerifier
 from agents.resolver import MockResolver, canned_responder
 from core.cache import Cache
 from core.models import ComparisonTarget, ExecutionResult, GhostState, State
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import SQLValidator
 
 INTENDED = {
     "users": {
@@ -47,9 +47,7 @@ class FakeDB:
     def __init__(self) -> None:
         self.tables = copy.deepcopy(INTENDED)
         self.tables["users"]["indexes"] = {}  # ghost: missing index
-        self.tables["users"]["columns"]["email"][
-            "type"
-        ] = "varchar(100)"  # ghost: narrower type
+        self.tables["users"]["columns"]["email"]["type"] = "varchar(100)"  # ghost: narrower type
 
     def state(self) -> State:
         return State(domain="database", data={"tables": copy.deepcopy(self.tables)})
@@ -78,7 +76,7 @@ class FakeExecutor:
         self.db, self.apply = db, apply
 
     def execute(self, resolution, difference=None):
-        stmt = resolution.proposed_change.statement
+        stmt = resolution.proposed_change.payload["statement"]
         if self.apply:
             if stmt.startswith("CREATE INDEX"):
                 self.db.tables["users"]["indexes"]["ix_users_email"] = {
@@ -103,7 +101,7 @@ def _orch(tmp_path: Path, db: FakeDB, resolver=None, apply=True) -> Orchestrator
         resolver=resolver or MockResolver(),
         executor=FakeExecutor(db, apply=apply),
         verifier=SchemaVerifier(lambda: source.intended(None), db.state),
-        validator_sql=SQLValidator(),
+        validator=SQLValidator(),
         persistence=Persistence(tmp_path / "reports"),
         cache=Cache(tmp_path / "cache.json"),
         domain="database",
@@ -127,9 +125,7 @@ def test_full_loop_resolves_both_ghosts(tmp_path: Path) -> None:
 
     # Persisted report matches in-memory state
     saved = Persistence(tmp_path / "reports").load(report.id)
-    assert {d.id: d.state for d in saved.differences} == {
-        d.id: d.state for d in report.differences
-    }
+    assert {d.id: d.state for d in saved.differences} == {d.id: d.state for d in report.differences}
 
 
 def test_apply_without_effect_is_still_present(tmp_path: Path) -> None:
@@ -151,11 +147,12 @@ def test_second_apply_is_refused(tmp_path: Path) -> None:
     assert orch.apply_one(diff.id).execution is None  # refused, not re-executed
 
 
-def test_resolver_failure_blocks_instead_of_pending(tmp_path: Path) -> None:
+def test_resolver_failure_requires_review_instead_of_pending(tmp_path: Path) -> None:
     orch = _orch(tmp_path, FakeDB(), resolver=MockResolver(lambda p, d: "garbage"))
     report = orch.run()
     assert report.differences
-    assert all(d.state == GhostState.BLOCKED for d in report.differences)
+    # Resolver returns no proposal after repeated failures → REVIEW_REQUIRED
+    assert all(d.state == GhostState.REVIEW_REQUIRED for d in report.differences)
 
 
 def test_second_run_hits_cache(tmp_path: Path) -> None:
@@ -215,7 +212,5 @@ def test_cache_populated_after_successful_apply(tmp_path: Path) -> None:
     data = _json.loads(cache_file.read_text(encoding="utf-8"))
     assert len(data) >= 1, "Expected at least one cache entry after successful apply"
     for entry in data.values():
-        assert (
-            entry.get("proposed_change") is not None
-        ), "Cached entry has no proposed_change"
+        assert entry.get("proposed_change") is not None, "Cached entry has no proposed_change"
         assert "expires_at" in entry, "Cached entry missing expires_at TTL field"

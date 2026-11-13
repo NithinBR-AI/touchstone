@@ -14,8 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from adapters.postgres.normalize import (UnsupportedTypeError,
-                                         normalize_sqlalchemy_type)
+from adapters.postgres.normalize import UnsupportedTypeError, normalize_sqlalchemy_type
 from core.models import ComparisonTarget, State
 
 

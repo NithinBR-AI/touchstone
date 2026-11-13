@@ -49,9 +49,7 @@ def _make(
     ctx = dict(context)
     ctx["policy"] = policy
     ctx["safe_fix"] = False  # API drift always requires a PR — never auto-apply
-    state = (
-        GhostState.BLOCKED if policy == POLICY_BLOCKED else GhostState.REVIEW_REQUIRED
-    )
+    state = GhostState.BLOCKED if policy == POLICY_BLOCKED else GhostState.REVIEW_REQUIRED
     return Difference(
         signature=_signature(kind, target, key_ctx or {}),
         domain=DOMAIN,
@@ -155,14 +153,19 @@ class ContractComparator:
         diffs: list[Difference] = []
         i_responses = i_op.get("responses", {})
         a_responses = a_op.get("responses", {})
+        schema_names = i_op.get("schema_names", {})
+        operation_id = i_op.get("operationId", "")
 
         for status in sorted(i_responses):
             if status not in a_responses:
                 continue
             i_schema = i_responses[status].get("schema", {})
             a_schema = a_responses[status].get("schema", {})
+            schema_name = schema_names.get(str(status), "")
             diffs.extend(
-                self._compare_schemas(path, method, status, i_schema, a_schema)
+                self._compare_schemas(
+                    path, method, status, i_schema, a_schema, schema_name, operation_id
+                )
             )
 
         return diffs
@@ -174,6 +177,8 @@ class ContractComparator:
         status: str,
         i_schema: dict[str, Any],
         a_schema: dict[str, Any],
+        schema_name: str = "",
+        operation_id: str = "",
     ) -> list[Difference]:
         diffs: list[Difference] = []
         target_prefix = f"{method.upper()} {path} {status}"
@@ -195,6 +200,8 @@ class ContractComparator:
                         "method": method,
                         "status": status,
                         "fields": extra_fields,
+                        "schema_name": schema_name,
+                        "operation_id": operation_id,
                         "description": f"Fields '{', '.join(extra_fields)}' returned by API but not in spec",
                     },
                     {"path": path, "kind": "FIELD_EXTRA"},
@@ -215,6 +222,8 @@ class ContractComparator:
                         "method": method,
                         "status": status,
                         "fields": missing_fields,
+                        "schema_name": schema_name,
+                        "operation_id": operation_id,
                         "description": f"Fields '{', '.join(missing_fields)}' in spec but not returned by API",
                     },
                     {"path": path, "kind": "FIELD_MISSING"},

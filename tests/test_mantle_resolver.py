@@ -12,8 +12,7 @@ import os
 
 import pytest
 
-from agents.prompts import (_API_SYSTEM_PROMPT, _CACHE_SYSTEM_PROMPT,
-                            _DB_SYSTEM_PROMPT, build_prompt)
+from agents.prompts import _API_SYSTEM_PROMPT, _CACHE_SYSTEM_PROMPT, _DB_SYSTEM_PROMPT, build_prompt
 from agents.resolver import MantleResolver
 from core.models import Difference, GhostState
 
@@ -96,7 +95,7 @@ def test_no_api_key_falls_back_to_mock_resolver(monkeypatch):
     res = MantleResolver().resolve(_db_diff())
     # MockResolver produces a valid SQL change for safe INDEX_MISSING
     assert res.proposed_change is not None
-    assert "CREATE INDEX" in res.proposed_change.statement
+    assert "CREATE INDEX" in res.proposed_change.payload["statement"]
 
 
 def test_no_api_key_does_not_call_llm(monkeypatch):
@@ -137,7 +136,7 @@ def test_database_domain_calls_ultra(monkeypatch):
 
 
 def test_api_domain_skips_llm_at_resolve_time(monkeypatch):
-    """API domain skips LLM at resolve time — patch is generated at PR creation."""
+    """API domain skips LLM at resolve time — patch is generated at execute time."""
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
     called = {}
 
@@ -153,12 +152,13 @@ def test_api_domain_skips_llm_at_resolve_time(monkeypatch):
     monkeypatch.setattr("agents.mantle_client.deepseek_pro", fake_deepseek)
     res = MantleResolver().resolve(_api_diff())
     assert called == {}  # no LLM call for api domain at resolve time
-    assert res.proposed_change is None
-    assert "PR creation" in res.rationale
+    assert res.proposed_change is not None  # lightweight metadata proposal
+    assert res.proposed_change.operation == "FILE_PATCH"
+    assert "execute time" in res.rationale
 
 
-def test_cache_domain_calls_ultra(monkeypatch):
-    """Cache domain is not database or api — routes to ultra() as default."""
+def test_cache_domain_no_llm(monkeypatch):
+    """Cache domain uses deterministic proposal — no LLM call."""
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
     called = {}
 
@@ -172,8 +172,10 @@ def test_cache_domain_calls_ultra(monkeypatch):
 
     monkeypatch.setattr("agents.mantle_client.ultra", fake_ultra)
     monkeypatch.setattr("agents.mantle_client.deepseek_pro", fake_deepseek)
-    MantleResolver().resolve(_cache_diff())
-    assert called.get("model") == "ultra"
+    res = MantleResolver().resolve(_cache_diff())
+    assert called == {}  # cache is deterministic — no LLM
+    assert res.proposed_change is not None
+    assert res.proposed_change.operation in ("CACHE_WARM", "CACHE_DELETE")
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +249,7 @@ def test_database_not_safe_fix_calls_llm_for_human_review(monkeypatch):
 
 
 def test_api_domain_returns_deferred_rationale(monkeypatch):
-    """API diffs skip LLM — rationale indicates fix is deferred to PR creation."""
+    """API diffs skip LLM — rationale indicates fix is deferred to execute time."""
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
     calls = []
 
@@ -256,13 +258,12 @@ def test_api_domain_returns_deferred_rationale(monkeypatch):
         return _ok_review_payload("Field exists in API but missing from spec.")
 
     monkeypatch.setattr("agents.mantle_client.deepseek_pro", fake_deepseek)
-    monkeypatch.setattr(
-        "agents.mantle_client.ultra", lambda *a, **kw: _ok_review_payload()
-    )
+    monkeypatch.setattr("agents.mantle_client.ultra", lambda *a, **kw: _ok_review_payload())
     diff = _api_diff(safe_fix=False)
     res = MantleResolver().resolve(diff)
     assert len(calls) == 0  # no LLM call — deferred to executor
-    assert res.proposed_change is None
+    assert res.proposed_change is not None  # lightweight metadata proposal
+    assert res.proposed_change.operation == "FILE_PATCH"
 
 
 # ---------------------------------------------------------------------------
@@ -279,20 +280,16 @@ def test_llm_wrapper_stripped_before_parse(monkeypatch):
     monkeypatch.setattr("agents.mantle_client.ultra", fake_ultra)
     monkeypatch.setattr(
         "agents.mantle_client.strip_llm_wrapper",
-        __import__(
-            "agents.mantle_client", fromlist=["strip_llm_wrapper"]
-        ).strip_llm_wrapper,
+        __import__("agents.mantle_client", fromlist=["strip_llm_wrapper"]).strip_llm_wrapper,
     )
     res = MantleResolver().resolve(_db_diff())
     assert res.proposed_change is not None
-    assert "CREATE INDEX" in res.proposed_change.statement
+    assert "CREATE INDEX" in res.proposed_change.payload["statement"]
 
 
 def test_valid_sql_response_produces_sql_change(monkeypatch):
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
-    monkeypatch.setattr(
-        "agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload()
-    )
+    monkeypatch.setattr("agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload())
     monkeypatch.setattr("agents.mantle_client.strip_llm_wrapper", lambda x: x)
     res = MantleResolver().resolve(_db_diff())
     assert res.proposed_change is not None
@@ -372,9 +369,7 @@ def test_resolution_carries_prompt_sha256(monkeypatch):
     import re
 
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
-    monkeypatch.setattr(
-        "agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload()
-    )
+    monkeypatch.setattr("agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload())
     monkeypatch.setattr("agents.mantle_client.strip_llm_wrapper", lambda x: x)
     res = MantleResolver().resolve(_db_diff())
     assert re.fullmatch(r"[0-9a-f]{64}", res.prompt_sha256)
@@ -382,9 +377,7 @@ def test_resolution_carries_prompt_sha256(monkeypatch):
 
 def test_resolution_difference_id_matches(monkeypatch):
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
-    monkeypatch.setattr(
-        "agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload()
-    )
+    monkeypatch.setattr("agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload())
     monkeypatch.setattr("agents.mantle_client.strip_llm_wrapper", lambda x: x)
     diff = _db_diff()
     res = MantleResolver().resolve(diff)

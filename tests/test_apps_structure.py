@@ -32,9 +32,7 @@ def _present_files(app_dir: Path) -> set[str]:
 
 
 def test_shared_ui_has_required_files():
-    present = {
-        f.name for f in SHARED_UI.iterdir() if f.is_file() and f.name != ".gitkeep"
-    }
+    present = {f.name for f in SHARED_UI.iterdir() if f.is_file() and f.name != ".gitkeep"}
     missing = REQUIRED_UI_FILES - present
     assert not missing, f"shared/ui missing: {missing}"
 
@@ -43,12 +41,8 @@ def test_shared_ui_no_extra_js_or_css():
     """Single app.js and style.css — no per-domain duplicates."""
     js_files = list(SHARED_UI.glob("*.js"))
     css_files = list(SHARED_UI.glob("*.css"))
-    assert (
-        len(js_files) == 1
-    ), f"Expected 1 .js file, found: {[f.name for f in js_files]}"
-    assert (
-        len(css_files) == 1
-    ), f"Expected 1 .css file, found: {[f.name for f in css_files]}"
+    assert len(js_files) == 1, f"Expected 1 .js file, found: {[f.name for f in js_files]}"
+    assert len(css_files) == 1, f"Expected 1 .css file, found: {[f.name for f in css_files]}"
 
 
 # ----- per-app -----

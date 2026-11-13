@@ -6,6 +6,7 @@ Rules:
   · Reports are stored under <storage_dir>/<report_id>.json.
   · Raw exception text is never persisted.
   · Credentials are never persisted (adapters must redact before calling save).
+  · ChangeProposal.payload is serialised as-is — core never inspects contents.
 """
 
 from __future__ import annotations
@@ -13,13 +14,21 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from core.models import (ApplyOutcome, Difference, ExecutionResult, FilePatch,
-                         GhostState, Report, Resolution, RollbackEvent,
-                         SQLChange, VerificationResult)
+from core.models import (
+    ApplyOutcome,
+    ChangeProposal,
+    Difference,
+    ExecutionResult,
+    GhostState,
+    Report,
+    Resolution,
+    RollbackEvent,
+    VerificationResult,
+)
 
 # ---------------------------------------------------------------------------
 # JSON helpers
@@ -57,10 +66,6 @@ class Persistence:
         self.storage_dir = storage_dir
         storage_dir.mkdir(parents=True, exist_ok=True)
 
-    # ------------------------------------------------------------------
-    # Write
-    # ------------------------------------------------------------------
-
     def save(self, report: Report) -> None:
         """Atomically persist report to disk."""
         target = self.storage_dir / f"{report.id}.json"
@@ -72,10 +77,6 @@ class Persistence:
         ).encode()
         tmp.write_bytes(payload)
         os.replace(tmp, target)
-
-    # ------------------------------------------------------------------
-    # Read
-    # ------------------------------------------------------------------
 
     def load(self, report_id: str) -> Report | None:
         """Load a report by ID. Returns None if not found."""
@@ -107,54 +108,41 @@ class Persistence:
 
 def _parse_dt(value: str | None) -> datetime:
     if not value:
-        from datetime import timezone
-
         return datetime.now(timezone.utc)
     return datetime.fromisoformat(value)
 
 
-def _deserialise_change(data: dict[str, Any] | None) -> SQLChange | FilePatch | None:
+def _deserialise_proposal(data: dict[str, Any] | None) -> ChangeProposal | None:
     if data is None:
         return None
-    if "statement" in data:
-        return SQLChange(
-            **{k: v for k, v in data.items() if k in SQLChange.__dataclass_fields__}
-        )
-    if "forward_patch" in data:
-        fp = dict(data)
-        for key in ("forward_patch", "reverse_patch"):
-            val = fp.get(key)
-            if isinstance(val, str):
-                fp[key] = bytes.fromhex(val)
-        return FilePatch(
-            **{k: v for k, v in fp.items() if k in FilePatch.__dataclass_fields__}
-        )
-    return None
+    return ChangeProposal(
+        id=data.get("id", ""),
+        domain=data.get("domain", ""),
+        target=data.get("target", ""),
+        operation=data.get("operation", ""),
+        payload=data.get("payload", {}),
+    )
 
 
 def _deserialise_difference(data: dict[str, Any]) -> Difference:
     d = dict(data)
     d["state"] = GhostState(d.get("state", "PENDING"))
     d["detected_at"] = _parse_dt(d.get("detected_at"))
-    return Difference(
-        **{k: v for k, v in d.items() if k in Difference.__dataclass_fields__}
-    )
+    return Difference(**{k: v for k, v in d.items() if k in Difference.__dataclass_fields__})
 
 
 def _deserialise_resolution(data: dict[str, Any]) -> Resolution:
     d = dict(data)
-    d["proposed_change"] = _deserialise_change(d.get("proposed_change"))
+    d["proposed_change"] = _deserialise_proposal(d.get("proposed_change"))
     d["resolved_at"] = _parse_dt(d.get("resolved_at"))
-    return Resolution(
-        **{k: v for k, v in d.items() if k in Resolution.__dataclass_fields__}
-    )
+    return Resolution(**{k: v for k, v in d.items() if k in Resolution.__dataclass_fields__})
 
 
 def _deserialise_execution(data: dict[str, Any] | None) -> ExecutionResult | None:
     if data is None:
         return None
     d = dict(data)
-    d["applied_change"] = _deserialise_change(d.get("applied_change"))
+    d["applied_change"] = _deserialise_proposal(d.get("applied_change"))
     d["executed_at"] = _parse_dt(d.get("executed_at"))
     for key in ("rollback_bytes", "post_apply_bytes"):
         val = d.get(key)
@@ -182,17 +170,13 @@ def _deserialise_outcome(data: dict[str, Any]) -> ApplyOutcome:
     d["state"] = GhostState(d.get("state", "PENDING"))
     d["execution"] = _deserialise_execution(d.get("execution"))
     d["verification"] = _deserialise_verification(d.get("verification"))
-    return ApplyOutcome(
-        **{k: v for k, v in d.items() if k in ApplyOutcome.__dataclass_fields__}
-    )
+    return ApplyOutcome(**{k: v for k, v in d.items() if k in ApplyOutcome.__dataclass_fields__})
 
 
 def _deserialise_rollback_event(data: dict[str, Any]) -> RollbackEvent:
     d = dict(data)
     d["attempted_at"] = _parse_dt(d.get("attempted_at"))
-    return RollbackEvent(
-        **{k: v for k, v in d.items() if k in RollbackEvent.__dataclass_fields__}
-    )
+    return RollbackEvent(**{k: v for k, v in d.items() if k in RollbackEvent.__dataclass_fields__})
 
 
 def _deserialise_report(data: dict[str, Any]) -> Report:
@@ -203,15 +187,11 @@ def _deserialise_report(data: dict[str, Any]) -> Report:
         created_at=_parse_dt(data.get("created_at")),
         audit_log=data.get("audit_log", []),
     )
-    report.differences = [
-        _deserialise_difference(d) for d in data.get("differences", [])
-    ]
+    report.differences = [_deserialise_difference(d) for d in data.get("differences", [])]
     report.resolutions = {
         k: _deserialise_resolution(v) for k, v in data.get("resolutions", {}).items()
     }
-    report.outcomes = {
-        k: _deserialise_outcome(v) for k, v in data.get("outcomes", {}).items()
-    }
+    report.outcomes = {k: _deserialise_outcome(v) for k, v in data.get("outcomes", {}).items()}
     report.rollback_events = {
         k: [_deserialise_rollback_event(e) for e in events]
         for k, events in data.get("rollback_events", {}).items()

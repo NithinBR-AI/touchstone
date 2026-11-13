@@ -79,9 +79,7 @@ class TestCreateIndexAST:
 
     def test_partial_index_has_where(self) -> None:
         # In sqlglot 30.29.0 the WHERE lives inside IndexParameters, not Index
-        stmt = parse_one(
-            "CREATE INDEX ix_users_active ON users (email) WHERE active = true"
-        )
+        stmt = parse_one("CREATE INDEX ix_users_active ON users (email) WHERE active = true")
         index: exp.Index = stmt.this
         params = index.args.get("params")
         assert params is not None
@@ -124,9 +122,7 @@ class TestAlterTableTypeAST:
         assert dtype is not None
 
     def test_using_clause_detectable(self) -> None:
-        stmt = parse_one(
-            "ALTER TABLE users ALTER COLUMN score TYPE integer USING score::integer"
-        )
+        stmt = parse_one("ALTER TABLE users ALTER COLUMN score TYPE integer USING score::integer")
         alter_col = stmt.find(exp.AlterColumn)
         assert alter_col.args.get("using") is not None
 
@@ -152,9 +148,7 @@ class TestMultiStatementRejection:
 
     def test_single_statement_parsed_as_one(self) -> None:
         stmts = [
-            s
-            for s in sqlglot.parse("CREATE INDEX a ON t (x)", dialect="postgres")
-            if s is not None
+            s for s in sqlglot.parse("CREATE INDEX a ON t (x)", dialect="postgres") if s is not None
         ]
         assert len(stmts) == 1
 

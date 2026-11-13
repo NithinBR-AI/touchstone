@@ -71,20 +71,20 @@ You MUST respond with a single JSON object and nothing else — no markdown, no 
   "rationale": "<one or two sentences: what drifted and what the patch does>"
 }
 
+Drift kinds you may encounter:
+- FIELD_EXTRA / FIELD_UNDOCUMENTED: Fields are present in the live API response but
+  absent from the OpenAPI spec. Add ALL of them to the correct schema's properties
+  block in openapi.yaml.
+- FIELD_MISSING: Fields are declared in the OpenAPI spec but absent from the live API
+  response. Add ALL of them to the return dict of the correct endpoint function in
+  main.py, each with a None placeholder value and a # TODO: implement comment.
+
 Rules:
-- FIELD_EXTRA:   Multiple fields are present in the live API response but absent from
-                 the OpenAPI spec. context.fields is a list of ALL affected fields.
-                 Add ALL of them to the correct schema's properties block in openapi.yaml.
-                 Preserve ALL existing formatting, indentation, comments, and key ordering.
-                 Only insert the new fields — change nothing else.
-- FIELD_MISSING: Multiple fields are declared in the OpenAPI spec but absent from the live
-                 API response. context.fields is a list of ALL missing fields.
-                 Add ALL of them to the return dict of the correct endpoint in main.py,
-                 each with a None placeholder value and a # TODO: implement comment.
-                 Change nothing else in the file.
+- Fix ALL fields listed in the task — never partial fixes.
 - patched_content must be the COMPLETE file — not a diff, not a snippet.
-- Fix ALL fields listed in context.fields in one patch — never partial fixes.
-- Never change anything outside the fields being fixed.
+- The output file must produce a valid git diff against the input where every changed
+  line is intentional and directly related to fixing the drift described.
+  Any other difference is a bug in your output.
 """
 
 # ---------------------------------------------------------------------------
@@ -155,9 +155,7 @@ def build_prompt(difference: Difference) -> str:
     The system prompt is domain-specific. The user section carries only
     stable, redacted fields so the same ghost always hashes to the same SHA-256.
     """
-    ctx = {
-        k: v for k, v in difference.context.items() if k not in ("safe_fix", "policy")
-    }
+    ctx = {k: v for k, v in difference.context.items() if k not in ("safe_fix", "policy")}
     payload = {
         "domain": difference.domain,
         "kind": difference.kind,
@@ -179,32 +177,38 @@ def build_api_batch_user_message(
     path: str,
     file_name: str,
     file_content: str,
+    schema_name: str = "",
+    operation_id: str = "",
 ) -> str:
     """
     Build the user-turn message for a batched API patch call.
-
-    Called by ContractExecutor at PR creation time with ALL affected fields
-    and the full current file content already fetched from GitHub.
     """
-    if kind == "FIELD_EXTRA":
+    target = f"the '{schema_name}' schema" if schema_name else f"the schema for endpoint '{path}'"
+    # For main.py patches, use operationId to identify the exact function
+    func_name = operation_id if operation_id else path
+
+    if kind in ("FIELD_EXTRA", "FIELD_UNDOCUMENTED"):
         instruction = (
-            f"Fields {fields} are returned by the live API on {path} but are not declared "
-            f"in the OpenAPI spec. Add ALL of them to the correct schema's properties block "
-            f"in {file_name}. Preserve ALL existing formatting, indentation, comments, and "
-            f"key ordering. Only insert the new fields — change nothing else."
+            f"Add these fields to {target} in {file_name}:\n"
+            f"  {fields}\n\n"
+            f"Add the fields ONLY inside {target}. Do NOT touch any other schema."
         )
     elif kind == "FIELD_MISSING":
         instruction = (
-            f"Fields {fields} are declared in the OpenAPI spec for {path} but are not returned "
-            f"by the live API. Add ALL of them to the return dict of the correct endpoint in "
-            f"{file_name} with a None placeholder value and a # TODO: implement comment. "
-            f"Change nothing else in the file."
+            f"Add these fields to the return dict of the function '{func_name}' in {file_name}:\n"
+            f"  {fields}\n\n"
+            f"Each field should be added with value None and a '# TODO: implement' comment.\n"
+            f"Only modify the return dict of '{func_name}'. Do NOT touch any other function."
         )
     else:
-        instruction = f"Fix drift kind={kind} for fields {fields} in {file_name}."
+        instruction = (
+            f"Fix drift kind={kind} for fields {fields} in {file_name}.\n"
+            f"Change only what is directly necessary to fix the drift."
+        )
 
     return (
-        f"INSTRUCTION:\n{instruction}\n\n"
-        f"FILE ({file_name}):\n{file_content}\n\n"
-        f"Return the complete patched {file_name} as a JSON object."
+        f"TASK:\n{instruction}\n\n"
+        f"ORIGINAL FILE ({file_name}):\n{file_content}\n\n"
+        f"Return the complete patched file as a JSON object:\n"
+        f'  {{"action": "patch", "patched_content": "<complete file content>", "rationale": "<what you changed>"}}'
     )

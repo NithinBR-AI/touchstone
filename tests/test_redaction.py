@@ -10,9 +10,15 @@ Token-based redaction boundary coverage per spec:
 
 import pytest
 
-from agents.redaction import (SafeError, _is_sensitive, _split_tokens,
-                              redact_headers, redact_query,
-                              redact_url_userinfo, redact_value)
+from agents.redaction import (
+    SafeError,
+    _is_sensitive,
+    _split_tokens,
+    redact_headers,
+    redact_query,
+    redact_url_userinfo,
+    redact_value,
+)
 
 # ---------------------------------------------------------------------------
 # Token splitter

@@ -37,13 +37,13 @@ from adapters.openapi.actual import probe as probe_actual
 from adapters.openapi.comparator import ContractComparator
 from adapters.openapi.executor import ContractExecutor
 from adapters.openapi.intended import load_from_url as load_intended
+from adapters.openapi.validator import ContractValidator
 from adapters.openapi.verifier import ContractVerifier
 from agents.resolver import MantleResolver
 from core.cache import Cache
-from core.models import ComparisonTarget, GhostState
+from core.models import ApplyOutcome, ComparisonTarget, GhostState
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import SQLValidator
 
 _reports_dir = HERE / ".reports"
 _cache_path = HERE / ".cache.json"
@@ -95,7 +95,7 @@ def _build_orch(repo: dict) -> Orchestrator:
         resolver=MantleResolver(),
         executor=executor,
         verifier=ContractVerifier(),
-        validator_sql=SQLValidator(),
+        validator=ContractValidator(),
         persistence=Persistence(_reports_dir),
         cache=Cache(_cache_path),
         domain="api",
@@ -141,10 +141,7 @@ def get_config():
         **CONFIG,
         "latest_report_id": _latest_report_id,
         "active_repo": _active_repo["id"],
-        "repos": [
-            {"id": r["id"], "name": r["name"], "github": r.get("github", "")}
-            for r in REPOS
-        ],
+        "repos": [{"id": r["id"], "name": r["name"], "github": r.get("github", "")} for r in REPOS],
     }
 
 
@@ -201,9 +198,7 @@ def apply(req: ApplyRequest):
     if report is None:
         raise HTTPException(503, detail="No report — run /compare first")
 
-    trigger_diff = next(
-        (d for d in report.differences if d.id == req.difference_id), None
-    )
+    trigger_diff = next((d for d in report.differences if d.id == req.difference_id), None)
     if trigger_diff is None:
         raise HTTPException(404, detail="difference not found")
 
@@ -212,22 +207,15 @@ def apply(req: ApplyRequest):
         d.id
         for d in report.differences
         if d.kind == trigger_diff.kind
-        and d.state
-        not in (GhostState.RESOLVED, GhostState.SUPERSEDED, GhostState.EXECUTION_FAILED)
+        and d.state not in (GhostState.RESOLVED, GhostState.SUPERSEDED, GhostState.EXECUTION_FAILED)
     ]
 
     # human_authorized=True: user clicked Exorcise after seeing the LLM proposal
     outcomes = orch.apply_batch(same_kind_ids, human_authorized=True)
 
-    response_outcome = next(
-        (o for o in outcomes if o.difference_id == req.difference_id), None
-    )
+    response_outcome = next((o for o in outcomes if o.difference_id == req.difference_id), None)
     if response_outcome is None:
-        from core.models import ApplyOutcome
-
-        response_outcome = ApplyOutcome(
-            difference_id=req.difference_id, state=trigger_diff.state
-        )
+        response_outcome = ApplyOutcome(difference_id=req.difference_id, state=trigger_diff.state)
     return _serialise_outcome(response_outcome)
 
 

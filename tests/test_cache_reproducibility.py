@@ -20,14 +20,21 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from adapters.postgres.validator import SQLValidator
 from agents.resolver import MockResolver, canned_responder
 from core.cache import CACHE_VERSION, VALIDATOR_CONTRACT, Cache
-from core.models import (ComparisonTarget, Difference, ExecutionResult,
-                         GhostState, Resolution, SQLChange, State,
-                         VerificationResult)
+from core.models import (
+    ChangeProposal,
+    ComparisonTarget,
+    Difference,
+    ExecutionResult,
+    GhostState,
+    Resolution,
+    State,
+    VerificationResult,
+)
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import SQLValidator
 
 # ---------------------------------------------------------------------------
 # In-memory fake DB (same pattern as test_orchestrator_mock.py)
@@ -85,7 +92,7 @@ class _FakeExecutor:
         self._db = db
 
     def execute(self, resolution, difference=None):
-        stmt = resolution.proposed_change.statement
+        stmt = resolution.proposed_change.payload["statement"]
         # Actually mutate the in-memory DB so the verifier sees the fix
         if stmt.startswith("CREATE INDEX"):
             self._db.tables["users"]["indexes"]["ix_users_email"] = {
@@ -118,7 +125,7 @@ def _build_orch(tmp_path: Path, db: _FakeDB, responder=None) -> Orchestrator:
         resolver=resolver,
         executor=_FakeExecutor(db),
         verifier=SchemaVerifier(lambda: source.intended(None), db.state),
-        validator_sql=SQLValidator(),
+        validator=SQLValidator(),
         persistence=Persistence(tmp_path / "reports"),
         cache=Cache(tmp_path / "cache.json"),
         domain="database",
@@ -196,9 +203,11 @@ class TestCacheReproducibility:
         for sig in changes1:
             c1, c2 = changes1[sig], changes2[sig]
             assert type(c1) == type(c2), f"Change type mismatch for {sig}"
-            if isinstance(c1, SQLChange):
+            if isinstance(c1, ChangeProposal) and c1.payload.get("statement"):
                 assert c1.operation == c2.operation, f"Operation mismatch for {sig}"
-                assert c1.statement == c2.statement, f"Statement mismatch for {sig}"
+                assert (
+                    c1.payload["statement"] == c2.payload["statement"]
+                ), f"Statement mismatch for {sig}"
 
     def test_difference_uuids_differ_between_runs(self, tmp_path: Path) -> None:
         """Each run produces fresh Difference UUIDs (not reused from cache)."""
@@ -225,16 +234,12 @@ class TestCacheReproducibility:
 
         for sig, entry in data.items():
             assert "cache_version" in entry, f"cache_version missing for {sig}"
-            assert (
-                "validator_contract" in entry
-            ), f"validator_contract missing for {sig}"
+            assert "validator_contract" in entry, f"validator_contract missing for {sig}"
             assert "prompt_hash" in entry, f"prompt_hash missing for {sig}"
             assert "expires_at" in entry, f"expires_at TTL missing for {sig}"
             assert entry["cache_version"] == CACHE_VERSION
             assert entry["validator_contract"] == VALIDATOR_CONTRACT
-            assert (
-                entry["proposed_change"] is not None
-            ), f"null proposed_change cached for {sig}"
+            assert entry["proposed_change"] is not None, f"null proposed_change cached for {sig}"
 
     def test_cache_lookup_skips_on_version_mismatch(self, tmp_path: Path) -> None:
         """Cache.get returns None when cache_version in file differs."""
@@ -278,9 +283,7 @@ class TestCacheReproducibility:
 
         db2 = _FakeDB()
         _build_orch(tmp_path, db2, counting).run()
-        assert (
-            len(calls) >= 1
-        ), "Expected responder to be called after prompt_hash mismatch"
+        assert len(calls) >= 1, "Expected responder to be called after prompt_hash mismatch"
 
     def test_first_run_no_cached_flag(self, tmp_path: Path) -> None:
         """First run resolutions are NOT marked cached (they came from the resolver)."""
@@ -288,9 +291,7 @@ class TestCacheReproducibility:
         report = _build_orch(tmp_path, db).run()
 
         for sig, res in report.resolutions.items():
-            assert (
-                res.cached is False
-            ), f"Resolution {sig} wrongly marked cached on first run"
+            assert res.cached is False, f"Resolution {sig} wrongly marked cached on first run"
 
     def test_cache_not_written_before_apply(self, tmp_path: Path) -> None:
         """run() alone must not write to cache — only apply+verify does."""

@@ -25,6 +25,7 @@ from adapters.postgres.actual import load_actual_schema
 from adapters.postgres.comparator import SchemaComparator
 from adapters.postgres.executor import SQLExecutor
 from adapters.postgres.intended import load_intended_schema
+from adapters.postgres.validator import SQLValidator
 from adapters.postgres.verifier import SchemaVerifier
 from adapters.remote_source import fetch as fetch_remote
 from agents.resolver import MockResolver, canned_responder
@@ -32,7 +33,6 @@ from core.cache import Cache
 from core.models import ComparisonTarget, GhostState, State
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import SQLValidator
 
 load_dotenv()
 
@@ -69,7 +69,7 @@ def _build_orch(tmp_path: Path):
             load_intended=lambda: load_intended_schema(DEMO_MODELS),
             load_actual=lambda: load_actual_schema(DB_URL),
         ),
-        validator_sql=SQLValidator(),
+        validator=SQLValidator(),
         persistence=Persistence(tmp_path / "reports"),
         cache=Cache(tmp_path / "cache.json"),
         domain="database",
@@ -161,9 +161,7 @@ class TestPostgresE2E:
         with tempfile.TemporaryDirectory() as _td:
             _probe = _build_orch(pathlib.Path(_td))
             _probe_report = _probe.run()
-        pending = [
-            d for d in _probe_report.differences if d.state == GhostState.PENDING
-        ]
+        pending = [d for d in _probe_report.differences if d.state == GhostState.PENDING]
         if not pending:
             pytest.skip(
                 "No PENDING differences in DB — drift may have been applied by an earlier test"
@@ -184,7 +182,5 @@ class TestPostgresE2E:
         orch2.resolver = MockResolver(counting)
         orch2.run()
 
-        assert (
-            first >= 1
-        ), "Resolver was never called on first run — no PENDING diffs resolved"
+        assert first >= 1, "Resolver was never called on first run — no PENDING diffs resolved"
         assert len(calls) == first, "Responder called again on second run — cache miss"

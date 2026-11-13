@@ -73,9 +73,7 @@ def load_from_url(url: str) -> State:
     """Fetch an OpenAPI spec from *url* and return an intended State."""
     ssrf_validate(url)
     req = urllib.request.Request(url, headers={"User-Agent": "touchstone/1.0"})
-    with urllib.request.urlopen(
-        req, timeout=15
-    ) as resp:  # noqa: S310 — ssrf validated above
+    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 — ssrf validated above
         raw = resp.read().decode()
     return _build_state(raw, source=url)
 
@@ -105,9 +103,20 @@ def _build_state(raw: str, source: str) -> State:
                 responses[str(status)] = {
                     "schema": _inline_refs(schema, components),
                 }
+            # Extract schema name from $ref for each response (before inlining)
+            schema_names: dict[str, str] = {}
+            for status, resp_obj in operation.get("responses", {}).items():
+                content = resp_obj.get("content", {})
+                raw_schema = content.get("application/json", {}).get("schema", {})
+                # Array wrapping: items may carry the $ref
+                ref = raw_schema.get("$ref") or raw_schema.get("items", {}).get("$ref", "")
+                if ref.startswith("#/components/schemas/"):
+                    schema_names[str(status)] = ref.split("/")[-1]
+
             paths[path][method.lower()] = {
                 "operationId": operation.get("operationId", ""),
                 "responses": responses,
+                "schema_names": schema_names,
             }
 
     return State(domain="api", data={"paths": paths, "source": source})

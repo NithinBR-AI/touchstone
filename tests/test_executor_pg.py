@@ -12,9 +12,19 @@ import pytest
 
 import adapters.postgres.executor as executor_mod
 from adapters.postgres.executor import ERROR_SUMMARIES, SQLExecutor
-from core.models import Difference, FilePatch, Resolution, SQLChange
+from adapters.postgres.models import SQLChange
+from core.models import ChangeProposal, Difference, Resolution
 
 GOOD_SQL = "CREATE INDEX ix_users_email ON users (email)"
+
+
+def _proposal(change: SQLChange) -> ChangeProposal:
+    return ChangeProposal(
+        domain="database",
+        target=change.target,
+        operation=change.operation,
+        payload={"statement": change.statement, "operation": change.operation},
+    )
 
 
 class FakeConn:
@@ -39,9 +49,8 @@ class FakeConn:
 
 
 def _res(change) -> Resolution:
-    return Resolution(
-        difference_id="d1", difference_signature="s1", proposed_change=change
-    )
+    proposal = _proposal(change) if isinstance(change, SQLChange) else change
+    return Resolution(difference_id="d1", difference_signature="s1", proposed_change=proposal)
 
 
 def _diff_stub() -> Difference:
@@ -55,28 +64,22 @@ def _diff_stub() -> Difference:
 
 
 def _sql(statement: str = GOOD_SQL) -> SQLChange:
-    return SQLChange(
-        statement=statement, operation="CREATE_INDEX", target="ix_users_email"
-    )
+    return SQLChange(statement=statement, operation="CREATE_INDEX", target="ix_users_email")
 
 
 def test_success_commits_and_closes() -> None:
     conn = FakeConn()
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
-        _res(_sql()), _diff_stub()
-    )
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()), _diff_stub())
     assert result.success
     assert conn.executed == [GOOD_SQL]
     assert conn.committed and conn.closed and not conn.rolled_back
-    assert result.applied_change.statement == GOOD_SQL
+    assert result.applied_change.payload["statement"] == GOOD_SQL
     assert result.rollback_bytes == b""  # database domain: no rollback data
 
 
 def test_execution_error_rolls_back_without_raw_text() -> None:
     conn = FakeConn(RuntimeError("password=hunter2 leaked in driver message"))
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
-        _res(_sql()), _diff_stub()
-    )
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()), _diff_stub())
     assert not result.success
     assert conn.rolled_back and conn.closed and not conn.committed
     assert result.error_code == "EXECUTION_ERROR"
@@ -88,9 +91,7 @@ def test_execution_error_rolls_back_without_raw_text() -> None:
 
 def test_statement_timeout_is_classified() -> None:
     conn = FakeConn(psycopg.errors.QueryCanceled("canceling statement due to timeout"))
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
-        _res(_sql()), _diff_stub()
-    )
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()), _diff_stub())
     assert result.error_code == "STATEMENT_TIMEOUT"
     assert conn.rolled_back
 
@@ -125,8 +126,12 @@ def test_prechecks_refuse_without_connecting(statement: str, code: str) -> None:
 def test_no_change_and_non_sql_change_refused() -> None:
     ex = SQLExecutor("dsn", connect=lambda _: FakeConn())
     assert ex.execute(_res(None), _diff_stub()).error_code == "NO_CHANGE"
-    patch = FilePatch("f", "a", "b", b"", b"")
-    assert ex.execute(_res(patch), _diff_stub()).error_code == "NOT_SQL"
+    # A ChangeProposal with no 'statement' key is treated as NOT_SQL
+    non_sql = ChangeProposal(
+        domain="api", target="f", operation="FILE_PATCH", payload={"file_path": "f"}
+    )
+    non_sql_res = Resolution(difference_id="d1", difference_signature="s1", proposed_change=non_sql)
+    assert ex.execute(non_sql_res, _diff_stub()).error_code == "NOT_SQL"
 
 
 def test_default_connect_sets_timeouts_at_connection_level(monkeypatch) -> None:

@@ -39,6 +39,7 @@ from adapters.postgres.actual import load_actual_schema
 from adapters.postgres.comparator import SchemaComparator
 from adapters.postgres.executor import SQLExecutor
 from adapters.postgres.intended import load_intended_schema
+from adapters.postgres.validator import SQLValidator
 from adapters.postgres.verifier import SchemaVerifier
 from adapters.remote_source import fetch as fetch_remote
 from adapters.remote_source import invalidate as invalidate_remote
@@ -47,7 +48,6 @@ from core.cache import Cache
 from core.models import ComparisonTarget
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import SQLValidator
 
 _reports_dir = HERE / ".reports"
 _cache_path = HERE / ".cache.json"
@@ -85,7 +85,7 @@ def _build_orch() -> Orchestrator:
             load_intended=lambda: load_intended_schema(_models_path()),
             load_actual=lambda: load_actual_schema(DB_URL),
         ),
-        validator_sql=SQLValidator(),
+        validator=SQLValidator(),
         persistence=Persistence(_reports_dir),
         cache=Cache(_cache_path),
         domain="database",
@@ -126,10 +126,7 @@ def get_config():
         **CONFIG,
         "latest_report_id": _latest_report_id,
         "active_repo": _active_repo["id"],
-        "repos": [
-            {"id": r["id"], "name": r["name"], "github": r.get("github", "")}
-            for r in REPOS
-        ],
+        "repos": [{"id": r["id"], "name": r["name"], "github": r.get("github", "")} for r in REPOS],
     }
 
 

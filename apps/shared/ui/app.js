@@ -53,8 +53,9 @@ function renderDatabaseEvidence(diff, resolution) {
   const pillsHtml = `<div class="card-pills">${pills.join("")}</div>`;
 
   let sqlHtml = "";
-  if (resolution && resolution.proposed_change && resolution.proposed_change.statement) {
-    sqlHtml = `<pre class="card-sql">${esc(resolution.proposed_change.statement)}</pre>`;
+  const sqlStmt = resolution?.proposed_change?.payload?.statement || resolution?.proposed_change?.statement;
+  if (sqlStmt) {
+    sqlHtml = `<pre class="card-sql">${esc(sqlStmt)}</pre>`;
   }
 
   let rationaleHtml = "";
@@ -287,7 +288,8 @@ function renderCard(diff, report, index) {
   //   - State is REVIEW_REQUIRED or BLOCKED and there is a proposed_change
   //     (human-authorized path — human sees the SQL and clicks to authorize)
   //   - API/cache domains: executor handles everything — always available for non-terminal ghosts
-  const hasProposal = resolution && resolution.proposed_change && resolution.proposed_change.statement;
+  const hasProposal = resolution && resolution.proposed_change &&
+    (resolution.proposed_change.payload?.statement || resolution.proposed_change.operation);
   const isTerminal  = state === "RESOLVED" || state === "SUPERSEDED" || state === "EXECUTION_FAILED";
   const canApply    = !isTerminal && (
     CONFIG.domain === "api" ||

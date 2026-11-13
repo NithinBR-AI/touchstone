@@ -45,9 +45,7 @@ def test_no_drift_when_states_match() -> None:
 
 
 def test_key_missing_detected() -> None:
-    intended = _intended(
-        {"products:list": {"description": "Cached list of all products"}}
-    )
+    intended = _intended({"products:list": {"description": "Cached list of all products"}})
     actual = _actual([])
     diffs = CacheComparator().compare(intended, actual)
     assert len(diffs) == 1
@@ -170,9 +168,7 @@ def test_verifier_accepts_comparison_target() -> None:
     verifier = CacheVerifier(cache_status_url="http://example.com/cache/status")
 
     diff = _by_kind(
-        CacheComparator().compare(
-            _intended({"users:list": {"description": ""}}), _actual([])
-        ),
+        CacheComparator().compare(_intended({"users:list": {"description": ""}}), _actual([])),
         "KEY_MISSING",
     )[0]
 
@@ -198,9 +194,7 @@ def test_verifier_reports_still_present_when_key_absent() -> None:
     verifier = CacheVerifier(cache_status_url="http://example.com/cache/status")
 
     diff = _by_kind(
-        CacheComparator().compare(
-            _intended({"products:list": {"description": ""}}), _actual([])
-        ),
+        CacheComparator().compare(_intended({"products:list": {"description": ""}}), _actual([])),
         "KEY_MISSING",
     )[0]
 
@@ -228,9 +222,7 @@ def test_executor_uses_diff_target_as_key() -> None:
     from core.models import Resolution
 
     diff = _by_kind(
-        CacheComparator().compare(
-            _intended({"orders:list": {"description": ""}}), _actual([])
-        ),
+        CacheComparator().compare(_intended({"orders:list": {"description": ""}}), _actual([])),
         "KEY_MISSING",
     )[0]
 

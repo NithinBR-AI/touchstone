@@ -5,13 +5,46 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from adapters.postgres.validator import SQLValidator
 from core.cache import Cache
-from core.models import (ComparisonTarget, Difference, ExecutionResult,
-                         GhostState, Resolution, RollbackEvent, SQLChange,
-                         State, VerificationResult)
+from core.models import (
+    ChangeProposal,
+    ComparisonTarget,
+    Difference,
+    ExecutionResult,
+    GhostState,
+    Resolution,
+    RollbackEvent,
+    State,
+    VerificationResult,
+)
 from core.orchestrator import Orchestrator
 from core.persistence import Persistence
-from core.validator import SQLValidator
+
+
+class _Execute:
+    """Descriptor that mimics MagicMock's side_effect on a plain method."""
+
+    def __init__(self, default_result_fn):
+        self._default = default_result_fn
+        self.side_effect = None
+
+    def __call__(self, resolution, difference):
+        if self.side_effect is not None:
+            exc = self.side_effect
+            self.side_effect = None
+            raise exc
+        return self._default(resolution, difference)
+
+
+class _RollbackExecutor:
+    """Concrete executor with RollbackSupport for file-domain tests."""
+
+    def __init__(self, default_result_fn):
+        self.execute = _Execute(default_result_fn)
+
+    def rollback(self, execution: ExecutionResult) -> bool:
+        return True
 
 
 def create_orchestrator(domain: str = "database"):
@@ -21,12 +54,8 @@ def create_orchestrator(domain: str = "database"):
         ComparisonTarget(domain=domain, target="users.email", context={})
     ]
     source_adapter = MagicMock()
-    source_adapter.intended.return_value = State(
-        domain=domain, data={"email": "VARCHAR(100)"}
-    )
-    source_adapter.actual.return_value = State(
-        domain=domain, data={"email": "VARCHAR(50)"}
-    )
+    source_adapter.intended.return_value = State(domain=domain, data={"email": "VARCHAR(100)"})
+    source_adapter.actual.return_value = State(domain=domain, data={"email": "VARCHAR(50)"})
     diff = Difference(
         kind="TYPE_CHANGED",
         target="users.email",
@@ -41,48 +70,60 @@ def create_orchestrator(domain: str = "database"):
     comparator = MagicMock()
     comparator.compare.return_value = [diff]
     resolver = MagicMock()
+    _proposal = ChangeProposal(
+        domain=domain,
+        target="users.email",
+        operation="ALTER_COLUMN_TYPE",
+        payload={
+            "statement": "ALTER TABLE users ALTER COLUMN email TYPE varchar(100)",
+            "operation": "ALTER_COLUMN_TYPE",
+        },
+    )
     resolver.resolve.return_value = Resolution(
         difference_id=diff.id,
         difference_signature=diff.signature,
-        proposed_change=SQLChange(
-            statement="ALTER TABLE users ALTER COLUMN email TYPE varchar(100)",
-            operation="ALTER_COLUMN_TYPE",
-            target="users.email",
-        ),
+        proposed_change=_proposal,
         rationale="Test",
         prompt_sha256="abc123",
     )
-    executor = MagicMock()
-    executor.execute.return_value = ExecutionResult(
+
+    _exec_result = ExecutionResult(
         difference_id=diff.id,
         success=True,
-        applied_change=SQLChange(
-            statement="ALTER TABLE users ALTER COLUMN email TYPE varchar(100)",
-            operation="ALTER_COLUMN_TYPE",
-            target="users.email",
-        ),
+        applied_change=_proposal,
     )
-    executor.rollback.return_value = True
+
+    if domain == "api":
+        # Use concrete class so isinstance(executor, RollbackSupport) passes
+        executor = _RollbackExecutor(default_result_fn=lambda r, d: _exec_result)
+    else:
+        executor = MagicMock()
+        executor.execute.return_value = _exec_result
+        executor.rollback.return_value = True
+
     verifier = MagicMock()
     verifier.verify.return_value = VerificationResult(
         difference_id=diff.id, resolved=True, evidence={"email": "varchar(100)"}
     )
-    validator_sql = SQLValidator()
+    validator = SQLValidator()
     persistence = MagicMock(spec=Persistence)
     cache = MagicMock(spec=Cache)
     cache.get.return_value = None
-    return Orchestrator(
+    orch = Orchestrator(
         input_source=input_source,
         source_adapter=source_adapter,
         comparator=comparator,
         resolver=resolver,
         executor=executor,
         verifier=verifier,
-        validator_sql=validator_sql,
+        validator=validator,
         persistence=persistence,
         cache=cache,
         domain=domain,
     )
+    # Expose verifier so tests can override verify return value
+    orch.verifier = verifier
+    return orch
 
 
 # 8 events:
@@ -158,8 +199,11 @@ class TestStateTransitions:
         report.resolutions[diff_id] = Resolution(
             difference_id=diff_id,
             difference_signature="TYPE_CHANGED:users.email:varchar(50)",
-            proposed_change=SQLChange(
-                statement="DROP TABLE users", operation="DROP", target="users"
+            proposed_change=ChangeProposal(
+                domain="database",
+                target="users",
+                operation="DROP",
+                payload={"statement": "DROP TABLE users", "operation": "DROP"},
             ),
             rationale="Invalid SQL",
             prompt_sha256="abc123",

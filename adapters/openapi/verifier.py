@@ -36,9 +36,7 @@ class ContractVerifier:
             return VerificationResult(
                 difference_id=difference.id,
                 resolved=True,
-                evidence={
-                    "reason": "no openapi_url in target context — trusting execution"
-                },
+                evidence={"reason": "no openapi_url in target context — trusting execution"},
             )
 
         # API fixes are applied as PRs — the fix lands on the default branch only
@@ -48,9 +46,7 @@ class ContractVerifier:
         return VerificationResult(
             difference_id=difference.id,
             resolved=True,
-            evidence={
-                "reason": "pr_opened — verification deferred to post-merge rescan"
-            },
+            evidence={"reason": "pr_opened — verification deferred to post-merge rescan"},
         )
 
         try:

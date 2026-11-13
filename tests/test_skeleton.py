@@ -27,7 +27,6 @@ EXPECTED_FILES = {
     "interfaces.py",
     "models.py",
     "orchestrator.py",
-    "validator.py",
     "persistence.py",
     "cache.py",
 }
@@ -69,9 +68,7 @@ ALLOWED_STDLIB_PREFIXES = {
     "uuid",
     "warnings",
     # pinned third-party allowed inside core:
-    "sqlglot",
     "packaging",
-    "yaml",  # pyyaml — used in FilePatchValidator
 }
 
 PROJECT_PACKAGES = {"adapters", "agents", "apps", "scripts", "inputs", "demo"}
@@ -83,7 +80,7 @@ PROJECT_PACKAGES = {"adapters", "agents", "apps", "scripts", "inputs", "demo"}
 
 
 class TestSkeletonFileCount:
-    def test_exact_seven_files(self) -> None:
+    def test_exact_six_files(self) -> None:
         py_files = {p.name for p in CORE_DIR.glob("*.py")}
         assert py_files == EXPECTED_FILES, (
             f"core/ must contain exactly these files:\n"
@@ -119,9 +116,7 @@ class TestCoreImportRule:
                             "outside core/ — forbidden"
                         )
 
-        assert (
-            not violations
-        ), f"core/{filename} contains forbidden imports:\n" + "\n".join(
+        assert not violations, f"core/{filename} contains forbidden imports:\n" + "\n".join(
             f"  {v}" for v in violations
         )
 

@@ -516,32 +516,45 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
         so executor can reach it in demo mode.
       · UI: both KEY_MISSING and UNDECLARED_KEY show Exorcise button (human_authorized).
   - _Req 21, 28_
-- [x] 7.1d Batch PR executor, LLM-at-PR-time, orch.apply_batch() — App 2 (Contract Observer)
+- [x] 7.1d Batch PR executor, LLM-at-execute-time, operationId threading — App 2 (Contract Observer)
       DONE 2026-11-13:
-      · ContractExecutor.execute_batch() signature changed to list[tuple[Resolution,Difference]].
-        Orchestrator passes (resolution, diff) pairs; executor groups by kind internally.
-      · LLM patch generation deferred to PR creation time (execute_batch), not resolve time.
-        MantleResolver.resolve() for api domain returns proposed_change=None with rationale
-        "Fix deferred to PR creation" — no LLM call at resolve time.
-      · ContractComparator now emits one Difference per path with context["fields"] list
-        (batch grouping), not one Difference per field. Comparator → executor → PR is now
-        field-aware and idempotent.
+      · ContractExecutor.execute_batch() takes list[tuple[Resolution,Difference]]; groups by
+        kind internally (FIELD_EXTRA → openapi.yaml, FIELD_MISSING → main.py).
+      · LLM patch generation deferred to execute time (inside execute_batch), not resolve time.
+        MantleResolver._resolve_api() returns a lightweight ChangeProposal carrying
+        {kind, fields, path, file_name, schema_name, operation_id} as metadata — no LLM call.
+      · operationId threaded from comparator context → diff context → executor prompt, so the
+        LLM knows exactly which Python function to patch (e.g. list_users vs get_user).
+      · Ultra validation scoped per location: validates only the specific schema/function that
+        changed, not the whole file — eliminates false-positive "field missing from other endpoint"
+        rejections that caused spurious draft PRs.
+      · Two-attempt retry: if ultra flags patch invalid on both attempts, opens draft PR with
+        warning body instead of blocking. Trailing newline normalised to match source file.
       · apps/contract-observer/main.py /apply calls orch.apply_batch(same_kind_ids, human_authorized=True).
-      · /demo/reset calls POST /cache/warm via invalidate_remote() + fixture seed.
+      · /demo/reset calls close_touchstone_prs() + invalidate_remote().
   - _Req 18, 19, 28_
-- [x] 7.1e Test suite cleanup — all tests green after architecture changes
+- [x] 7.1e Test suite cleanup + Skeleton Crew refactor — all 424 tests green
       DONE 2026-11-13:
-      · tests/test_validator_file.py DELETED (FilePatchValidator removed from core/validator.py;
-        file patches now done as GitHub PRs by ContractExecutor).
-      · tests/test_rollback.py: removed FilePatchValidator mock and ValidationResult import.
-      · tests/test_executor_api.py: removed _add_field_to_api/_add_field_to_spec helpers
-        and their test classes; execute_batch() calls updated to (resolution, diff) tuple pairs.
-      · tests/test_comparator_api.py: assertions updated for batched context["fields"] list.
-      · tests/test_comparator_cache.py: test_executor_refuses_undeclared_key renamed to
-        test_executor_deletes_undeclared_key; asserts DELETE called, success=True.
-      · tests/test_mantle_resolver.py: api domain tests updated — no LLM call at resolve time,
-        "PR creation" in rationale, review action on db diff uses ultra not deepseek.
-      · Full suite: 426 passed, 5 skipped (live DB only). PASS.
+      · SQLChange, FilePatch moved from core/models to adapters/postgres/models (core unfrozen
+        from non-essential models). SQLValidator moved from core/validator to
+        adapters/postgres/validator. core/validator.py retained as domain-agnostic base.
+      · tests/test_rollback.py: replaced MagicMock executor with _FakeExecutor/_FakeSQLExecutor
+        concrete classes implementing RollbackSupport protocol; MagicMock fails
+        isinstance(executor, RollbackSupport) check at runtime.
+      · tests/test_state_transitions.py: _RollbackExecutor concrete class for api domain;
+        _Execute descriptor mimics MagicMock's side_effect on plain method.
+      · tests/test_executor_pg.py, test_sql_execution.py: SQLChange wrapped in ChangeProposal
+        via _proposal() helper; applied_change.payload["statement"] not .statement.
+      · tests/test_mantle_resolver.py: api domain → proposed_change is not None (lightweight
+        metadata proposal); operation == "FILE_PATCH"; "execute time" in rationale;
+        cache domain → no LLM (deterministic), called == {}.
+      · tests/test_orchestrator_mock.py: resolver failure → REVIEW_REQUIRED (not BLOCKED)
+        since proposed_change=None → orchestrator sets REVIEW_REQUIRED via _resolve_and_validate.
+      · tests/test_validator_sql.py: empty SQL → "blocked" (payload precheck), not "invalid".
+      · isort + black applied across all source and test files.
+      · Inline imports eliminated from core/ and apps/ (lazy imports kept in executor/resolver
+        for intentional deferred loading of agents.mantle_client).
+      · Full suite: 424 passed, 5 skipped (live DB only). PASS.
   - _Req 15, 16, 41_
 - [x] 7.2 ~~agents/cache.json — pre-recorded resolutions for all demo cases~~
       SUPERSEDED: cache is now populated organically by apply_one() after

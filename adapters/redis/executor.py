@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import urllib.parse
 
-from core.models import Difference, ExecutionResult, Resolution
+from core.models import ChangeProposal, Difference, ExecutionResult, Resolution
 
 from .actual import _CLIENT
 
@@ -52,18 +52,17 @@ class CacheExecutor:
         try:
             resp = _CLIENT.post(url, timeout=30.0)
             resp.raise_for_status()
+            applied = resolution.proposed_change
             return ExecutionResult(
                 difference_id=difference.id,
                 success=True,
-                applied_change=None,
+                applied_change=applied,
                 error_code="",
                 error_class="",
                 error_summary="",
             )
         except Exception as exc:
-            code = getattr(
-                getattr(exc, "response", None), "status_code", "CONNECTION_ERROR"
-            )
+            code = getattr(getattr(exc, "response", None), "status_code", "CONNECTION_ERROR")
             return ExecutionResult(
                 difference_id=difference.id,
                 success=False,
@@ -87,9 +86,7 @@ class CacheExecutor:
                 error_summary="",
             )
         except Exception as exc:
-            code = getattr(
-                getattr(exc, "response", None), "status_code", "CONNECTION_ERROR"
-            )
+            code = getattr(getattr(exc, "response", None), "status_code", "CONNECTION_ERROR")
             return ExecutionResult(
                 difference_id=difference.id,
                 success=False,
