@@ -151,7 +151,7 @@ Seven states × eight events = 56 cells. Every cell is explicitly defined and te
 | `RESOLVED` | Applied and verified |
 | `STILL_PRESENT` | Applied but verifier found the ghost persists |
 | `EXECUTION_FAILED` | Executor rejected or timed out |
-| `SUPERSEDED` | A later run resolved a previously open ghost |
+| `SUPERSEDED` | Reserved — sibling patch conflict (defined in model and UI, not yet produced by any code path) |
 
 ---
 
@@ -167,7 +167,7 @@ Seven states × eight events = 56 cells. Every cell is explicitly defined and te
                      · cache    → deterministic CACHE_WARM/CACHE_DELETE; no LLM
 5. Validate        (domain Validator enforces safety rules; rejects if violated)
 6. Authorize       (human reviews the proposal in the UI → clicks Exorcise)
-                     · human_authorized=True allows REVIEW_REQUIRED diffs through
+                     · human_authorized=True allows REVIEW_REQUIRED and BLOCKED diffs through
 7. Execute         (Executor applies the fix)
                      · database → SQLExecutor runs DDL against Postgres
                      · api      → ContractExecutor fetches file from GitHub, calls LLM
@@ -252,6 +252,7 @@ API contract changes are never auto-applied to a live system. The executor opens
 - **USING clause / expression index / partial index** — structurally rejected.
 
 ### Contract Observer (API)
+- **Two-stage validation.** The orchestrator-level `ContractValidator` runs at scan time (step 5) on a lightweight metadata proposal that contains only field metadata — no patched content yet. It performs structural pre-checks (operation == FILE_PATCH, file_name present, target matches diff). The resolver intentionally does not call the LLM at scan time because that would slow down Compare. The result is always BLOCKED until the human authorizes. When the human clicks Exorcise, `ContractExecutor.execute_batch()` calls `deepseek_pro()` to generate the patched content and then validates it with `ultra()` before opening a PR. **`ultra()` inside `execute_batch` is the patch validation boundary for the API domain — not the orchestrator-level validator.**
 - **SSRF protection** — all outbound HTTP blocks loopback, private, link-local, reserved, and IPv4-mapped-IPv6 destinations. Validated before every request.
 - **`follow_redirects=False`** — redirects are not auto-followed. Same-host redirects are manually followed (max 5 hops) with SSRF revalidation on each hop.
 - **`trust_env=False`** — no proxy env vars.
@@ -263,7 +264,7 @@ API contract changes are never auto-applied to a live system. The executor opens
 
 **Core is the authority.** `core/` owns the state machine, cache, and persistence. All domain logic — including validators — lives in adapters. `core/` never imports from adapters. This is enforced structurally by `test_skeleton.py` using Python's `ast` module on every test run: it walks the AST of every `core/` file and asserts no imports from project packages, no `sqlglot` imports, and no Compare nodes where `.domain` is compared to a string literal. Raw text search is not used — the check is at the AST level so renaming a variable cannot accidentally pass. The constraint means adapters can be replaced or added without touching the shared workflow.
 
-**Validator is the safety boundary — not the LLM.** The LLM proposes; `adapters/postgres/validator.py` enforces for database fixes. The validator re-derives its verdict from the operation matrix using `sqlglot` AST analysis — it doesn't trust the LLM's SQL string. A hallucinated `DROP TABLE` after a valid `CREATE INDEX` is caught by the matrix, not by prompt engineering.
+**Validator is the safety boundary — not the LLM.** The LLM proposes; a domain validator enforces. The boundary sits at different layers per domain: for the database domain, `SQLValidator` runs at scan time and uses `sqlglot` AST analysis to check the SQL against the operation matrix before the human even sees it. For the API domain, `ultra()` inside `ContractExecutor.execute_batch()` is the patch validation boundary — the orchestrator-level `ContractValidator` performs only structural pre-checks at scan time (the LLM hasn't run yet, so there is no patch to validate). For the cache domain, `CacheValidator` performs deterministic operation + target checks at scan time with no LLM involved at all.
 
 **Target binding.** For database fixes, the validator extracts the table/column/index name from the SQL AST and compares it to `Difference.target`. A mismatch blocks regardless of model confidence. The LLM cannot create an index on a different table by omitting the target from its rationale.
 
@@ -275,7 +276,7 @@ API contract changes are never auto-applied to a live system. The executor opens
 
 **Domain-aware prompts, temperature 0.** Each domain gets a different system prompt (`_DB_SYSTEM_PROMPT` for SQL fix proposals, `_API_SYSTEM_PROMPT` for generating patched file content, `_CACHE_SYSTEM_PROMPT` for cache drift rationale). Temperature is `0.0` on all calls — the same ghost must always produce the same output so the prompt SHA-256 is a stable cache key.
 
-**Human authorization unlocks REVIEW_REQUIRED.** The UI always passes `human_authorized=True` when the user clicks Exorcise. This lets REVIEW_REQUIRED diffs (e.g. narrowing type changes, non-auto-fixable SQL, API field diffs) execute after human review — the validator skips the auto-fixability gate but still enforces all structural safety rules (SET/DELETE/TRUNCATE always blocked regardless).
+**Human authorization unlocks REVIEW_REQUIRED and BLOCKED.** The UI always passes `human_authorized=True` when the user clicks Exorcise. The human has seen the proposal and chosen to apply it — this unlocks both REVIEW_REQUIRED and BLOCKED diffs. The only terminal state that cannot be retried is EXECUTION_FAILED. SET, DELETE, and TRUNCATE remain forbidden at the SQL validator level regardless of authorization.
 
 **Draft PR on double validation failure.** For API patches, `ultra()` validates the patched content after `deepseek_pro()` generates it. If ultra flags invalid on both attempts, `ContractExecutor` opens a **draft** PR with a warning body instead of blocking — the human can review and fix the patch manually before merging.
 
@@ -335,6 +336,8 @@ Property-based testing with Hypothesis (Req 41) is planned across the type norma
 ## Demo
 
 Target repos are declared in **`repos.json`** at the repo root. No env var, no cloning. Touchstone fetches declared sources from configured GitHub raw URLs at runtime. The UI shows a **repo selector** in the header — judges can see that Touchstone is built to monitor multiple repos.
+
+> **Security note:** Schema Drift fetches and executes `models.py` from the configured `models_url` (a GitHub raw URL). Anyone who can push to that branch can run arbitrary code on the Touchstone server. For production use, pin the URL to a specific commit SHA (`/blob/<sha>/models.py`) rather than a branch (`/blob/main/models.py`), and treat the target repo's write access as equivalent to server access.
 
 ```bash
 # Restore Schema Drift demo state (or use the Reset Demo button in the UI)

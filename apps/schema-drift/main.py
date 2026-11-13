@@ -209,7 +209,7 @@ def demo_reset():
         _spec.loader.exec_module(_mod)
         _mod.main(DB_URL)
     except Exception as exc:
-        raise HTTPException(500, detail=f"seed failed: {exc}") from exc
+        raise HTTPException(500, detail=f"seed failed: {type(exc).__name__}") from exc
     global _latest_report_id
     _latest_report_id = None
     invalidate_remote()  # re-fetch models on next compare

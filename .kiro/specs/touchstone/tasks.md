@@ -569,11 +569,11 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       POST /repos/select) is the manual form. Dynamic GitHub org discovery not needed
       for demo submission. Already satisfies Req 3/4 intent.
   - _Req 3, 4_
-- [x] 7.4 Superseded handling
-      VERIFIED DONE: orchestrator._supersede_siblings() marks other PENDING diffs on
-      the same file as SUPERSEDED after a FilePatch applies (file domain). report.
-      requires_refresh=True set. UI state badges dim SUPERSEDED cards (data-state CSS).
-      App 2 batch strategy handles equivalent: all same-kind diffs (FIELD_EXTRA →
+- [ ] 7.4 Superseded handling (NOT IMPLEMENTED — reserved for future)
+      _supersede_siblings was removed during Skeleton Crew refactor. SUPERSEDED state
+      is defined in GhostState and rendered by the UI (dims card, refuses apply) but
+      no code path currently produces it. requires_refresh is likewise defined but
+      never set. App 2 batch strategy handles equivalent: all same-kind diffs (FIELD_EXTRA →
       openapi.yaml, FIELD_MISSING → main.py) batched into one PR — all resolved
       together, no siblings left in conflicting state. /apply refuses SUPERSEDED
       (orchestrator state gate). PASS.

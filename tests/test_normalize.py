@@ -9,7 +9,7 @@ Tests:
   · Round-trip: normalize_sa(sa) == normalize_pg(pg) for every pair.
   · Unsupported types raise UnsupportedTypeError.
   · Invariant: any supported type produces non-empty canonical string.
-  · Quoted identifiers and precision/scale cases covered.
+  · Precision/scale and nullability cases covered (type strings only — not table/column names).
 """
 
 from __future__ import annotations

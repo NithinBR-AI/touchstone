@@ -56,7 +56,6 @@ WIDENING_PAIRS: frozenset[tuple[str, str]] = frozenset(
         ("smallint", "integer"),
         ("integer", "bigint"),
         ("real", "double precision"),
-        ("text", "text"),
     }
 )
 
@@ -256,6 +255,19 @@ class SQLValidator:
             return True
         return False
 
+    def _reject_nonpublic_schema(self, table_expr: exp.Expression | None) -> ValidationResult | None:
+        """Return a blocked ValidationResult if table_expr targets a non-public schema."""
+        if table_expr is None:
+            return None
+        db = table_expr.args.get("db") if isinstance(table_expr, exp.Table) else None
+        if db and db.name.lower() != "public":
+            return ValidationResult(
+                status="invalid",
+                reason=f"only public schema allowed; found schema '{db.name}'",
+                ghost_state=GhostState.BLOCKED,
+            )
+        return None
+
     def _validate_create_index(
         self, stmt: exp.Expression, difference: Difference
     ) -> ValidationResult:
@@ -292,24 +304,45 @@ class SQLValidator:
                 reason="CREATE INDEX missing table reference",
                 ghost_state=GhostState.BLOCKED,
             )
-        if isinstance(table_expr, exp.Table):
-            db = table_expr.args.get("db")
-            if db and db.name.lower() != "public":
-                return ValidationResult(
-                    status="invalid",
-                    reason=f"only public schema allowed; found schema '{db.name}'",
-                    ghost_state=GhostState.BLOCKED,
-                )
+        schema_err = self._reject_nonpublic_schema(table_expr if isinstance(table_expr, exp.Table) else None)
+        if schema_err:
+            return schema_err
         ast_table = self._canonical_name(table_expr)
         ast_cols = [
             self._canonical_name(c.this if isinstance(c, exp.Ordered) else c)
             for c in index_expr.find_all(exp.Column)
         ]
+
+        # Bind table: the SQL must target the same table as the difference.
+        # Both sides are lowercased — quoted SQL identifiers preserve case but
+        # Postgres normalises unquoted names to lower; context always stores lowercase.
+        diff_table = difference.context.get("table", "").lower()
+        if diff_table and ast_table.lower() != diff_table:
+            return ValidationResult(
+                status="invalid",
+                reason=(
+                    f"CREATE INDEX targets table '{ast_table}' but difference "
+                    f"targets table '{diff_table}'"
+                ),
+                ghost_state=GhostState.BLOCKED,
+            )
+
+        # Bind columns: the SQL must index the same columns as the difference.
+        diff_cols = [c.lower() for c in difference.context.get("columns", [])]
+        if diff_cols and sorted(c.lower() for c in ast_cols) != sorted(diff_cols):
+            return ValidationResult(
+                status="invalid",
+                reason=(
+                    f"CREATE INDEX covers columns {ast_cols} but difference "
+                    f"requires columns {diff_cols}"
+                ),
+                ghost_state=GhostState.BLOCKED,
+            )
+
+        # If the SQL supplies an explicit index name it must match the target.
         index_name_expr = index_expr.args.get("this")
         ast_index_name = self._canonical_name(index_name_expr) if index_name_expr else ""
-        compare_ast_name = ast_index_name.lower() if ast_index_name else ""
-        compare_diff_name = difference.target.lower()
-        if ast_index_name and compare_ast_name != compare_diff_name:
+        if ast_index_name and ast_index_name.lower() != difference.target.lower():
             return ValidationResult(
                 status="invalid",
                 reason=(
@@ -345,10 +378,13 @@ class SQLValidator:
                 reason="USING clause is forbidden in ALTER COLUMN TYPE",
                 ghost_state=GhostState.BLOCKED,
             )
+        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        if schema_err:
+            return schema_err
         ast_table = self._canonical_name(stmt.this)
         ast_col = self._canonical_name(alter_col.this)
         _, diff_table, diff_col = self._parse_target(difference.target)
-        if ast_table != diff_table or ast_col != diff_col:
+        if ast_table.lower() != diff_table or ast_col.lower() != diff_col:
             return ValidationResult(
                 status="invalid",
                 reason=(
@@ -389,14 +425,31 @@ class SQLValidator:
                 reason="ALTER TABLE does not contain ADD COLUMN",
                 ghost_state=GhostState.BLOCKED,
             )
+        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        if schema_err:
+            return schema_err
         ast_table = self._canonical_name(stmt.this)
-        _, diff_table, _ = self._parse_target(difference.target)
-        if ast_table != diff_table:
+        _, diff_table, diff_col = self._parse_target(difference.target)
+        if ast_table.lower() != diff_table:
             return ValidationResult(
                 status="invalid",
                 reason=f"SQL targets table '{ast_table}' but difference targets '{diff_table}'",
                 ghost_state=GhostState.BLOCKED,
             )
+        # Bind column: the ColumnDef name must match difference.target column.
+        actions = stmt.args.get("actions", [])
+        col_defs = [a for a in actions if isinstance(a, exp.ColumnDef)]
+        if diff_col and col_defs:
+            ast_col = self._canonical_name(col_defs[0].this)
+            if ast_col.lower() != diff_col:
+                return ValidationResult(
+                    status="invalid",
+                    reason=(
+                        f"ADD COLUMN targets column '{ast_col}' but difference "
+                        f"targets column '{diff_col}'"
+                    ),
+                    ghost_state=GhostState.BLOCKED,
+                )
         return ValidationResult(status="valid", ghost_state=GhostState.PENDING)
 
     def _validate_alter_drop_column(
@@ -417,14 +470,32 @@ class SQLValidator:
                 reason="ALTER TABLE does not contain DROP COLUMN",
                 ghost_state=GhostState.BLOCKED,
             )
+        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        if schema_err:
+            return schema_err
         ast_table = self._canonical_name(stmt.this)
         _, diff_table, diff_col = self._parse_target(difference.target)
-        if ast_table != diff_table:
+        if ast_table.lower() != diff_table:
             return ValidationResult(
                 status="invalid",
                 reason=f"SQL targets table '{ast_table}' but difference targets '{diff_table}'",
                 ghost_state=GhostState.BLOCKED,
             )
+        # Bind column: the Drop action stores the column in tables[0] (a Column node).
+        actions = stmt.args.get("actions", [])
+        drop_actions = [a for a in actions if isinstance(a, exp.Drop)]
+        if diff_col and drop_actions:
+            tables = drop_actions[0].args.get("tables") or []
+            ast_col = self._canonical_name(tables[0]) if tables else ""
+            if ast_col.lower() != diff_col:
+                return ValidationResult(
+                    status="invalid",
+                    reason=(
+                        f"DROP COLUMN targets column '{ast_col}' but difference "
+                        f"targets column '{diff_col}'"
+                    ),
+                    ghost_state=GhostState.BLOCKED,
+                )
         return ValidationResult(status="valid", ghost_state=GhostState.PENDING)
 
     def _validate_drop_index(
@@ -444,9 +515,12 @@ class SQLValidator:
                 reason=f"expected DROP INDEX, got DROP {kind}",
                 ghost_state=GhostState.BLOCKED,
             )
+        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        if schema_err:
+            return schema_err
         ast_index = self._canonical_name(stmt.this)
         diff_index = difference.target.lower()
-        if ast_index and ast_index != diff_index:
+        if ast_index and ast_index.lower() != diff_index:
             return ValidationResult(
                 status="invalid",
                 reason=f"DROP INDEX targets '{ast_index}' but difference targets '{diff_index}'",
@@ -471,9 +545,12 @@ class SQLValidator:
                 reason=f"expected DROP TABLE, got DROP {kind}",
                 ghost_state=GhostState.BLOCKED,
             )
+        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        if schema_err:
+            return schema_err
         ast_table = self._canonical_name(stmt.this)
         diff_table = difference.target.lower()
-        if ast_table and ast_table != diff_table:
+        if ast_table and ast_table.lower() != diff_table:
             return ValidationResult(
                 status="invalid",
                 reason=f"DROP TABLE targets '{ast_table}' but difference targets '{diff_table}'",
@@ -498,9 +575,12 @@ class SQLValidator:
                 reason=f"expected CREATE TABLE, got CREATE {kind}",
                 ghost_state=GhostState.BLOCKED,
             )
+        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        if schema_err:
+            return schema_err
         ast_table = self._canonical_name(stmt.this)
         diff_table = difference.target.lower()
-        if ast_table and ast_table != diff_table:
+        if ast_table and ast_table.lower() != diff_table:
             return ValidationResult(
                 status="invalid",
                 reason=f"CREATE TABLE targets '{ast_table}' but difference targets '{diff_table}'",

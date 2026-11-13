@@ -7,8 +7,8 @@ For KEY_MISSING: calls POST /cache/warm?key=<key> on the target app to
 populate the declared key from the app's own DB. Safe — only sets keys
 declared in cache_config.yaml.
 
-For UNDECLARED_KEY: BLOCKED — requires manual review and deletion.
-No automatic deletion of Redis keys.
+For UNDECLARED_KEY: calls DELETE /cache/delete?key=<key> on the target app
+to remove the undeclared key from Redis.
 
 The resolver always produces a populated ChangeProposal for cache diffs
 (via _cache_proposal). proposed_change=None strictly means no fix is

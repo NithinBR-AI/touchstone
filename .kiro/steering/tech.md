@@ -221,8 +221,10 @@ Validator rules
 · SQL:
   · sqlglot (pinned). Reject multi-statement. Reject SET.
   · Match AST against operation matrix.
-  · Canonical target per PG semantics: quoted preserves case, unquoted
-    lowercases, public stripped, non-public schema rejected.
+  · Case handling: identifiers compared case-insensitively end to end.
+    Names flow through actual.py/comparator as-is; validator lowercases both
+    sides before comparing. Quoted/unquoted distinction not enforced in v1.
+    Non-public schema rejected; public stripped.
   · Reject USING, expression indexes, partial indexes.
   · Bind SQL to originating difference: operation type, schema, table,
     column/index name, index columns must match the Difference target

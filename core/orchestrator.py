@@ -14,9 +14,12 @@ State machine transitions (only paths the orchestrator produces):
   PENDING         → EXECUTION_FAILED   (executor raises)
   PENDING         → RESOLVED           (executor succeeds + verify passes)
   PENDING         → STILL_PRESENT      (executor succeeds + verify fails)
-  PENDING         → SUPERSEDED         (sibling patch applied first)
-  REVIEW_REQUIRED → apply refused
-  BLOCKED         → apply refused
+  PENDING         → SUPERSEDED         (sibling patch applied first — reserved, not yet implemented)
+  REVIEW_REQUIRED → apply refused (without human_authorized)
+  REVIEW_REQUIRED → proceeds to validate+execute (with human_authorized + proposal present)
+  BLOCKED         → apply refused (without human_authorized)
+  BLOCKED         → proceeds to validate+execute (with human_authorized + proposal present)
+  *any state*     → REVIEW_REQUIRED if proposed_change is None (regardless of authorization)
   EXECUTION_FAILED→ apply refused
   RESOLVED        → rollback recorded, state unchanged
   STILL_PRESENT   → same as RESOLVED for rollback handling
@@ -164,11 +167,9 @@ class Orchestrator:
                 proposed_change=None,
             )
 
-        # None proposal without human authorization → REVIEW_REQUIRED.
-        # None proposal with human authorization → executor acts from Difference
-        # (only valid for domains whose executor implements this pattern and whose
-        # resolver always returns a ChangeProposal for executable diffs).
-        if resolution.proposed_change is None and not human_authorized:
+        # No proposal → cannot execute regardless of authorization.
+        # Human authorization unlocks the state gate, not the absence of a proposal.
+        if resolution.proposed_change is None:
             diff.state = GhostState.REVIEW_REQUIRED
             self.persistence.save(report)
             return ApplyOutcome(
@@ -176,19 +177,18 @@ class Orchestrator:
                 state=GhostState.REVIEW_REQUIRED,
             )
 
-        # Validate (defence-in-depth — validator is the safety boundary).
-        if resolution.proposed_change is not None:
-            validation = self.validator.validate(
-                resolution.proposed_change, diff, human_authorized=human_authorized
+        # Validate (validator is always the safety boundary).
+        validation = self.validator.validate(
+            resolution.proposed_change, diff, human_authorized=human_authorized
+        )
+        if validation.status != "valid":
+            diff.state = validation.ghost_state
+            self._audit(report, difference_id, "apply_refused", validation.reason)
+            self.persistence.save(report)
+            return ApplyOutcome(
+                difference_id=difference_id,
+                state=diff.state,
             )
-            if validation.status != "valid":
-                diff.state = validation.ghost_state
-                self._audit(report, difference_id, "apply_refused", validation.reason)
-                self.persistence.save(report)
-                return ApplyOutcome(
-                    difference_id=difference_id,
-                    state=diff.state,
-                )
 
         # Execute
         try:
@@ -320,6 +320,7 @@ class Orchestrator:
                 else:
                     diff.state = GhostState.STILL_PRESENT
             else:
+                verification = None
                 diff.state = GhostState.EXECUTION_FAILED
 
             self._audit(report, diff.id, "applied", diff.state.value)
@@ -327,6 +328,7 @@ class Orchestrator:
                 difference_id=diff.id,
                 state=diff.state,
                 execution=exec_result,
+                verification=verification,
             )
             report.outcomes[diff.id] = outcome
             outcomes.append(outcome)

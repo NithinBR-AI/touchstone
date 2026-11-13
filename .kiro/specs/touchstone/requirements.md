@@ -86,8 +86,9 @@ Import via `importlib.util.spec_from_file_location`, read
 
 ### Requirement 6: Type Normalization
 `normalize_sqlalchemy_type()` / `normalize_pg_type()` → canonical strings.
-`tests/test_normalize.py` with ≥30 triples including quoted identifiers,
-precision/scale, nullability. Unsupported types raise defined error.
+`tests/test_normalize.py` with ≥30 triples including precision/scale,
+nullability variants. Unsupported types raise defined error.
+Note: `normalize.py` handles column types only — not table/column/index names.
 
 ### Requirement 7: Actual Database Schema
 Query `information_schema.columns`, `pg_indexes`, PK constraint views.
@@ -198,8 +199,11 @@ improves quality; validator enforces safety independently.
 5. Match AST to matrix. Reject if policy BLOCKED. REVIEW_REQUIRED diff kinds
    are auto-fixable=False in matrix; human_authorized=True skips the
    auto-fixability gate so REVIEW_REQUIRED diffs can be applied after human review.
-6. Canonical target: quoted preserves case, unquoted lowercases, `public`
-   stripped, non-public schema rejected. `"Users"` ≠ `users`.
+6. Identifiers are compared case-insensitively end to end. Table, column and
+   index names flow from `actual.py`/`intended.py` through the comparator as-is;
+   the validator lowercases both the SQL AST name and the `Difference.target`
+   before comparing. Quoted vs unquoted case distinction (`"Users"` ≠ `users`)
+   is not enforced in v1. Non-public schemas are rejected; `public` is stripped.
 7. Reject `USING` clause, expression indexes, partial indexes.
 8. **Bind SQL to originating difference:** schema, table, column/index name,
    index columns MUST match `Difference.target` exactly. Mismatch → `blocked`.
@@ -217,6 +221,19 @@ improves quality; validator enforces safety independently.
 ### Requirement 18: API and Cache Patch Execution (replaces File Patch Validator)
 `FilePatchValidator` has been removed from `core/validator.py` as part of the
 Skeleton Crew refactor. API and cache fixes are now applied by domain executors:
+
+**API domain — two-stage validation:**
+The orchestrator-level `ContractValidator` runs at scan time (during `run()`)
+on a lightweight metadata-only `ChangeProposal` — no patched content is present
+yet because the LLM runs at execute time to avoid slowing down Compare. The
+validator performs structural pre-checks (operation == FILE_PATCH, file_name
+present, target matches diff) and always returns BLOCKED. The human unlocking
+BLOCKED via Exorcise triggers `ContractExecutor.execute_batch()`.
+
+`ultra()` inside `execute_batch` is the patch validation boundary for the API
+domain — it validates the actual patched content after `deepseek_pro()` generates
+it. The orchestrator-level validator cannot perform this check because the patch
+does not exist at scan time.
 
 **API domain (ContractExecutor — `adapters/openapi/executor.py`):**
 1. At execute time, fetches the target file from GitHub via authenticated API.
@@ -245,8 +262,10 @@ Orchestrator is sole state owner. Transitions:
 - PENDING → EXECUTION_FAILED (executor fails)
 - PENDING → RESOLVED (executor succeeds, verify passes)
 - PENDING → STILL_PRESENT (executor succeeds, verify fails)
-- PENDING → SUPERSEDED (sibling file patch applied)
-- REVIEW_REQUIRED / BLOCKED / EXECUTION_FAILED → apply refused
+- PENDING → SUPERSEDED (sibling file patch applied — not yet implemented; state is reserved)
+- REVIEW_REQUIRED / BLOCKED + human_authorized=False → apply refused
+- REVIEW_REQUIRED / BLOCKED + human_authorized=True → allowed (human has reviewed and chosen to apply)
+- EXECUTION_FAILED → apply refused (terminal)
 - RESOLVED/STILL_PRESENT (file) → rollback event recorded, state unchanged
 - RESOLVED/STILL_PRESENT (database) → rollback refused
 
@@ -313,7 +332,10 @@ execution and verification preserved; persist immediately.
 ### Requirement 26: Human Approval Gate (server-side, not browser)
 1. Apply button only on PENDING cards.
 2. On apply, show exact change, blast radius, reversibility, rollback.
-3. No "Apply All". No override for REVIEW_REQUIRED.
+3. No "Apply All". Human authorization (clicking Exorcise) unlocks both
+   REVIEW_REQUIRED and BLOCKED diffs — the human has seen the proposal and
+   chosen to apply it. EXECUTION_FAILED is the only terminal state that
+   cannot be retried.
 4. **Server-side authorization:**
    - Either: bearer token on `/apply`, `/rollback`, `/report/:id`
      (configurable via env var; never logged or returned in responses)
@@ -324,9 +346,13 @@ execution and verification preserved; persist immediately.
 5. Record authenticated principal (token ID or "demo-sandbox") in report
    audit log.
 
-### Requirement 27: Superseded Handling
-After file patch success: `requires_refresh=True`, mark other PENDING diffs
-on same file as SUPERSEDED. UI dims them. `/apply` refuses SUPERSEDED.
+### Requirement 27: Superseded Handling (not yet implemented)
+`SUPERSEDED` is defined in `GhostState` and the UI renders it (dims the card,
+refuses apply). However, the `_supersede_siblings` logic that would set this
+state was not implemented in v1. No code path currently produces `SUPERSEDED` —
+it can only be set manually in tests. `requires_refresh` on `Report` is likewise
+defined but never set to `True` by the orchestrator. Both are reserved for a
+future file-patch sibling-conflict implementation.
 
 ### Requirement 28: FastAPI Backend (per app)
 - Mount `apps/shared/ui/` via `Path(__file__).parent.parent / "shared" / "ui"`
@@ -358,8 +384,9 @@ Requirement 30: Applications in Separate Folders
 
 1. apps/schema-drift/ and apps/contract-observer/ — both MANDATORY.
 2. apps/poltergeist/ — SHIPPED third app (cache domain).
-3. Each app folder contains: main.py (~30 lines importing core + domain
-   adapter), config.json, README.md, run.sh.
+3. Each app folder contains: main.py (~250 lines — FastAPI endpoints,
+   serialisation helpers, demo reset, wiring of core + domain adapter),
+   config.json, README.md, run.sh.
 4. main.py imports from core/ and its domain adapter. No domain logic.
 5. config.json specifies domain, accent, title.
 6. run.sh starts only that app.

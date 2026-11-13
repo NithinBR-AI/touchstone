@@ -18,7 +18,9 @@ week 2. It implements a 10-step compare-verify workflow and knows nothing
 about any specific domain.
 
 **The applications** are built on top of the skeleton. Each lives in its own
-folder under `apps/` and is a ~30-line wrapper that imports from `core/`.
+folder under `apps/` and contains FastAPI endpoint handlers, serialisation
+helpers, and demo reset logic (~250 lines each). No domain logic lives in apps —
+all domain-specific behaviour is in `adapters/`.
 
 | App | Domain | Accent | Primary verb | Mandatory? |
 |---|---|---|---|---|

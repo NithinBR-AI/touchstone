@@ -207,10 +207,7 @@ class MockResolver:
         prompt = build_prompt(difference)
         digest = prompt_sha256(prompt)
 
-        if not difference.context.get("safe_fix", False) or difference.kind in REVIEW_ONLY_KINDS:
-            return self._resolution(difference, digest, None, "Review required: not auto-fixable.")
-
-        # Cache domain — deterministic proposal
+        # Cache domain — always produces a deterministic proposal regardless of safe_fix
         if difference.domain == "cache":
             proposal = _cache_proposal(difference)
             return self._resolution(
@@ -219,6 +216,9 @@ class MockResolver:
                 proposal,
                 f"Cache {proposal.operation} for key {difference.target}",
             )
+
+        if not difference.context.get("safe_fix", False) or difference.kind in REVIEW_ONLY_KINDS:
+            return self._resolution(difference, digest, None, "Review required: not auto-fixable.")
 
         last_error = ""
         for _ in range(MAX_ATTEMPTS):

@@ -171,7 +171,7 @@ def compare():
     try:
         report = orch.run()
     except Exception as exc:
-        raise HTTPException(503, detail=f"compare failed: {exc}") from exc
+        raise HTTPException(503, detail=f"compare failed: {type(exc).__name__}") from exc
     _latest_report_id = report.id
     return _serialise_report(report)
 
@@ -200,7 +200,7 @@ def demo_reset():
         resp = _CLIENT.post(_cache_warm_url(), timeout=30.0)
         resp.raise_for_status()
     except Exception as exc:
-        raise HTTPException(500, detail=f"cache warm failed: {exc}") from exc
+        raise HTTPException(500, detail=f"cache warm failed: {type(exc).__name__}") from exc
     _latest_report_id = None
     return {
         "status": "reset",

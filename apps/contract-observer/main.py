@@ -183,7 +183,7 @@ def compare():
     try:
         report = orch.run()
     except Exception as exc:
-        raise HTTPException(503, detail=f"compare failed: {exc}") from exc
+        raise HTTPException(503, detail=f"compare failed: {type(exc).__name__}") from exc
     _latest_report_id = report.id
     return _serialise_report(report)
 

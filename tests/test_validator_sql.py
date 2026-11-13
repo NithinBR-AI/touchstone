@@ -225,6 +225,44 @@ def test_create_index_name_mismatch(validator: SQLValidator, index_missing_diff:
     assert result.ghost_state == GhostState.BLOCKED
 
 
+def test_create_index_wrong_table_blocked(validator: SQLValidator, index_missing_diff: Difference):
+    """CREATE INDEX on wrong table is blocked even if index name matches."""
+    change = SQLChange(
+        statement="CREATE INDEX ix_users_email ON orders (email)",
+        operation="CREATE_INDEX",
+        target="ix_users_email",
+    )
+    result = validator.validate(_proposal(change), index_missing_diff)
+    assert result.status == "invalid"
+    assert "orders" in result.reason
+    assert result.ghost_state == GhostState.BLOCKED
+
+
+def test_create_index_wrong_columns_blocked(validator: SQLValidator, index_missing_diff: Difference):
+    """CREATE INDEX on wrong columns is blocked even if table and name match."""
+    change = SQLChange(
+        statement="CREATE INDEX ix_users_email ON users (id)",
+        operation="CREATE_INDEX",
+        target="ix_users_email",
+    )
+    result = validator.validate(_proposal(change), index_missing_diff)
+    assert result.status == "invalid"
+    assert "columns" in result.reason
+    assert result.ghost_state == GhostState.BLOCKED
+
+
+def test_create_index_named_wrong_table_blocked(validator: SQLValidator, index_missing_diff: Difference):
+    """Named CREATE INDEX on wrong table is blocked (was silently allowed before the fix)."""
+    change = SQLChange(
+        statement="CREATE INDEX ix_users_email ON orders (id)",
+        operation="CREATE_INDEX",
+        target="ix_users_email",
+    )
+    result = validator.validate(_proposal(change), index_missing_diff)
+    assert result.status == "invalid"
+    assert result.ghost_state == GhostState.BLOCKED
+
+
 # --------------------------------------------------------------------------
 # 4. ALTER COLUMN TYPE validation
 # --------------------------------------------------------------------------
@@ -258,6 +296,39 @@ def test_alter_type_target_binding(validator: SQLValidator):
     result = validator.validate(_proposal(change), diff)
     assert result.status == "invalid"
     assert "targets 'users.age'" in result.reason or "targets 'orders.total'" in result.reason
+    assert result.ghost_state == GhostState.BLOCKED
+
+
+# --------------------------------------------------------------------------
+# 4b. ADD COLUMN / DROP COLUMN column binding
+# --------------------------------------------------------------------------
+
+
+def test_add_column_wrong_column_blocked(validator: SQLValidator):
+    """ADD COLUMN on wrong column is blocked even if table matches."""
+    diff = Difference(kind="COLUMN_MISSING", target="users.email", context={})
+    change = SQLChange(
+        statement="ALTER TABLE users ADD COLUMN phone VARCHAR(20)",
+        operation="ADD_COLUMN",
+        target="users.email",
+    )
+    result = validator.validate(_proposal(change), diff, human_authorized=True)
+    assert result.status == "invalid"
+    assert "phone" in result.reason
+    assert result.ghost_state == GhostState.BLOCKED
+
+
+def test_drop_column_wrong_column_blocked(validator: SQLValidator):
+    """DROP COLUMN on wrong column is blocked even if table matches."""
+    diff = Difference(kind="COLUMN_EXTRA", target="users.old_field", context={})
+    change = SQLChange(
+        statement="ALTER TABLE users DROP COLUMN email",
+        operation="DROP_COLUMN",
+        target="users.old_field",
+    )
+    result = validator.validate(_proposal(change), diff, human_authorized=True)
+    assert result.status == "invalid"
+    assert "email" in result.reason
     assert result.ghost_state == GhostState.BLOCKED
 
 
@@ -359,9 +430,9 @@ def test_widening_verification_from_context_not_rationale(validator: SQLValidato
 @pytest.mark.parametrize(
     "sql, target, should_pass",
     [
-        # Quoted preserves case
+        # Quoted name — both sides lowercased so this passes (case-insensitive comparison)
         ('CREATE INDEX "IX_Users_Email" ON "Users" ("Email")', "IX_Users_Email", True),
-        # Unquoted lowercases
+        # Unquoted name — also lowercased, passes case-insensitively
         ("CREATE INDEX ix_users_email ON users (email)", "IX_USERS_EMAIL", True),
         # Schema stripping
         ("CREATE INDEX ix_users_email ON public.users (email)", "ix_users_email", True),

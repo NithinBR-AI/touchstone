@@ -293,9 +293,14 @@ class ContractExecutor:
         from agents.mantle_client import deepseek_pro, strip_llm_wrapper, ultra
         from agents.prompts import _API_SYSTEM_PROMPT, build_api_batch_user_message
 
-        try:
-            current_content = self._get_file(file_name)
-        except Exception as exc:
+        current_content = ""
+        for _ in range(2):
+            try:
+                current_content = self._get_file(file_name)
+                break
+            except Exception:
+                pass
+        if not current_content:
             return "", False
 
         # Preserve original trailing newline convention
