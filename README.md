@@ -8,6 +8,32 @@ Touchstone makes all three visible — and fixable — before they cause inciden
 
 ---
 
+## Skeleton Crew entry
+
+The skeleton is `core/` — exactly 5 files. Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it without modifying any skeleton file. Two mandatory apps satisfy the Skeleton Crew entry.
+
+**What the skeleton is:** `core/interfaces.py` defines seven base protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, `Verifier`) plus two optional capability protocols (`BatchExecutor`, `RollbackSupport`). The remaining four files implement state management, caching, persistence, and the orchestrator. Domain-specific validators and models live in `adapters/`, not in `core/`.
+
+**What the apps are:** Each app wires domain adapters to the orchestrator via `main.py`, plus a `config.json` (domain, accent, title), a `README.md`, and a `run.sh`. All domain logic lives in `adapters/`; `core/` owns only the workflow and state machine.
+
+**Extensibility proof — fourth domain, zero core changes:** `tests/test_fourth_domain.py` implements a complete in-memory `config` domain — its own `InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, and `Verifier` — and runs the full lifecycle (detect → resolve → validate → execute → verify → persist) without importing from any existing adapter package and without modifying a single line in `core/`. The test covers validation rejection stopping execution, the authorization gate, verification failure recording, and persistence after apply. The constraint is structural: if `core/` needed a change to support a new domain, the test would catch it.
+
+**AST-enforced boundary:** `test_skeleton.py` uses Python's `ast` module — not raw text search — to enforce three rules on every test run:
+- Exact file set in `core/` (no domain files creeping in)
+- No module in `core/` imports from `adapters/`, `agents/`, or `apps/`
+- No `sqlglot` import anywhere in `core/` (domain library — forbidden)
+- No Compare node in `core/` where `.domain` is compared to a string literal (no domain branching)
+
+**Verification:**
+
+```bash
+python -m pytest tests/test_skeleton.py tests/test_fourth_domain.py tests/test_apps_structure.py -v
+```
+
+**Test suite:** 449 passed, 5 skipped (live DB/Redis tests auto-skip when env vars are unset).
+
+---
+
 ## What it does
 
 Two states exist for every system: what the code declares, and what the system actually runs. The gaps are ghosts.
@@ -19,8 +45,6 @@ Two states exist for every system: what the code declares, and what the system a
 | Cache | `cache_config.yaml` | Live Redis key list | Key declared in config, missing from live cache |
 
 Touchstone detects each ghost, proposes a validated fix using an LLM grounded in the diff context, and — on human approval — applies it atomically and verifies the result. Every step is audited. Every fix is proven before it closes.
-
-**The skeleton is exactly 5 files.** Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it without modifying any skeleton file. Two mandatory apps satisfy the Skeleton Crew entry.
 
 ---
 
@@ -237,7 +261,7 @@ API contract changes are never auto-applied to a live system. The executor opens
 
 ## Key Design Decisions
 
-**Core is the authority.** `core/` owns the state machine, cache, and persistence. All domain logic — including validators — lives in adapters. `core/` never imports from adapters. This is enforced structurally: `test_skeleton.py` asserts the exact file set and no-external-import rule on every test run. The constraint means adapters can be replaced or added without touching the shared workflow.
+**Core is the authority.** `core/` owns the state machine, cache, and persistence. All domain logic — including validators — lives in adapters. `core/` never imports from adapters. This is enforced structurally by `test_skeleton.py` using Python's `ast` module on every test run: it walks the AST of every `core/` file and asserts no imports from project packages, no `sqlglot` imports, and no Compare nodes where `.domain` is compared to a string literal. Raw text search is not used — the check is at the AST level so renaming a variable cannot accidentally pass. The constraint means adapters can be replaced or added without touching the shared workflow.
 
 **Validator is the safety boundary — not the LLM.** The LLM proposes; `adapters/postgres/validator.py` enforces for database fixes. The validator re-derives its verdict from the operation matrix using `sqlglot` AST analysis — it doesn't trust the LLM's SQL string. A hallucinated `DROP TABLE` after a valid `CREATE INDEX` is caught by the matrix, not by prompt engineering.
 
@@ -289,10 +313,10 @@ The biggest single impact: writing `product.md` before writing any code forced t
 
 ### Agent hooks
 
-**`new-adapter`** (trigger: `FileCreate` on `adapters/**/comparator.py`)  
+**`new-adapter`** (trigger: `FileCreate` on `adapters/**/comparator.py`)
 Scaffolds the full application plumbing when a new domain comparator is created: `apps/<domain>/main.py`, `config.json`, `README.md`, `run.sh`, a renderer stub in the shared UI `RENDERERS` registry, and a comparator test file. The hook prompt explicitly prohibits modifying `core/`.
 
-**`comparator-test`** (trigger: `FileSave` on `adapters/**/comparator.py`)  
+**`comparator-test`** (trigger: `FileSave` on `adapters/**/comparator.py`)
 Runs the matching comparator test suite on every save. Resolves the test file from the domain folder name — `adapters/postgres/comparator.py` triggers `tests/test_comparator_pg.py`.
 
 **`demo-case-cache`** (trigger: `FileSave` on `fixtures/cases.json`)
@@ -318,7 +342,7 @@ python fixtures/seed.py $DATABASE_URL
 
 # Run offline tests (no DB needed)
 python -m pytest tests/ -q
-# 424 passed, 5 skipped (live DB tests auto-skip when DATABASE_URL is unset)
+# 449 passed, 5 skipped (live DB tests auto-skip when DATABASE_URL is unset)
 
 # Run Postgres integration tests
 DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v
@@ -349,7 +373,7 @@ touchstone/
 │   │   ├── executor.py
 │   │   └── verifier.py
 │   ├── openapi/                          # contract-observer domain (complete)
-│   │   ├── validator.py                  # ultra-based patch validation
+│   │   ├── validator.py                  # ContractValidator, payload + target checks
 │   │   ├── ssrf.py
 │   │   ├── intended.py
 │   │   ├── actual.py
@@ -357,7 +381,7 @@ touchstone/
 │   │   ├── executor.py
 │   │   └── verifier.py
 │   └── redis/                            # poltergeist domain (complete)
-│       ├── validator.py                  # CacheValidator
+│       ├── validator.py                  # CacheValidator, operation + target checks
 │       ├── actual.py
 │       ├── intended.py
 │       ├── comparator.py
@@ -397,7 +421,9 @@ touchstone/
 ├── cli.py                                # CLI: touchstone compare / touchstone report
 ├── pyproject.toml
 ├── tests/
-│   ├── test_skeleton.py                  # 5 files, no external imports
+│   ├── test_skeleton.py                  # AST-enforced: 5 files, no external imports, no sqlglot, no domain branching
+│   ├── test_fourth_domain.py             # extensibility proof: full lifecycle with in-memory config domain, zero core changes
+│   ├── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 4 files each
 │   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes
 │   ├── test_normalize.py                 # type normaliser
 │   ├── test_validator_sql.py             # operation matrix + target binding + widening
@@ -416,8 +442,7 @@ touchstone/
 │   ├── test_executor_pg.py               # Postgres executor unit tests
 │   ├── test_verifier_pg.py               # Postgres verifier unit tests
 │   ├── test_postgres_e2e.py              # Postgres end-to-end (requires DATABASE_URL)
-│   ├── test_sql_execution.py             # real Postgres SQL execution (requires DATABASE_URL)
-│   └── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 4 files each
+│   └── test_sql_execution.py             # real Postgres SQL execution (requires DATABASE_URL)
 ├── .kiro/
 │   ├── specs/touchstone/                 # requirements.md, design.md, tasks.md
 │   ├── steering/                         # product.md, tech.md, kiro-features.md
@@ -481,24 +506,6 @@ touchstone compare --target ix_orders_user_id
 touchstone compare --target users.email
 touchstone report
 ```
-
----
-
-## Skeleton proof
-
-The skeleton is `core/` — 5 files. It implements the compare-verify workflow and knows nothing about any specific domain.
-
-**What the skeleton is:** `core/interfaces.py` defines seven base protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, `Verifier`) plus two optional capability protocols (`BatchExecutor`, `RollbackSupport`). The remaining four files implement state management, caching, persistence, and the orchestrator. Domain-specific validators and models live in `adapters/`, not in `core/`.
-
-**What the apps are:** Each app wires domain adapters to the orchestrator via `main.py`, plus a `config.json` (domain, accent, title), a `README.md`, and a `run.sh`. All domain logic lives in `adapters/`; `core/` owns only the workflow and state machine.
-
-**Verification:**
-
-```bash
-python -m pytest tests/test_skeleton.py -v
-```
-
-`test_skeleton.py` asserts the exact set of files in `core/` and that no module inside `core/` imports from `adapters/`, `agents/`, or `apps/`. This runs on every test pass.
 
 ---
 

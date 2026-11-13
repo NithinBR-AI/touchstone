@@ -10,11 +10,11 @@ declared in cache_config.yaml.
 For UNDECLARED_KEY: BLOCKED — requires manual review and deletion.
 No automatic deletion of Redis keys.
 
-Note: the cache executor is called directly from the app's /apply endpoint
-(not through orchestrator.apply_one) because all cache diffs have
-safe_fix=False or proposed_change=None — apply_one would refuse them.
-The executor therefore takes a Difference directly, mirroring the pattern
-used by the API (contract-observer) executor.
+The resolver always produces a populated ChangeProposal for cache diffs
+(via _cache_proposal). proposed_change=None strictly means no fix is
+available and the diff becomes REVIEW_REQUIRED — it never reaches this
+executor. The executor reads resolution.proposed_change for the applied
+change record.
 """
 
 from __future__ import annotations

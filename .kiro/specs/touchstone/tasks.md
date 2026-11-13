@@ -190,9 +190,10 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       external edit failure, executor exception, double rollback, event recorded/fields.
       All 10 pass. inode race not tested (requires OS cooperation, deferred). PASS.
   - _Req 21, 25_
-- [x] 2.17 test_skeleton.py — 7 files, no external imports
-      VERIFIED: 15 tests: exact 7 files, no subdirs, 7×no-external-imports, 6×importable.
-      All 15 pass. PASS.
+- [x] 2.17 test_skeleton.py — AST-enforced skeleton boundary
+      VERIFIED: 38 tests: exact 5 files (+ __init__.py), no subdirs, 6×no-external-imports,
+      6×no-sqlglot-import (AST walk), 6×no-domain-string-comparison (AST Compare node check),
+      5×importable. All 38 pass. Raw text search replaced with ast.walk throughout. PASS.
   - _Req 1, 38_
 - [x] 2.18 fixtures/docker-compose.yml, seed.py, cases.json (models.py moved to touchstone-demo-target-repo)
       VERIFIED DONE: All 4 files created and updated to match real Neon schema
@@ -605,7 +606,13 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 - [ ] 8.3 .kiro/agents/validator-reviewer.md — frontmatter + input contract
       + constraints (file exists; verify via task 0.5)
   - _Req 15_
-- [ ] 8.4 README "Adding a fourth domain"
+- [x] 8.4 Fourth-domain extensibility proof — test_fourth_domain.py + README
+      VERIFIED: 25 tests covering full lifecycle with in-memory config domain: detect →
+      resolve → validate → execute → verify → persist. Validation rejection stops execution,
+      authorization gate enforced, verification failure recorded as STILL_PRESENT, persistence
+      saves after apply. Zero imports from existing adapter packages. Zero changes to core/.
+      AST check confirms core/ contains no "config" domain string. README Skeleton Crew
+      section updated with extensibility proof and AST enforcement details. 449 passed total.
   - _Req 35_
 
 ### 9. PBT (Week 4)
