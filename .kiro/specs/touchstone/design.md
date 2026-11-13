@@ -16,7 +16,7 @@ touchstone/
 │   ├── persistence.py
 │   └── cache.py
 ├── adapters/
-│   ├── postgres/{intended,actual,normalize,comparator,executor,verifier}.py
+│   ├── postgres/{intended,actual,normalize,comparator,executor,verifier,models,validator}.py
 │   ├── openapi/{intended,actual,comparator,executor,verifier,ssrf}.py
 │   └── redis/{intended,actual,comparator,executor,verifier}.py
 ├── agents/
@@ -54,11 +54,11 @@ from core.orchestrator import Orchestrator
 from adapters.postgres.source import PostgresAdapter
 from adapters.postgres.comparator import SchemaComparator
 from adapters.postgres.executor import SQLExecutor
+from adapters.postgres.validator import SQLValidator
 from adapters.postgres.verifier import SchemaVerifier
-from agents.resolver import ResolverAgent
+from agents.resolver import MantleResolver
 from core.persistence import Persistence
 from core.cache import Cache
-from core.validator import Validator
 
 HERE = Path(__file__).parent
 CONFIG = json.loads((HERE / "config.json").read_text())
@@ -164,13 +164,18 @@ def atomic_write(path: Path, content: bytes, expected_current: bytes) -> bool:
 
 Validator
 
-· SQL: operation matrix + canonical target + target binding + widening
-  table (from Difference.context, not resolver). Reject multi-statement,
-  SET, USING, expression/partial indexes. Fail closed.
-· File: FilePatchValidator removed from core/validator.py. API patches are
-  now applied as GitHub PRs by ContractExecutor (LLM-generated patched
-  content committed via GitHub API). Cache fixes applied directly by
-  CacheExecutor via /cache/warm and /cache/delete endpoints.
+· SQL (adapters/postgres/validator.py — Skeleton Crew refactor):
+  SQLValidator, SQLChange, FilePatch moved out of core/ into adapter layer.
+  core/validator.py retained for FilePatchValidator stub only (unused).
+  Operation matrix + canonical target + target binding + widening table
+  (from Difference.context, not resolver). Reject multi-statement, SET,
+  USING, expression/partial indexes. Fail closed.
+  human_authorized=True skips auto-fixability gate + DROP forbidden-node
+  check; SET/DELETE/TRUNCATE always forbidden regardless of authorization.
+· API patch validation: ultra() called at execute time with SCOPE-constrained
+  prompt (check only the specific schema/function; ignore rest of file).
+  Two-attempt retry; draft PR on double failure. No FilePatchValidator.
+· Cache: deterministic — no validator, no LLM. CacheExecutor acts directly.
 · HTTP: SSRF pinning per above.
 
 State machine
@@ -203,7 +208,7 @@ test_orchestrator_mock.py Full loop; apply refuses non-PENDING
 test_state_transitions.py 56-cell matrix + invariants + persisted-state
 test_rollback.py File success, external edit, double rollback, DB refusal
 test_cache_reproducibility.py Signature match, cache hits
-test_mantle_resolver.py MantleResolver domain routing, retries, fallback
+test_mantle_resolver.py MantleResolver domain routing, retries, fallback, deferred API proposal
 test_demo_repeatability.py Two runs → identical
 test_skeleton.py 7 files, no external imports
 test_properties.py Reference round-trip, SQL positive+negative, state machine, redaction variants

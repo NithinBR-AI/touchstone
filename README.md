@@ -4,7 +4,7 @@
 
 Touchstone makes all three visible — and fixable — before they cause incidents. It compares what your code declares against what actually runs, classifies every gap deterministically, calls an LLM to propose one validated fix per ghost, and — on human approval — applies it atomically and re-verifies the result.
 
-**Kiroween 2026 — Skeleton Crew category** · Built with NVIDIA and DeepSeek models via [AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)
+**Kiroween 2026 — Skeleton Crew category** · Built with Qwen3 and DeepSeek models via [AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)
 
 ---
 
@@ -20,7 +20,7 @@ Two states exist for every system: what the code declares, and what the system a
 
 Touchstone detects each ghost, proposes a validated fix using an LLM grounded in the diff context, and — on human approval — applies it atomically and verifies the result. Every step is audited. Every fix is proven before it closes.
 
-**The skeleton is exactly 7 files.** Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it without modifying any skeleton file. Two mandatory apps satisfy the Skeleton Crew entry.
+**The skeleton is exactly 5 files.** Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it without modifying any skeleton file. Two mandatory apps satisfy the Skeleton Crew entry.
 
 ---
 
@@ -36,7 +36,7 @@ Compares SQLAlchemy model declarations against a live Postgres schema. Ghosts ar
 |---|---|---|---|
 | `users.age` declared `INTEGER`, live `BIGINT` | `TYPE_CHANGED` (narrowing) | REVIEW_REQUIRED | 🕯 SÉANCE NEEDED |
 | `ix_orders_user_id` declared, missing from live DB | `INDEX_MISSING` | AUTO-FIX | 👻 HAUNTING |
-| `users.email` declared `VARCHAR(255)`, live `VARCHAR(50)` | `TYPE_CHANGED` (widening) | AUTO-FIX | 🕯 SÉANCE NEEDED |
+| `users.email` declared `VARCHAR(255)`, live `VARCHAR(50)` | `TYPE_CHANGED` (widening) | AUTO-FIX | 👻 HAUNTING |
 
 Judges can click **Exorcise** to apply a fix directly to the Neon DB. Click **↺ Reset Demo** to re-seed drift and start over.
 
@@ -77,24 +77,28 @@ Judges can click **Exorcise** on either ghost. `KEY_MISSING` → warms the key v
 
 ## Architecture — the skeleton
 
-The skeleton is `core/` — 7 files. It implements the compare-verify workflow and knows nothing about any specific domain.
+The skeleton is `core/` — 5 files. It implements the compare-verify workflow and knows nothing about any specific domain.
 
 ```
 core/
-├── interfaces.py    ← 6 protocols: InputSource, SourceAdapter, Comparator,
-│                       Resolver, Executor, Verifier
-├── models.py        ← GhostState (7 states), Difference, Resolution,
-│                       SQLChange, FilePatch, ExecutionResult,
-│                       VerificationResult, ApplyOutcome, RollbackEvent, Report
-├── validator.py     ← domain validator (operation matrix + safety rules)
+├── interfaces.py    ← 7 base protocols: InputSource, SourceAdapter, Comparator,
+│                       Resolver, Validator, Executor, Verifier
+│                       + 2 optional: BatchExecutor, RollbackSupport
+├── models.py        ← GhostState (7 states), Difference, ChangeProposal,
+│                       Resolution, ExecutionResult, VerificationResult,
+│                       ApplyOutcome, RollbackEvent, Report
 ├── cache.py         ← JSON-backed resolution cache; written only after apply+verify succeeds;
 │                       keyed by Difference.signature with cache_version, validator_contract,
 │                       prompt_hash; 7-day TTL (expires_at); null proposals never cached
 ├── persistence.py   ← atomic report store (temp + fsync + rename)
-└── orchestrator.py  ← state machine: run() / apply_one() / rollback()
+└── orchestrator.py  ← state machine: run() / apply_one() / apply_batch() / rollback()
 ```
 
-Each domain adapter implements the 6 protocols. The skeleton calls the protocols; it never imports from adapters.
+Domain-specific models and validators live in their adapters, not core:
+- `adapters/postgres/models.py` — `SQLChange`, `FilePatch`
+- `adapters/postgres/validator.py` — `SQLValidator`, operation matrix, safety rules
+
+Each domain adapter implements the 7 base protocols. The skeleton calls the protocols; it never imports from adapters.
 
 ```
 adapters/postgres/    ← Schema Drift (complete)
@@ -130,28 +134,39 @@ Seven states × eight events = 56 cells. Every cell is explicitly defined and te
 ## Flow
 
 ```
-1. Read targets         (repo config → declared source URL + live environment URL)
-2. Read both sides      (SourceAdapter normalizes each into a State)
-3. Compare              (domain Comparator classifies each gap as a Difference)
-4. Resolve              (LLM Resolver proposes one fix per ghost)
-5. Validate             (Validator enforces domain safety rules; rejects if violated)
-6. Authorize            (human reviews → approves or dismisses)
-7. Execute              (Executor applies the fix atomically)
-8. Verify               (Verifier re-reads live state → RESOLVED / STILL_PRESENT / EXECUTION_FAILED)
+1. Read targets    (repos.json → declared source URL + live environment URL)
+2. Read both sides (SourceAdapter normalizes each side into a State)
+3. Compare         (domain Comparator classifies each gap as a Difference)
+4. Resolve         (Resolver returns a ChangeProposal per ghost)
+                     · database → LLM (ultra) generates SQL fix
+                     · api      → lightweight metadata proposal only; LLM runs at step 7
+                     · cache    → deterministic CACHE_WARM/CACHE_DELETE; no LLM
+5. Validate        (domain Validator enforces safety rules; rejects if violated)
+6. Authorize       (human reviews the proposal in the UI → clicks Exorcise)
+                     · human_authorized=True allows REVIEW_REQUIRED diffs through
+7. Execute         (Executor applies the fix)
+                     · database → SQLExecutor runs DDL against Postgres
+                     · api      → ContractExecutor fetches file from GitHub, calls LLM
+                                  to generate patched content, validates with ultra(),
+                                  opens PR; draft PR if validation fails twice
+                     · cache    → CacheExecutor calls /cache/warm or /cache/delete
+8. Verify          (Verifier re-reads live state → RESOLVED / STILL_PRESENT / EXECUTION_FAILED)
 ```
 
 **LLM proposes. Validator decides. Human authorizes. That order never changes.**
+
+For API domain the LLM runs at step 7 (execute time), not step 4 — so what is validated and what is committed are always the same content.
 
 ---
 
 ## Models — AWS Bedrock Mantle
 
-All LLM calls route through **[AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)** — a single OpenAI-compatible endpoint (`https://bedrock-mantle.us-east-1.api.aws/v1`) that exposes NVIDIA and DeepSeek models under one API key. The client is 80 lines in `agents/mantle_client.py`, adapted from the same pattern used in [GhostVendor](https://github.com/NithinBR-AI/ghostvendor).
+All LLM calls route through **[AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)** — a single OpenAI-compatible endpoint (`https://bedrock-mantle.us-east-1.api.aws/v1`) that exposes Qwen3, DeepSeek, and NVIDIA models under one API key. The client is in `agents/mantle_client.py`, adapted from the same pattern used in [GhostVendor](https://github.com/NithinBR-AI/ghostvendor).
 
 | App | Domain | Model | Why |
 |---|---|---|---|
 | App 1 — Schema Drift | `database` | **Qwen3-235B** (`qwen.qwen3-235b-a22b-2507`) via `ultra()` | SQL fix proposals require multi-step reasoning: trace the diff context, verify the identifier is safe to use unquoted, produce exactly one DDL statement matching the target name. The 235B MoE handles all three in one pass reliably. |
-| App 2 — Contract Observer | `api` | **DeepSeek v3.2** (`deepseek.v3.2`) via `deepseek_pro()` | API patch generation is deferred to PR-creation time (inside `ContractExecutor.execute_batch()`). The resolver skips LLM for api domain at resolve time — the executor calls `deepseek_pro()` to generate the patched file content when opening the GitHub PR. |
+| App 2 — Contract Observer | `api` | **DeepSeek v3.2** (`deepseek.v3.2`) via `deepseek_pro()` | At resolve time `MantleResolver` returns a lightweight `ChangeProposal` with field metadata only — no LLM call yet. At execute time (Exorcise), `ContractExecutor` fetches the target file from GitHub, calls `deepseek_pro()` to generate the patched content, validates it with `ultra()`, then opens a PR. What is validated equals what is committed. |
 | App 3 — The Poltergeist | `cache` | **No LLM** (`MockResolver`) | Cache key warming is fully deterministic — the executor warms a missing key via `/cache/warm?key=<key>`. No reasoning is needed; `MockResolver` satisfies the resolver protocol without making any network calls. |
 
 **Fallback chain:** `ultra()` falls back to Nemotron Super (`nvidia.nemotron-super-3-120b`) on transient Mantle error. `deepseek_pro()` falls back to Qwen3-235B. Both are on the same Mantle endpoint — the fallback is a model name swap only.
@@ -166,22 +181,25 @@ All LLM calls route through **[AWS Bedrock Mantle](https://aws.amazon.com/bedroc
 
 ### Database (Schema Drift)
 
-| Kind | Auto-fix | Policy |
-|---|---|---|
-| `INDEX_MISSING` | `CREATE INDEX` | AUTO-FIX |
-| `TYPE_CHANGED` (widening only) | `ALTER COLUMN TYPE` | AUTO-FIX |
-| `TYPE_CHANGED` (narrowing) | — | REVIEW_REQUIRED |
-| `COLUMN_MISSING` | `ADD COLUMN` | REVIEW_REQUIRED |
-| `TABLE_MISSING`, `COLUMN_EXTRA`, `TABLE_EXTRA`, `INDEX_EXTRA` | — | BLOCKED |
+| Kind | Condition | Auto-fix | Policy |
+|---|---|---|---|
+| `INDEX_MISSING` | non-unique index | `CREATE INDEX` | AUTO-FIX |
+| `INDEX_MISSING` | unique index | — | REVIEW_REQUIRED |
+| `TYPE_CHANGED` | widening pair | `ALTER COLUMN TYPE` | AUTO-FIX |
+| `TYPE_CHANGED` | non-widening pair | — | REVIEW_REQUIRED |
+| `COLUMN_MISSING` | nullable or has default | `ADD COLUMN` | REVIEW_REQUIRED |
+| `COLUMN_MISSING` | NOT NULL + no default | — | BLOCKED |
+| `TABLE_MISSING`, `COLUMN_EXTRA`, `TABLE_EXTRA`, `INDEX_EXTRA` | — | — | BLOCKED |
 
-Widening pairs: `smallint→integer`, `integer→bigint`, `real→double precision`, `varchar(n)→varchar(m) where m>n`, `varchar(n)→text`. Everything else is narrowing and fails closed.
+Widening pairs (auto-approved): `smallint→integer`, `integer→bigint`, `real→double precision`, `varchar(n)→varchar(m)` (m > n), `varchar(n)→text`. Everything else is non-widening and goes to REVIEW_REQUIRED.
 
 ### API contracts (Contract Observer)
 
 | Kind | UI label | Policy |
 |---|---|---|
 | `FIELD_EXTRA` | Shadow Field | BLOCKED — PR-based fix to `openapi.yaml` |
-| `FIELD_MISSING` | Vanished Field | REVIEW_REQUIRED — PR-based fix |
+| `FIELD_MISSING` | Vanished Field | REVIEW_REQUIRED — PR-based fix to `main.py` |
+| `TYPE_MISMATCH` | Type Clash | REVIEW_REQUIRED — manual review |
 | `PATH_MISSING` | Lost Endpoint | BLOCKED |
 | `PATH_EXTRA` | Phantom Endpoint | BLOCKED |
 
@@ -201,7 +219,7 @@ API contract changes are never auto-applied to a live system. The executor opens
 ### All domains
 - **Validator is the safety boundary** — not the LLM, not keyword matching. The domain validator enforces the operation matrix structurally.
 - **Redaction** — token-based, applied before persistence and before the resolver sees the data. Errors stored as code/class/summary — never raw exception text.
-- **Atomic writes** — executor uses temp file + fsync + rename within the same directory fd. File patches are hash-locked (`before_sha256` verified before apply, `after_sha256` verified after).
+- **Atomic persistence** — report store uses temp file + fsync + rename. No partial writes on crash.
 
 ### Schema Drift (database)
 - **Operation matrix** — only recognized operation kinds are accepted; every other SQL node is blocked.
@@ -219,9 +237,9 @@ API contract changes are never auto-applied to a live system. The executor opens
 
 ## Key Design Decisions
 
-**Core is the authority.** `core/` owns the state machine, validator, cache, and persistence. All domain logic lives in adapters — `core/` never imports from adapters. This is enforced structurally: `test_skeleton.py` asserts the 7-file count and no-external-import rule on every test run. The constraint means adapters can be replaced or added without touching the shared workflow.
+**Core is the authority.** `core/` owns the state machine, cache, and persistence. All domain logic — including validators — lives in adapters. `core/` never imports from adapters. This is enforced structurally: `test_skeleton.py` asserts the exact file set and no-external-import rule on every test run. The constraint means adapters can be replaced or added without touching the shared workflow.
 
-**Validator is the safety boundary — not the LLM.** The LLM proposes; `core/validator.py` enforces. The validator re-derives its verdict from the operation matrix using `sqlglot` AST analysis — it doesn't trust the LLM's SQL string. A hallucinated `DROP TABLE` after a valid `CREATE INDEX` is caught by the matrix, not by prompt engineering.
+**Validator is the safety boundary — not the LLM.** The LLM proposes; `adapters/postgres/validator.py` enforces for database fixes. The validator re-derives its verdict from the operation matrix using `sqlglot` AST analysis — it doesn't trust the LLM's SQL string. A hallucinated `DROP TABLE` after a valid `CREATE INDEX` is caught by the matrix, not by prompt engineering.
 
 **Target binding.** For database fixes, the validator extracts the table/column/index name from the SQL AST and compares it to `Difference.target`. A mismatch blocks regardless of model confidence. The LLM cannot create an index on a different table by omitting the target from its rationale.
 
@@ -231,7 +249,13 @@ API contract changes are never auto-applied to a live system. The executor opens
 
 **Batch by kind, one PR per file.** When multiple API drifts of the same kind exist (e.g., three `FIELD_EXTRA` drifts), the executor groups them into one PR on `openapi.yaml` — not three separate PRs that would conflict on the same file. `FIELD_EXTRA` and `FIELD_MISSING` produce separate PRs (they patch different files). Idempotent: if an open `touchstone/*` PR with the same title prefix already exists, its URL is returned immediately.
 
-**Domain-aware prompts, temperature 0.** Each domain gets a different system prompt (`_DB_SYSTEM_PROMPT` for SQL rules, `_API_SYSTEM_PROMPT` for contract drift rationale, `_CACHE_SYSTEM_PROMPT` for cache drift rationale). Temperature is `0.0` on all calls — the same ghost must always produce the same output so the prompt SHA-256 is a stable cache key.
+**Domain-aware prompts, temperature 0.** Each domain gets a different system prompt (`_DB_SYSTEM_PROMPT` for SQL fix proposals, `_API_SYSTEM_PROMPT` for generating patched file content, `_CACHE_SYSTEM_PROMPT` for cache drift rationale). Temperature is `0.0` on all calls — the same ghost must always produce the same output so the prompt SHA-256 is a stable cache key.
+
+**Human authorization unlocks REVIEW_REQUIRED.** The UI always passes `human_authorized=True` when the user clicks Exorcise. This lets REVIEW_REQUIRED diffs (e.g. narrowing type changes, non-auto-fixable SQL, API field diffs) execute after human review — the validator skips the auto-fixability gate but still enforces all structural safety rules (SET/DELETE/TRUNCATE always blocked regardless).
+
+**Draft PR on double validation failure.** For API patches, `ultra()` validates the patched content after `deepseek_pro()` generates it. If ultra flags invalid on both attempts, `ContractExecutor` opens a **draft** PR with a warning body instead of blocking — the human can review and fix the patch manually before merging.
+
+**`apply_batch()` for multi-diff execution.** The orchestrator supports `apply_batch(ids)` which groups eligible diffs and delegates to `BatchExecutor.execute_batch()` if the executor supports it. Contract Observer uses this to batch all FIELD_EXTRA diffs into one GitHub PR instead of opening one per diff.
 
 ---
 
@@ -241,7 +265,7 @@ API contract changes are never auto-applied to a live system. The executor opens
 
 The entire project was driven from a single spec written before any code existed:
 
-- `.kiro/specs/touchstone/requirements.md` — 40 numbered requirements across four categories: core skeleton, database domain, API domain, deps domain
+- `.kiro/specs/touchstone/requirements.md` — numbered requirements across categories: core skeleton, database domain, API domain, cache domain
 - `.kiro/specs/touchstone/design.md` — state machine diagram, 56-cell transition table (7 states × 8 events), operation matrix, cache key design, SSRF rules
 - `.kiro/specs/touchstone/tasks.md` — phased implementation plan with a freeze gate at task 3.2; each completed task updated with a `VERIFIED:` note showing test counts
 
@@ -261,7 +285,7 @@ The biggest single impact: writing `product.md` before writing any code forced t
 
 `.kiro/agents/validator-reviewer.md` defines an independent safety auditor with a strict input contract. The agent receives no resolver rationale, no confidence score, and no context that could bias its evaluation. It re-derives its verdict from the operation matrix independently.
 
-**Advisory only**: the deterministic validator in `core/validator.py` is authoritative. The agent's verdict is recorded alongside the validator result. Disagreements escalate to human review — the agent cannot approve what the matrix blocks, and can flag concerns the matrix cannot express (e.g., a widening that is technically valid but suspiciously large for a typical identifier column).
+**Advisory only**: the deterministic validator in `adapters/postgres/validator.py` is authoritative. The agent's verdict is recorded alongside the validator result. Disagreements escalate to human review — the agent cannot approve what the matrix blocks, and can flag concerns the matrix cannot express (e.g., a widening that is technically valid but suspiciously large for a typical identifier column).
 
 ### Agent hooks
 
@@ -280,7 +304,7 @@ Invokes the resolver against each new demo case. Cache entries are written organ
 
 ### Property-based testing (PBT)
 
-`tests/test_properties.py` (planned — Req 41) will use Hypothesis to verify invariants across the type normalizer, SQL validator, state machine, and redaction layers.
+Property-based testing with Hypothesis (Req 41) is planned across the type normalizer, SQL validator, state machine, and redaction layers.
 
 ---
 
@@ -294,7 +318,7 @@ python fixtures/seed.py $DATABASE_URL
 
 # Run offline tests (no DB needed)
 python -m pytest tests/ -q
-# 426 passed, 5 skipped (live DB tests auto-skip when DATABASE_URL is unset)
+# 424 passed, 5 skipped (live DB tests auto-skip when DATABASE_URL is unset)
 
 # Run Postgres integration tests
 DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v
@@ -306,10 +330,9 @@ DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_
 
 ```
 touchstone/
-├── core/                                 # 7 files — no imports from outside core/
+├── core/                                 # 5 files — no imports from outside core/
 │   ├── interfaces.py
 │   ├── models.py
-│   ├── validator.py
 │   ├── cache.py
 │   ├── persistence.py
 │   └── orchestrator.py
@@ -317,6 +340,8 @@ touchstone/
 ├── adapters/
 │   ├── remote_source.py                  # fetches files from GitHub raw URLs
 │   ├── postgres/                         # schema-drift domain (complete)
+│   │   ├── models.py                     # SQLChange, FilePatch (adapter-level models)
+│   │   ├── validator.py                  # SQLValidator, operation matrix, safety rules
 │   │   ├── normalize.py
 │   │   ├── intended.py
 │   │   ├── actual.py
@@ -324,6 +349,7 @@ touchstone/
 │   │   ├── executor.py
 │   │   └── verifier.py
 │   ├── openapi/                          # contract-observer domain (complete)
+│   │   ├── validator.py                  # ultra-based patch validation
 │   │   ├── ssrf.py
 │   │   ├── intended.py
 │   │   ├── actual.py
@@ -331,13 +357,14 @@ touchstone/
 │   │   ├── executor.py
 │   │   └── verifier.py
 │   └── redis/                            # poltergeist domain (complete)
+│       ├── validator.py                  # CacheValidator
 │       ├── actual.py
 │       ├── intended.py
 │       ├── comparator.py
 │       ├── executor.py
 │       └── verifier.py
 ├── agents/
-│   ├── resolver.py                       # MantleResolver (Bedrock/Mantle LLM) + MockResolver fallback
+│   ├── resolver.py                       # MantleResolver (Bedrock/Mantle LLM) + MockResolver
 │   ├── mantle_client.py                  # Mantle OpenAI-compatible client (ultra/deepseek_pro, temp=0)
 │   ├── prompts.py                        # domain-aware system prompts (database/api/cache)
 │   └── redaction.py                      # token-based redaction + SafeError
@@ -365,11 +392,13 @@ touchstone/
 │   ├── seed.py                           # seeds Neon DB with drift cases
 │   ├── cases.json                        # drift cases for demo + cache seeding
 │   └── docker-compose.yml               # local Postgres 16 alternative
+├── scripts/
+│   └── run_comparator_test.py            # helper for comparator-test hook
 ├── cli.py                                # CLI: touchstone compare / touchstone report
 ├── pyproject.toml
 ├── tests/
-│   ├── test_skeleton.py                  # 7 files, no external imports
-│   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes (23 tests)
+│   ├── test_skeleton.py                  # 5 files, no external imports
+│   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes
 │   ├── test_normalize.py                 # type normaliser
 │   ├── test_validator_sql.py             # operation matrix + target binding + widening
 │   ├── test_state_transitions.py         # 56-cell state machine
@@ -377,24 +406,25 @@ touchstone/
 │   ├── test_cache_reproducibility.py     # cache hit / miss / provenance
 │   ├── test_orchestrator_mock.py         # end-to-end with fake infrastructure
 │   ├── test_resolver.py                  # MockResolver
-│   ├── test_mantle_resolver.py           # MantleResolver: routing, prompts, retry, fallback (20 tests)
+│   ├── test_mantle_resolver.py           # MantleResolver: routing, prompts, retry, fallback
 │   ├── test_executor_api.py              # ContractExecutor batch, idempotency, demo reset
 │   ├── test_ssrf.py                      # SSRF guard
 │   ├── test_comparator_api.py            # OpenAPI comparator
 │   ├── test_redaction.py                 # token-based redaction
 │   ├── test_comparator_cache.py          # Redis cache comparator
 │   ├── test_comparator_pg.py             # Postgres comparator (requires DATABASE_URL)
-│   ├── test_executor_pg.py               # Postgres executor (requires DATABASE_URL)
+│   ├── test_executor_pg.py               # Postgres executor unit tests
+│   ├── test_verifier_pg.py               # Postgres verifier unit tests
+│   ├── test_postgres_e2e.py              # Postgres end-to-end (requires DATABASE_URL)
 │   ├── test_sql_execution.py             # real Postgres SQL execution (requires DATABASE_URL)
-│   ├── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 4 files each
-│   └── test_properties.py               # Hypothesis PBT (planned)
+│   └── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 4 files each
 ├── .kiro/
 │   ├── specs/touchstone/                 # requirements.md, design.md, tasks.md
 │   ├── steering/                         # product.md, tech.md, kiro-features.md
 │   ├── hooks/                            # new-adapter, comparator-test, demo-case-cache
 │   ├── agents/                           # validator-reviewer.md
 │   └── settings/mcp.json                # Context7 MCP (pinned version)
-└── .github/workflows/                    # drift.yml CI (planned)
+└── .github/workflows/                    # CI (not yet implemented)
 ```
 
 ---
@@ -456,11 +486,11 @@ touchstone report
 
 ## Skeleton proof
 
-The skeleton is `core/` — 7 files. The skeleton implements the compare-verify workflow and knows nothing about any specific domain.
+The skeleton is `core/` — 5 files. It implements the compare-verify workflow and knows nothing about any specific domain.
 
-**What the skeleton is:** `core/interfaces.py` defines six protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Executor`, `Verifier`). The remaining six files implement state management, validation, caching, and persistence.
+**What the skeleton is:** `core/interfaces.py` defines seven base protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, `Verifier`) plus two optional capability protocols (`BatchExecutor`, `RollbackSupport`). The remaining four files implement state management, caching, persistence, and the orchestrator. Domain-specific validators and models live in `adapters/`, not in `core/`.
 
-**What the apps are:** Each app wires domain adapters to the orchestrator via `main.py`, plus a `config.json` (domain, accent, title), a `README.md`, and a `run.sh`. All domain logic lives in `adapters/`; `core/` owns only the workflow, state machine, and safety rules.
+**What the apps are:** Each app wires domain adapters to the orchestrator via `main.py`, plus a `config.json` (domain, accent, title), a `README.md`, and a `run.sh`. All domain logic lives in `adapters/`; `core/` owns only the workflow and state machine.
 
 **Verification:**
 
@@ -468,7 +498,7 @@ The skeleton is `core/` — 7 files. The skeleton implements the compare-verify 
 python -m pytest tests/test_skeleton.py -v
 ```
 
-`test_skeleton.py` asserts exactly 7 files in `core/` and that no module inside `core/` imports from `adapters/`, `agents/`, or `apps/`. This runs on every test pass.
+`test_skeleton.py` asserts the exact set of files in `core/` and that no module inside `core/` imports from `adapters/`, `agents/`, or `apps/`. This runs on every test pass.
 
 ---
 

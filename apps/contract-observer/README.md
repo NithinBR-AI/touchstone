@@ -8,13 +8,20 @@ Detects **API contract drift**: fields the live API returns that are not documen
 2. Pings `GET /health` on the live API (warms up Render free-tier cold-start)
 3. Probes each GET endpoint and infers the actual response schema
 4. Diffs intended vs actual — emits `FIELD_EXTRA` and `FIELD_MISSING` drift
-5. For each drift: opens a GitHub PR on the target repo to update the spec
+5. At resolve time: returns a lightweight proposal carrying field metadata (kind, fields, path, file) — no LLM call yet
+6. At execute time (Exorcise): fetches the target file from GitHub, calls DeepSeek v3.2 to generate the patched content, validates the patch with ultra(), then opens a GitHub PR
 
 ## Demo drift cases
 
-The demo target (`NithinBR-AI/touchstone-demo-target-repo`) returns:
-- `account_status` on `GET /users` — not in spec (**FIELD_EXTRA**)
-- `sku` on `GET /products` — not in spec (**FIELD_EXTRA**)
+The demo target (`NithinBR-AI/touchstone-demo-target-repo`) has three intentional drifts:
+
+| Ghost | Kind | File patched | Badge |
+|---|---|---|---|
+| `account_status` on `GET /users` — not in spec | `FIELD_EXTRA` | `openapi.yaml` | ⛓ BOUND |
+| `sku` on `GET /products` — not in spec | `FIELD_EXTRA` | `openapi.yaml` | ⛓ BOUND |
+| `loyalty_tier` declared in spec, not returned by `/users` | `FIELD_MISSING` | `main.py` | 🕯 SÉANCE NEEDED |
+
+All `FIELD_EXTRA` drifts are batched into one PR on `openapi.yaml`. `FIELD_MISSING` produces a separate PR on `main.py`.
 
 ## Running locally
 

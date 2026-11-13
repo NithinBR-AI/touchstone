@@ -36,9 +36,10 @@ Three-app submission shipped. Two mandatory apps satisfy Skeleton Crew.
 ### Requirement 1: Six-Interface Core
 1. `core/interfaces.py` defines six protocols: `InputSource`, `SourceAdapter`,
    `Comparator`, `Resolver`, `Executor`, `Verifier`.
-2. `core/` contains exactly seven files: `__init__.py` (not `init.py`),
-   `interfaces.py`, `models.py`, `orchestrator.py`, `validator.py`,
-   `persistence.py`, `cache.py`.
+2. `core/` contains exactly six files: `__init__.py` (not `init.py`),
+   `interfaces.py`, `models.py`, `orchestrator.py`, `persistence.py`,
+   `cache.py`. `validator.py` was moved to `adapters/postgres/validator.py`
+   as part of the Skeleton Crew refactor — domain validators live in adapters.
 3. Core modules may import from other core modules.
 4. No module outside `core/` imported by any module inside `core/`.
 5. `git log --oneline core/` shows exactly one freeze commit after the week-2
@@ -50,10 +51,14 @@ Three-app submission shipped. Two mandatory apps satisfy Skeleton Crew.
 1. `GhostState` enum: `PENDING`, `REVIEW_REQUIRED`, `BLOCKED`, `RESOLVED`,
    `STILL_PRESENT`, `EXECUTION_FAILED`, `SUPERSEDED`.
 2. `Difference` has `id: str` (UUID) and `signature: str` (stable hash).
-3. `Resolution.proposed_change: TypedChange | None` (None for review-only).
-4. `TypedChange = SQLChange | FilePatch`.
-5. `FilePatch` has `before_sha256`, `after_sha256`, `forward_patch`,
-   `reverse_patch`, `file_path`.
+3. `Resolution.proposed_change: ChangeProposal | None` (None for review-only).
+4. `ChangeProposal` is the opaque change carrier in `core/models.py`:
+   `domain`, `target`, `operation`, `payload: dict`. Core never inspects
+   `payload` contents — that is adapter knowledge only.
+5. `SQLChange` and `FilePatch` are adapter-level models in
+   `adapters/postgres/models.py` — NOT in core. `SQLChange` carries
+   `statement`, `operation`, `target`. `FilePatch` carries `before_sha256`,
+   `after_sha256`, `forward_patch`, `reverse_patch`, `file_path`.
 6. `ExecutionResult` has `rollback_bytes`, `post_apply_bytes`,
    `post_apply_sha256`, `file_path_ref` (file domain only).
 7. `VerificationResult`: `resolved: bool`, `rechecked_at`, `evidence: dict`,
@@ -156,9 +161,22 @@ enumeration. No pip subprocess.
 - Cache keyed by signature with `cache_version`, `validator_contract`,
   `prompt_hash`, `expires_at` (7-day TTL). Never caches null proposed_change.
   Written only after apply+verify (verification.resolved=True), not at resolve time.
-- `safe_fix=False` or `DECLARED_VERSION_MISMATCH` → review-only Resolution.
+- `DECLARED_VERSION_MISMATCH` → review-only Resolution (REVIEW_ONLY_KINDS).
+- `safe_fix=False` does NOT skip LLM — MantleResolver calls LLM for all database
+  diffs (including non-auto-fixable). Human reviews the LLM proposal in the UI
+  and clicks Exorcise to authorize; orchestrator passes `human_authorized=True`
+  to the validator which skips the auto-fixability gate for REVIEW_REQUIRED diffs.
+- Domain routing (MantleResolver):
+  - `database` → `ultra()` (QWEN 235B) — SQL fix proposals for all kinds
+  - `api` → lightweight `ChangeProposal` returned at resolve time (no LLM);
+    LLM patch generated and ultra-validated at execute time by ContractExecutor
+  - `cache` → deterministic `ChangeProposal` (CACHE_WARM or CACHE_DELETE) — no LLM
+  - `other` → `ultra()` default
+- API domain resolve-time proposal carries field metadata only: `{kind, fields,
+  path, file_name, schema_name, operation_id}` — executor uses this to fetch
+  the GitHub file and call the LLM at PR creation time.
 - Demo mode: cache is populated organically by apply+verify; hits marked `CACHED`.
-- **The resolver SHALL be operational in week 1** — mock returning canned
+- **The resolver SHALL be operational in week 1** — MockResolver with canned
   resolutions acceptable for week-1 schema-drift path.
 
 ### Requirement 16: MCP Grounding (optional)
@@ -168,13 +186,16 @@ don't cover syntax → `LOW`. If unreachable → proceed, force `LOW`. MCP
 improves quality; validator enforces safety independently.
 
 ### Requirement 17: SQL Validator — Matrix + Target Binding + Widening
-1. **Operation matrix** as constant in `core/validator.py` (see tech.md).
+1. **Operation matrix** as constant in `adapters/postgres/validator.py`
+   (Skeleton Crew refactor: SQLValidator moved out of core to adapter layer).
 2. Parse via `sqlglot` (pinned version).
 3. Reject multi-statement.
 4. **Reject `SET` statements outright** (timeout via connection options, not
-   statements).
+   statements). `SET`, `DELETE`, `TRUNCATE` always forbidden regardless of
+   `human_authorized`.
 5. Match AST to matrix. Reject if policy BLOCKED. REVIEW_REQUIRED diff kinds
-   produce `proposed_change=None`.
+   are auto-fixable=False in matrix; human_authorized=True skips the
+   auto-fixability gate so REVIEW_REQUIRED diffs can be applied after human review.
 6. Canonical target: quoted preserves case, unquoted lowercases, `public`
    stripped, non-public schema rejected. `"Users"` ≠ `users`.
 7. Reject `USING` clause, expression indexes, partial indexes.
@@ -186,23 +207,36 @@ improves quality; validator enforces safety independently.
 10. `tests/test_sqlglot_ast_assumptions.py` verifies AST shapes against
     pinned version.
 11. `tests/test_validator_sql.py`: all matrix rows, injection cases,
-    canonical target cases, target-binding mismatches, widening/non-widening,
-    `drop_flag` NOT blocked.
+    canonical target cases, target-binding mismatches, widening/non-widening.
+    Empty SQL → `"blocked"` (payload precheck before parser).
 12. `tests/test_sql_execution.py`: every auto-fixable case runs against real
-    ephemeral Postgres.
+    ephemeral Postgres (skipped if DATABASE_URL unset).
 
-### Requirement 18: File Patch Validator
-1. Symlink check on original path BEFORE resolve.
-2. Path confinement to project root.
-3. Verify `before_sha256`.
-4. Parse both original and patched (YAML root dict/list, TOML via tomllib,
-   requirements via packaging.requirements).
-5. Format-aware key extraction.
-6. Reject any key other than target.
-7. **Race-free file writes** — see Req 21 and design.md.
+### Requirement 18: API and Cache Patch Execution (replaces File Patch Validator)
+`FilePatchValidator` has been removed from `core/validator.py` as part of the
+Skeleton Crew refactor. API and cache fixes are now applied by domain executors:
 
-`test_validator_file.py`: traversal, symlink, stale hash, invalid YAML,
-YAML root as list, wrong-key, unrelated requirements line.
+**API domain (ContractExecutor — `adapters/openapi/executor.py`):**
+1. At execute time, fetches the target file from GitHub via authenticated API.
+2. Calls LLM (`deepseek_pro`) with the file content and scoped field instructions
+   (`build_api_batch_user_message`).
+3. Validates the patched content via `ultra()` with a SCOPE-constrained prompt
+   (validator told: check only the specific schema/function, not the whole file).
+4. Two-attempt retry; if both attempts fail ultra validation → opens a draft PR
+   with a warning body instead of a ready-to-merge PR.
+5. Commits patched content via GitHub API and opens a PR. Trailing newline
+   normalised to match original file.
+6. `operationId` threaded from comparator → `Difference.context` → executor →
+   LLM prompt, ensuring the LLM patches the exact function that serves the endpoint.
+
+**Cache domain (CacheExecutor — `adapters/redis/executor.py`):**
+1. Reads `operation` from `ChangeProposal.payload` (`CACHE_WARM` or `CACHE_DELETE`).
+2. `CACHE_WARM` → HTTP POST to `/cache/warm` on the demo API.
+3. `CACHE_DELETE` → HTTP DELETE to `/cache/delete` on the demo API.
+4. No file writes, no LLM call.
+
+`test_executor_api.py`: ContractExecutor batch, idempotency, demo reset.
+`test_comparator_cache.py`: KEY_MISSING/UNDECLARED_KEY, executor DELETE behaviour.
 
 ### Requirement 19: State Machine
 Orchestrator is sole state owner. Transitions:

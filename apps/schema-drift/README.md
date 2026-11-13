@@ -3,7 +3,8 @@
 Touchstone app — detects drift between the SQLAlchemy model declarations and
 the live Postgres schema. The declared schema lives in a separate target repo
 ([touchstone-demo-target](https://github.com/NithinBR-AI/touchstone-demo-target-repo));
-Touchstone points at it via the `MODELS_PATH` env var.
+Touchstone fetches `models.py` from the configured `models_url` in `repos.json`
+at runtime — no env var needed for the source path.
 
 ## Quick start
 
