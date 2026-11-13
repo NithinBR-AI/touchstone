@@ -49,8 +49,10 @@ docker compose -f fixtures/docker-compose.yml up
 
 ## Code conventions
 - Type hints on every public function
-- `core/` = exactly 7 files: `__init__.py`, `interfaces.py`, `models.py`,
-  `orchestrator.py`, `validator.py`, `persistence.py`, `cache.py`
+- `core/` = exactly 6 files: `__init__.py`, `interfaces.py`, `models.py`,
+  `orchestrator.py`, `persistence.py`, `cache.py`
+  (`validator.py` lives in each adapter: `adapters/postgres/validator.py`,
+  `adapters/openapi/validator.py`, `adapters/redis/validator.py`)
 - Core modules may import from other core modules
 - No module outside `core/` may be imported by any module inside `core/`
 - Adapters import from `core`; reverse is forbidden
@@ -59,9 +61,9 @@ docker compose -f fixtures/docker-compose.yml up
 - Tests mirror module structure under `tests/`
 
 ## Structure rules
-- `core/` — 7 files, frozen after week 2
+- `core/` — 6 files, frozen after week 2
 - `adapters/<domain>/` — intended.py, actual.py, comparator.py, executor.py,
-  verifier.py (plus normalize.py for Postgres; ssrf.py for openapi)
+  verifier.py, validator.py (plus normalize.py for Postgres; ssrf.py for openapi)
 - `apps/shared/ui/` — one template: index.html, app.js, style.css
 - `apps/<app-name>/` — main.py, config.json, README.md, run.sh
 - `fixtures/` — seed.py, cases.json, docker-compose.yml

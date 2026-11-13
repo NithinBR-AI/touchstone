@@ -68,9 +68,8 @@ Touchstone finds the gap — and proves every fix.
    auto-fixable. Everything else fails closed.
 
 9. **One shared UI template, per-app config.** Vanilla HTML/JS, Tailwind
-   via CDN, three animations maximum. Domain-specific evidence rendered via
-   a registry inside the shared template. No React, no build step, no
-   duplicated UI.
+   via CDN. Domain-specific evidence rendered via a registry inside the
+   shared template. No React, no build step, no duplicated UI.
 
 10. **Determinism is scoped:** same captured inputs → deterministic
     decisions. Live observations may vary; every run records its evidence.
@@ -86,10 +85,11 @@ Touchstone finds the gap — and proves every fix.
     exception text). Redaction happens before persistence, logging, and the
     resolver sees the data.
 
-13. **Public deployment requires authorization.** Either bearer-token auth
-    on /apply, /rollback, /report/:id, OR a strictly isolated read-only
-    demo. Server enforces the approval gate, not the browser. CORS
-    same-origin is not sufficient.
+13. **Public deployment uses open apply mode for demo.** Apply is fully
+    open — no bearer token. Principal recorded in audit log as
+    `"demo-sandbox"`. For non-demo deployments: bearer-token auth on
+    /apply, /rollback, /report/:id. Server enforces the gate, not the
+    browser. CORS same-origin is not sufficient.
 
 ## What Touchstone does NOT do
 - Install packages (declaration repair only; runtime unchanged)
