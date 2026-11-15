@@ -16,10 +16,19 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
       and firing each hook in Kiro IDE. Confirm trigger names, matcher
       syntax, and event payload field names. Adjust hook JSON to match
       installed version.
-      (three hook files exist in `.kiro/hooks/`; firing not yet verified)
+      VERIFIED 2026-11-15 in Kiro IDE 1.x. Findings: valid triggers are
+      `PostFileSave` / `PostFileCreate` (not `FileSave` / `FileCreate`);
+      `matcher` is a regex on the absolute path, so it must accept `\` and `/`
+      (`adapters[\\/].+[\\/]comparator\.py$`); command hooks receive
+      `{session_id, hook_event_name, cwd, file_path}` on stdin; hooks load only
+      at session start; file hooks fire only on agent edits; command-hook
+      output on PostFileSave is not shown in chat.
 - [x] 0.5 **Verify custom agent** loads in Kiro: `.kiro/agents/validator-reviewer.md`
       with YAML frontmatter. Test with a sample SQL input.
-      (agent file exists; load not yet verified)
+      VERIFIED 2026-11-15: agent loads and was invoked with
+      `{TABLE_EXTRA, users, "DROP TABLE users"}` → returned JSON
+      `verdict: reject` with reason + concerns (blocked kind, destructive,
+      no DB rollback).
 - [x] 0.6 Install and pin sqlglot. Record exact version in `pyproject.toml`.
 - [x] 0.7 Install and pin Context7 MCP version in `.kiro/settings/mcp.json`
       (current config points at an unpinned remote URL; pin a tested version)
@@ -581,11 +590,17 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ### 8. Kiro integrations (Week 4)
 
-- [ ] 8.1 Three hooks per Req 35 (files exist in `.kiro/hooks/`; add the
-      missing `scripts/run_comparator_test.py` helper that comparator-test
-      invokes, then verify via task 0.4)
-      NOTE: demo-case-cache hook matcher updated from `demo/cases.json` →
-      `fixtures/cases.json` (2026-11-11, folder renamed to fixtures/).
+- [x] 8.1 Three hooks per Req 35
+      VERIFIED 2026-11-15 (each fired in Kiro IDE from an agent edit):
+      · comparator-test (PostFileSave) — ran tests/test_comparator_pg.py,
+        10 passed; each run appends to `.kiro/hook-runs.log`. Helper maps
+        postgres→pg, openapi→api, redis→cache (all three suites pass).
+      · new-adapter (PostFileCreate) — creating adapters/test/comparator.py
+        scaffolded apps/test/ (4 files), tests/test_comparator_test.py,
+        RENDERERS stub, README section; core/ untouched; scaffold removed after.
+      · demo-case-cache (PostFileSave on fixtures/cases.json) — rewritten as a
+        read-only consistency check (Req 15/33: cache written only after
+        apply+verify); reported PASS for case-01..03, wrote no files.
   - _Req 35_
 - [ ] 8.2 MCP grounding — wire Context7 into MantleResolver for database domain
       mcp.json is already pinned (task 0.7 done). This task covers the runtime
@@ -603,8 +618,12 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       Add test: mock Context7 response → confirm excerpt in prompt;
       mock unreachable → confirm resolver proceeds with LOW confidence.
   - _Req 16_
-- [ ] 8.3 .kiro/agents/validator-reviewer.md — frontmatter + input contract
-      + constraints (file exists; verify via task 0.5)
+- [x] 8.3 .kiro/agents/validator-reviewer.md — frontmatter + input contract
+      + constraints
+      VERIFIED 2026-11-15 (see 0.5). Authority reference updated to
+      adapters/postgres/validator.py; added constraint that the reviewer stays
+      strict even when human_authorized=True lets the deterministic validator
+      accept DROP / non-widening changes (disagreement is surfaced, not an error).
   - _Req 15_
 - [x] 8.4 Fourth-domain extensibility proof — test_fourth_domain.py + README
       VERIFIED: 25 tests covering full lifecycle with in-memory config domain: detect →

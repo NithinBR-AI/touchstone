@@ -183,7 +183,89 @@ State machine
 
 7 states × 8 events = 56 transition cells. Each cell either results in the
 documented next state or refuses. Rollback is an event, not a state
-transition. Persistence on every state-changing path.
+transition. Persistence on every state-changing path. The orchestrator
+(`core/orchestrator.py`) is the only code that changes state.
+
+Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: run() — validator accepts proposal
+    [*] --> REVIEW_REQUIRED: run() — no proposal, or validator says review
+    [*] --> BLOCKED: run() — validator rejects proposal
+
+    PENDING --> RESOLVED: apply — executes, verify passes
+    PENDING --> STILL_PRESENT: apply — executes, verify fails
+    PENDING --> EXECUTION_FAILED: apply — executor fails or raises
+    PENDING --> REVIEW_REQUIRED: apply — no proposal / validator says review
+    PENDING --> BLOCKED: apply — validator rejects
+
+    REVIEW_REQUIRED --> RESOLVED: apply + human_authorized — verify passes
+    REVIEW_REQUIRED --> STILL_PRESENT: apply + human_authorized — verify fails
+    REVIEW_REQUIRED --> EXECUTION_FAILED: apply + human_authorized — executor fails
+    BLOCKED --> RESOLVED: apply + human_authorized — verify passes
+    BLOCKED --> STILL_PRESENT: apply + human_authorized — verify fails
+    BLOCKED --> EXECUTION_FAILED: apply + human_authorized — executor fails
+    BLOCKED --> REVIEW_REQUIRED: apply + human_authorized — no proposal
+
+    PENDING --> SUPERSEDED: reserved — sibling patch applied (not implemented)
+
+    RESOLVED --> RESOLVED: rollback — event recorded, state unchanged
+    STILL_PRESENT --> STILL_PRESENT: rollback — event recorded, state unchanged
+
+    RESOLVED --> [*]
+    STILL_PRESENT --> [*]
+    EXECUTION_FAILED --> [*]
+    SUPERSEDED --> [*]
+```
+
+Notes:
+· `run()` builds a fresh report; every difference is re-detected and
+  re-classified. Earlier states do not carry over.
+· `human_authorized=True` is set when the user clicks Exorcise. It unlocks
+  REVIEW_REQUIRED and BLOCKED for apply; the validator still runs and still
+  forbids SET / DELETE / TRUNCATE.
+· RESOLVED, STILL_PRESENT, EXECUTION_FAILED and SUPERSEDED are terminal for
+  apply. Rollback never changes state.
+
+Transition table (56 cells)
+
+Events:
+· E1 `run()` — re-scan
+· E2 apply — executor succeeds, verifier passes
+· E3 apply — executor succeeds, verifier fails
+· E4 apply — executor fails or raises
+· E5 apply — resolution has no proposed_change
+· E6 apply — validator rejects the proposal (result is the validator's
+  ghost_state: BLOCKED or REVIEW_REQUIRED)
+· E7 rollback — executor has no RollbackSupport (database, cache)
+· E8 rollback — executor has RollbackSupport (file domain)
+
+Legend:
+· `new` — fresh report; difference re-classified as PENDING / REVIEW_REQUIRED / BLOCKED
+· `—` — refused; state unchanged
+· `X†` — refused unless human_authorized=True; with it, the state becomes X
+· `event` — RollbackEvent appended (success per executor); state unchanged
+· `refused` — RollbackEvent(success=False) appended; state unchanged
+
+| State \ Event | E1 run | E2 verify pass | E3 verify fail | E4 exec fail | E5 no proposal | E6 validator rejects | E7 rollback, no support | E8 rollback, support |
+|---|---|---|---|---|---|---|---|---|
+| PENDING | new | RESOLVED | STILL_PRESENT | EXECUTION_FAILED | REVIEW_REQUIRED | validator state | refused | refused |
+| REVIEW_REQUIRED | new | RESOLVED† | STILL_PRESENT† | EXECUTION_FAILED† | REVIEW_REQUIRED† | validator state† | refused | refused |
+| BLOCKED | new | RESOLVED† | STILL_PRESENT† | EXECUTION_FAILED† | REVIEW_REQUIRED† | validator state† | refused | refused |
+| RESOLVED | new | — | — | — | — | — | refused | event |
+| STILL_PRESENT | new | — | — | — | — | — | refused | event |
+| EXECUTION_FAILED | new | — | — | — | — | — | refused | refused |
+| SUPERSEDED | new | — | — | — | — | — | refused | refused |
+
+E8 on RESOLVED / STILL_PRESENT also requires an execution record; without
+one the rollback is refused ("no execution record found").
+
+Invariants (Req 19, Req 41.4):
+· No path produces PENDING after a validator result other than "valid".
+· No apply path moves any state back to PENDING.
+· Rollback never changes state.
+· `persistence.save()` runs on every state-changing path.
 
 Redaction
 

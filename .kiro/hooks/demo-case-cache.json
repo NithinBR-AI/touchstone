@@ -2,13 +2,14 @@
   "version": "v1",
   "hooks": [
     {
-      "name": "Demo Case Cache Builder",
-      "trigger": "FileSave",
-      "matcher": "fixtures/cases\\.json$",
+      "name": "Demo Case Cache Checker",
+      "description": "Checks fixtures/cases.json stays consistent with the comparator so demo cases produce stable Difference.signature cache keys. Read-only: never writes cache entries (Req 15/33: cache is written only after apply+verify).",
+      "trigger": "PostFileSave",
+      "matcher": "fixtures[\\\\/]cases\\.json$",
       "enabled": true,
       "action": {
         "type": "agent",
-        "prompt": "The fixtures cases file changed. For each case in fixtures/cases.json without an entry in agents/cache.json, invoke the resolver against the case difference and write the Resolution into agents/cache.json keyed by Difference.signature (NOT UUID). Each entry MUST include cache_version, validator_contract, and prompt_hash. For safe_fix=false or DECLARED_VERSION_MISMATCH, write review-only Resolution with proposed_change=None. Report added/cached cases. Do not modify core/, any adapter, or the resolver source."
+        "prompt": "fixtures/cases.json changed. Check it is consistent with the comparators so every demo case produces a stable Difference.signature cache key. Do NOT write or modify any cache file (apps/*/.cache.json or any other): per Req 15/33 the cache is written only by the orchestrator after apply+verify succeeds, and null proposed_change is never cached. For each case check: (1) id, domain, kind, target, context, expected_state are present and ids are unique; (2) kind is one the matching comparator emits (database: adapters/postgres/comparator.py; api: adapters/openapi/comparator.py; cache: adapters/redis/comparator.py); (3) target uses that comparator's target format (e.g. INDEX_MISSING target ix_<table>_<cols>, column kinds <table>.<column>); (4) context carries the fields the validator binds against (INDEX_MISSING: table, columns; TYPE_CHANGED: original_actual_type); (5) expected_state is consistent with the operation matrix in .kiro/steering/tech.md. Report a short table of cases with PASS or the specific problem. Do not modify cases.json, core/, any adapter, or the resolver."
       }
     }
   ]

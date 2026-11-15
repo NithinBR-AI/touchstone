@@ -38,9 +38,9 @@ def main():
         print("Skipping: bad path")
         sys.exit(0)
 
-    test_file = f"tests/test_comparator_{domain}.py"
-    if domain == "postgres":
-        test_file = "tests/test_comparator_pg.py"
+    # Adapter folder name -> test file suffix (folder names differ from test names).
+    TEST_SUFFIX = {"postgres": "pg", "openapi": "api", "redis": "cache"}
+    test_file = f"tests/test_comparator_{TEST_SUFFIX.get(domain, domain)}.py"
     if not Path(test_file).exists():
         print(f"Skipping: {test_file} not found")
         sys.exit(0)
@@ -51,8 +51,22 @@ def main():
         capture_output=True,
         text=True,
     )
-    print(result.stdout or result.stderr)
+    output = result.stdout or result.stderr
+    print(output)
+    _log_run(test_file, output, result.returncode)
     sys.exit(result.returncode)
+
+
+def _log_run(test_file: str, output: str, returncode: int) -> None:
+    """Append one line per hook run to .kiro/hook-runs.log (evidence that the hook fired)."""
+    import datetime
+
+    lines = [ln for ln in output.strip().splitlines() if ln.strip()]
+    summary = lines[-1] if lines else "no output"
+    log = Path(__file__).resolve().parent.parent / ".kiro" / "hook-runs.log"
+    with log.open("a", encoding="utf-8") as f:
+        f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} "
+                f"{test_file} exit={returncode} {summary}\n")
 
 
 if __name__ == "__main__":

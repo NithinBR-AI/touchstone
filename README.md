@@ -141,7 +141,7 @@ Adding a domain requires implementing the adapter protocols. It never requires t
 
 ## State machine
 
-Seven states × eight events = 56 cells. Every cell is explicitly defined and tested.
+Seven states × eight events = 56 cells. Every cell is defined in [`design.md`](.kiro/specs/touchstone/design.md) (state diagram and transition table); `tests/test_state_transitions.py` tests them.
 
 | State | Meaning |
 |---|---|
@@ -286,22 +286,29 @@ API contract changes are never auto-applied to a live system. The executor opens
 
 ## How Kiro was used
 
+### Kiro client
+
+The whole project was built in **Kiro IDE**: specs, steering, hooks, the custom agent and all code. Kiro CLI, Web and Crew were not used.
+
 ### Spec-driven development
 
 The entire project was driven from a single spec written before any code existed:
 
 - `.kiro/specs/touchstone/requirements.md` — numbered requirements across categories: core skeleton, database domain, API domain, cache domain
-- `.kiro/specs/touchstone/design.md` — state machine diagram, 56-cell transition table (7 states × 8 events), operation matrix, cache key design, SSRF rules
-- `.kiro/specs/touchstone/tasks.md` — phased implementation plan with a freeze gate at task 3.2; each completed task updated with a `VERIFIED:` note showing test counts
+- `.kiro/specs/touchstone/design.md` — repository layout, state machine diagram and 56-cell transition table (7 states × 8 events), validator design per domain, SSRF and atomic-write designs, testing strategy
+- `.kiro/steering/tech.md` — the SQL operation matrix and type-widening table the validator enforces
+- `.kiro/specs/touchstone/tasks.md` — phased implementation plan; each completed task carries a `VERIFIED:` note with test counts
 
-The difference from vibe coding was structural: the spec forced resolution of ambiguous cases before implementation began. For example, "what happens when a narrowing type change is proposed?" was answered in requirements (`REVIEW_REQUIRED`, `proposed_change=None`) before the resolver or validator were written.
+The plan had a freeze gate at task 3.2, and `core/` was frozen at commit `87cbacb`. It was reopened later when Contract Observer needed batch apply and human authorization (`apply_batch`, `human_authorized`) and the SQL validator moved out of `core/` into `adapters/postgres/`. The freeze claim was dropped (task 10.4). The Skeleton Crew proof now rests on `tests/test_skeleton.py`, which checks the `core/` file set and import rules on every test run.
+
+The difference from vibe coding was structural: the spec forced resolution of ambiguous cases before implementation began. For example, "what happens when a narrowing type change is proposed?" was answered in requirements before the resolver or validator were written: `bigint → integer` is not in the widening table, so the ghost is `REVIEW_REQUIRED`. When the spec later added human authorization, it changed only who may apply that fix (a human clicking Exorcise). The validator still decides the state.
 
 ### Steering docs
 
 Three steering docs guided every Kiro response throughout the build:
 
-- **`product.md`** — 13 non-negotiable principles. The most consequential: "LLM proposes; validator decides; human authorizes" and "core/ never imports from adapters." These prevented scope creep in both directions.
-- **`tech.md`** — stack, operation matrix, SSRF rules, redaction contract, type widening table. The widening pairs spelled out here meant the validator implementation required no judgment calls.
+- **`product.md`** — 13 non-negotiable principles. The most consequential: "LLM proposes; validator decides; human authorizes" and its closing rule: "Ask: does this require changing core/? If yes, the answer is no. Write an adapter." These prevented scope creep in both directions.
+- **`tech.md`** — stack, code conventions (including "no module outside `core/` may be imported by any module inside `core/`"), operation matrix, SSRF rules, redaction contract, type widening table. The widening pairs spelled out here meant the validator implementation required no judgment calls.
 - **`kiro-features.md`** — documented which Kiro features to use and how, including the PBT strategy, the custom agent contract, and what the submission write-up must cover.
 
 The biggest single impact: writing `product.md` before writing any code forced the product boundary to be explicit. When implementation revealed a tension (e.g., "should rollback generate an inverse SQL statement?"), the steering doc had already answered it ("NO — preserve the observed state; no inverse generated").
@@ -310,18 +317,31 @@ The biggest single impact: writing `product.md` before writing any code forced t
 
 `.kiro/agents/validator-reviewer.md` defines an independent safety auditor with a strict input contract. The agent receives no resolver rationale, no confidence score, and no context that could bias its evaluation. It re-derives its verdict from the operation matrix independently.
 
-**Advisory only**: the deterministic validator in `adapters/postgres/validator.py` is authoritative. The agent's verdict is recorded alongside the validator result. Disagreements escalate to human review — the agent cannot approve what the matrix blocks, and can flag concerns the matrix cannot express (e.g., a widening that is technically valid but suspiciously large for a typical identifier column).
+**Advisory only**: the deterministic validator in `adapters/postgres/validator.py` is authoritative. The agent is a development-time reviewer invoked from Kiro chat; no app calls it at runtime. It must not approve anything the matrix blocks, and it can flag concerns the matrix cannot express (e.g., a widening that is technically valid but suspiciously large for a typical identifier column).
+
+It stays strict on purpose. When a human clicks Exorcise, the deterministic validator accepts DROP and non-widening changes it would otherwise refuse. The reviewer still rejects them, so reviewing a proposed fix in Kiro chat gives a second opinion that does not loosen with authorization.
+
+**Verified** in Kiro IDE with `{"difference_kind": "TABLE_EXTRA", "difference_target": "users", "proposed_sql": "DROP TABLE users"}`. It returned `"verdict": "reject"`, citing a blocked kind, a destructive operation and no database rollback.
 
 ### Agent hooks
 
-**`new-adapter`** (trigger: `FileCreate` on `adapters/**/comparator.py`)
-Scaffolds the full application plumbing when a new domain comparator is created: `apps/<domain>/main.py`, `config.json`, `README.md`, `run.sh`, a renderer stub in the shared UI `RENDERERS` registry, and a comparator test file. The hook prompt explicitly prohibits modifying `core/`.
+Three hooks in `.kiro/hooks/`. File hooks fire when the Kiro agent creates or saves a file, not on manual editor saves. All three were **verified** in Kiro IDE by having the agent make each triggering edit.
 
-**`comparator-test`** (trigger: `FileSave` on `adapters/**/comparator.py`)
-Runs the matching comparator test suite on every save. Resolves the test file from the domain folder name — `adapters/postgres/comparator.py` triggers `tests/test_comparator_pg.py`.
+**`new-adapter`** (trigger: `PostFileCreate` on `adapters/**/comparator.py`)
+Scaffolds the full application plumbing when a new domain comparator is created: `apps/<domain>/main.py`, `config.json`, `README.md`, `run.sh`, a renderer stub in the shared UI `RENDERERS` registry, and a comparator test file. The hook prompt explicitly prohibits modifying `core/`. Verified by creating `adapters/test/comparator.py`: the agent scaffolded `apps/test/`, a test file, a renderer stub and a README section, and left `core/` untouched. The scaffold was then removed.
 
-**`demo-case-cache`** (trigger: `FileSave` on `fixtures/cases.json`)
-Invokes the resolver against each new demo case. Cache entries are written organically by `apply_one()` after verification succeeds — not by this hook directly. The hook seeds demo drift so the apply+verify path can populate the cache naturally.
+**`comparator-test`** (trigger: `PostFileSave` on `adapters/**/comparator.py`)
+Runs the matching comparator test suite when the agent saves a comparator. Maps the domain folder to its test file: `postgres` → `tests/test_comparator_pg.py`, `openapi` → `tests/test_comparator_api.py`, `redis` → `tests/test_comparator_cache.py`. Each run appends a line to `.kiro/hook-runs.log`, e.g. `tests/test_comparator_pg.py exit=0 10 passed`, because Kiro does not show a save hook's command output in chat.
+
+**`demo-case-cache`** (trigger: `PostFileSave` on `fixtures/cases.json`)
+Checks every demo case will produce a stable `Difference.signature` cache key: required fields, a kind the comparator emits, the comparator's target format, the context fields the validator binds against, and an expected state consistent with the operation matrix. Read-only — cache entries are written only by `apply_one()` after verification succeeds. Verified by editing a case description; the agent reported PASS for case-01 to case-03 and wrote no files.
+
+What verification taught us about the installed Kiro version:
+
+- Trigger names are `PostFileSave` and `PostFileCreate`. The first drafts used `FileSave` and `FileCreate`, which never fired.
+- `matcher` is a regex on the absolute file path. On Windows that path uses `\`, so the matchers accept both separators: `adapters[\\/].+[\\/]comparator\.py$`.
+- Command hooks receive `{session_id, hook_event_name, cwd, file_path}` as JSON on stdin.
+- Hooks load at session start. Edited hook files need a new session.
 
 ### MCP — Context7
 
@@ -330,6 +350,10 @@ Invokes the resolver against each new demo case. Cache entries are written organ
 ### Property-based testing (PBT)
 
 Property-based testing with Hypothesis (Req 41) is planned across the type normalizer, SQL validator, state machine, and redaction layers.
+
+### Kiro powers
+
+No Kiro powers were used. Context7 is configured as a plain MCP server, not as a power.
 
 ---
 

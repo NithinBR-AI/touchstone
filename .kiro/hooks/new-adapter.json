@@ -3,8 +3,8 @@
   "hooks": [
     {
       "name": "New Adapter Scaffolder",
-      "trigger": "FileCreate",
-      "matcher": "adapters/.*/comparator\\.py$",
+      "trigger": "PostFileCreate",
+      "matcher": "adapters[\\\\/].+[\\\\/]comparator\\.py$",
       "enabled": true,
       "action": {
         "type": "agent",

@@ -3,8 +3,8 @@
   "hooks": [
     {
       "name": "Comparator Test Runner",
-      "trigger": "FileSave",
-      "matcher": "adapters/.*/comparator\\.py$",
+      "trigger": "PostFileSave",
+      "matcher": "adapters[\\\\/].+[\\\\/]comparator\\.py$",
       "enabled": true,
       "action": {
         "type": "command",
