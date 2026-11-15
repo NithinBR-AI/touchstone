@@ -602,7 +602,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
         read-only consistency check (Req 15/33: cache written only after
         apply+verify); reported PASS for case-01..03, wrote no files.
   - _Req 35_
-- [ ] 8.2 MCP grounding — wire Context7 into MantleResolver for database domain
+- [x] 8.2 MCP grounding — wire Context7 into MantleResolver for database domain
       mcp.json is already pinned (task 0.7 done). This task covers the runtime
       integration scoped to where it adds real value:
       · database domain only: before building the ultra() user prompt, call
@@ -617,6 +617,22 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       safety independently — MCP improves proposal quality only.
       Add test: mock Context7 response → confirm excerpt in prompt;
       mock unreachable → confirm resolver proceeds with LOW confidence.
+      DONE 2026-11-15:
+      · agents/context7.py — Context7 REST API (GET /api/v2/context,
+        library /websites/postgresql), not the MCP protocol, so no Node at
+        runtime. One query per kind, ≤ 2,000 chars, SSRF check,
+        trust_env=False, follow_redirects=False, 5 s timeout, OS trust store.
+        Cached per kind: 6 h success / 60 s failure. API key optional (none used).
+      · Docs appended to the database system prompt (sent to ultra()) with
+        "syntax only" instruction; sqlglot docs not fetched (PostgreSQL only).
+        prompt_sha256 covers the docs. No docs → rationale ends
+        "(confidence: LOW, no Context7 docs)".
+      · tests/test_context7.py: 20 tests, faked HTTP. test_mantle_resolver.py
+        gains an autouse fixture keeping it offline.
+      · VERIFIED live in Schema Drift with cache moved aside: 4 ghosts resolved
+        fresh, no LOW notes; users.age rationale cited PostgreSQL implicit
+        casting, matching the Context7 excerpt.
+      · Full suite: 478 passed, 1 skipped (service env vars blanked).
   - _Req 16_
 - [x] 8.3 .kiro/agents/validator-reviewer.md — frontmatter + input contract
       + constraints
@@ -696,7 +712,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ## Notes
 
-- Current test count: **449 passed, 5 skipped** (offline run, no DATABASE_URL).
+- Current test count: **478 passed, 1 skipped** (2026-11-15, service env vars blanked).
   Skips: 2 Neon DB integration tests (require DATABASE_URL), 3 e2e cache/Redis tests.
 - Real Neon run (2026-11-11): test_postgres_e2e + test_sql_execution → 9 passed, 1 skipped.
   Seed with `fixtures/seed.py` before each full Neon run to restore drift state.

@@ -12,9 +12,24 @@ import os
 
 import pytest
 
+from agents import context7
 from agents.prompts import _API_SYSTEM_PROMPT, _CACHE_SYSTEM_PROMPT, _DB_SYSTEM_PROMPT, build_prompt
 from agents.resolver import MantleResolver
 from core.models import Difference, GhostState
+
+
+@pytest.fixture(autouse=True)
+def _offline_context7(monkeypatch):
+    """Database resolves call Context7; keep these tests offline (no docs → LOW note)."""
+
+    def fake_get(url, headers):
+        raise ConnectionError("network disabled in tests")
+
+    context7.clear_cache()
+    monkeypatch.setattr("agents.context7._http_get", fake_get)
+    monkeypatch.setattr("agents.context7.ssrf_validate", lambda url: url)
+    yield
+    context7.clear_cache()
 
 # ---------------------------------------------------------------------------
 # Helpers

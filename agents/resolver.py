@@ -39,8 +39,16 @@ import os
 import re
 from typing import Any, Callable
 
-from agents.prompts import build_api_batch_user_message, build_prompt, prompt_sha256
+from agents.context7 import fetch_pg_docs
+from agents.prompts import (
+    build_api_batch_user_message,
+    build_docs_section,
+    build_prompt,
+    prompt_sha256,
+)
 from core.models import ChangeProposal, Difference, Resolution
+
+LOW_CONFIDENCE_NOTE = "confidence: LOW, no Context7 docs"
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +319,16 @@ class MantleResolver:
                 "Review required: version mismatch requires manual investigation.",
             )
 
-        # Database domain — SQL fix via LLM
+        # Database domain — SQL fix via LLM, grounded in Context7 docs when available.
+        # Docs only improve the proposal; the validator still decides safety.
+        docs = fetch_pg_docs(difference.kind)
+        if docs:
+            prompt = prompt + build_docs_section(docs)
+            digest = prompt_sha256(prompt)  # hash the exact prompt sent
+            note = ""
+        else:
+            note = f" ({LOW_CONFIDENCE_NOTE})"
+
         last_error = ""
         for attempt in range(MAX_ATTEMPTS):
             try:
@@ -330,16 +347,20 @@ class MantleResolver:
                 continue
 
             if payload["action"] == "review":
-                return self._make_resolution(difference, digest, None, payload["rationale"])
+                return self._make_resolution(
+                    difference, digest, None, payload["rationale"] + note
+                )
 
             proposal = _sql_proposal(difference, payload)
-            return self._make_resolution(difference, digest, proposal, payload["rationale"])
+            return self._make_resolution(
+                difference, digest, proposal, payload["rationale"] + note
+            )
 
         return self._make_resolution(
             difference,
             digest,
             None,
-            f"Blocked: resolver output failed schema validation after {MAX_ATTEMPTS} attempts ({last_error}).",
+            f"Blocked: resolver output failed schema validation after {MAX_ATTEMPTS} attempts ({last_error}).{note}",
         )
 
     def _resolve_api(self, difference: Difference, digest: str) -> Resolution:

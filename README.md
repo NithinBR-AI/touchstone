@@ -30,7 +30,7 @@ The skeleton is `core/` — exactly 5 files. Three applications (`schema-drift`,
 python -m pytest tests/test_skeleton.py tests/test_fourth_domain.py tests/test_apps_structure.py -v
 ```
 
-**Test suite:** 449 passed, 5 skipped (live DB/Redis tests auto-skip when env vars are unset).
+**Test suite:** 478 passed, 1 skipped with no service credentials set.
 
 ---
 
@@ -345,7 +345,19 @@ What verification taught us about the installed Kiro version:
 
 ### MCP — Context7
 
-`.kiro/settings/mcp.json` pins Context7 at `@upstash/context7-mcp@4.6.0`. Kiro uses it during development to look up library documentation (sqlglot, psycopg, httpx) before generating code — grounding responses in actual API behavior rather than training recall. Context7 is a Kiro dev-time tool; it is not called at runtime by any app or the resolver.
+Context7 is used in two places.
+
+**During development.** `.kiro/settings/mcp.json` pins the Context7 MCP server at `@upstash/context7-mcp@4.6.0`. Kiro uses it to look up library documentation (sqlglot, psycopg, httpx) before generating code, so its answers rest on current API behaviour rather than training recall.
+
+**At runtime, in Schema Drift.** Before the database resolver asks the LLM for a SQL fix, `agents/context7.py` fetches a PostgreSQL documentation excerpt for that ghost's kind (for example `ALTER COLUMN TYPE` for a Type Wraith) and appends it to the prompt, capped at 2,000 characters. It calls the same Context7 service over its REST API (`GET https://context7.com/api/v2/context`, library `/websites/postgresql`), so the app needs no Node or MCP client.
+
+- **Docs improve proposals; the validator still decides.** The prompt tells the LLM to use the docs for syntax only. That matters: the docs Context7 returns for `ALTER COLUMN TYPE` show a `USING` clause and several columns changed in one statement, and the validator rejects both. If the LLM copied them anyway, the validator would block the proposal.
+- **Graceful fallback.** If Context7 is unreachable or returns nothing, the resolver proceeds without docs and the card's rationale ends with `(confidence: LOW, no Context7 docs)`.
+- **Same outbound-HTTP rules as the rest of the app:** SSRF check, `trust_env=False`, `follow_redirects=False`, a 5-second timeout. Results are cached per ghost kind for 6 hours; failures for 60 seconds.
+- **No API key needed.** Context7 serves anonymous requests at a lower rate limit; `CONTEXT7_API_KEY` is used only if set.
+- **Database only.** Contract Observer calls its LLM inside the executor, and The Poltergeist uses no LLM.
+
+Observed effect: with docs in the prompt, the resolver's rationale for narrowing `users.age` from `bigint` to `integer` notes that the change relies on PostgreSQL's implicit cast and is safe only while values fit. That matches the postgresql.org text Context7 returned, and the earlier answer without docs did not mention it.
 
 ### Property-based testing (PBT)
 
@@ -369,7 +381,7 @@ python fixtures/seed.py $DATABASE_URL
 
 # Run offline tests (no DB needed)
 python -m pytest tests/ -q
-# 449 passed, 5 skipped (live DB tests auto-skip when DATABASE_URL is unset)
+# 478 passed, 1 skipped (no service credentials set)
 
 # Run Postgres integration tests
 DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v
@@ -418,6 +430,7 @@ touchstone/
 │   ├── resolver.py                       # MantleResolver (Bedrock/Mantle LLM) + MockResolver
 │   ├── mantle_client.py                  # Mantle OpenAI-compatible client (ultra/deepseek_pro, temp=0)
 │   ├── prompts.py                        # domain-aware system prompts (database/api/cache)
+│   ├── context7.py                       # Context7 REST: PostgreSQL docs for the database prompt
 │   └── redaction.py                      # token-based redaction + SafeError
 ├── apps/
 │   ├── shared/ui/                        # one shared Halloween-themed template
@@ -460,6 +473,7 @@ touchstone/
 │   ├── test_orchestrator_mock.py         # end-to-end with fake infrastructure
 │   ├── test_resolver.py                  # MockResolver
 │   ├── test_mantle_resolver.py           # MantleResolver: routing, prompts, retry, fallback
+│   ├── test_context7.py                  # Context7 docs grounding (faked HTTP)
 │   ├── test_executor_api.py              # ContractExecutor batch, idempotency, demo reset
 │   ├── test_ssrf.py                      # SSRF guard
 │   ├── test_comparator_api.py            # OpenAPI comparator

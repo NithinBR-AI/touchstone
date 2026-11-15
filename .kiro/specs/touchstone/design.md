@@ -292,6 +292,7 @@ test_state_transitions.py 56-cell matrix + invariants + persisted-state
 test_rollback.py File success, external edit, double rollback, DB refusal
 test_cache_reproducibility.py Signature match, cache hits
 test_mantle_resolver.py MantleResolver domain routing, retries, fallback, deferred API proposal
+test_context7.py Docs excerpt in db prompt, prompt hash covers docs, LOW on failure, per-kind cache, outbound HTTP rules
 test_demo_repeatability.py Two runs → identical semantic outcomes by signature
 test_skeleton.py AST-enforced: 6 files, no external imports, no sqlglot, no domain-string comparisons
 test_fourth_domain.py Full lifecycle with in-memory config domain — zero core changes required

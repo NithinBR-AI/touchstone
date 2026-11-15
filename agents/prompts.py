@@ -167,6 +167,18 @@ def build_prompt(difference: Difference) -> str:
     return f"{system}\nPROMPT_VERSION: {PROMPT_VERSION}\n\nDIFFERENCE:\n{body}\n"
 
 
+def build_docs_section(excerpt: str) -> str:
+    """Reference-docs block appended to the database prompt (Req 16)."""
+    return (
+        "\n\nReference documentation (PostgreSQL, fetched via Context7).\n"
+        "Use it for syntax only. The Rules above still apply: if the docs show a "
+        "USING clause, several statements, or any other forbidden form, do not copy it.\n"
+        "<docs>\n"
+        f"{excerpt}\n"
+        "</docs>\n"
+    )
+
+
 def prompt_sha256(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 

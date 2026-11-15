@@ -184,9 +184,24 @@ enumeration. No pip subprocess.
 
 ### Requirement 16: MCP Grounding (optional)
 Context7 config in `.kiro/settings/mcp.json` with **pinned version** (not
-`@latest`). Fetch PostgreSQL/OpenAPI 3.1/PEP 621 docs per domain. If docs
-don't cover syntax → `LOW`. If unreachable → proceed, force `LOW`. MCP
-improves quality; validator enforces safety independently.
+`@latest`). If docs don't cover syntax → `LOW`. If unreachable → proceed,
+force `LOW`. MCP improves quality; validator enforces safety independently.
+
+Implemented scope (v1):
+1. Database domain only. `agents/context7.py` fetches PostgreSQL docs
+   (`/websites/postgresql`) from the Context7 REST API
+   (`GET /api/v2/context`), one query per difference kind.
+2. `MantleResolver` appends the excerpt (≤ 2,000 chars) to the database prompt
+   with an instruction to use it for syntax only. `prompt_sha256` hashes the
+   prompt including the docs.
+3. No docs (unreachable, non-200, empty, SSRF failure) → resolver proceeds and
+   the rationale ends with `(confidence: LOW, no Context7 docs)`.
+4. Outbound HTTP per tech.md: SSRF check, `trust_env=False`,
+   `follow_redirects=False`, 5 s timeout, OS trust store. Cached per kind:
+   6 h on success, 60 s on failure. `CONTEXT7_API_KEY` optional.
+5. API and cache domains are out of scope: the API LLM runs in the executor,
+   and the cache domain has no LLM. OpenAPI 3.1 / PEP 621 docs not fetched.
+6. `tests/test_context7.py` covers all of the above with faked HTTP.
 
 ### Requirement 17: SQL Validator — Matrix + Target Binding + Widening
 1. **Operation matrix** as constant in `adapters/postgres/validator.py`
