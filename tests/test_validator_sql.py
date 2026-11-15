@@ -263,6 +263,80 @@ def test_create_index_named_wrong_table_blocked(validator: SQLValidator, index_m
     assert result.ghost_state == GhostState.BLOCKED
 
 
+# Regression cases for gaps found by property-based testing (tests/test_properties.py)
+
+
+def test_create_index_reversed_column_order_blocked(validator: SQLValidator):
+    """(a, b) and (b, a) are different indexes; columns must keep the declared order."""
+    diff = Difference(
+        kind="INDEX_MISSING",
+        target="ix_users_last_name_first_name",
+        context={"table": "users", "columns": ["last_name", "first_name"]},
+    )
+    change = SQLChange(
+        statement="CREATE INDEX ix_users_last_name_first_name ON users (first_name, last_name)",
+        operation="CREATE_INDEX",
+        target="ix_users_last_name_first_name",
+    )
+    result = validator.validate(_proposal(change), diff)
+    assert result.status == "invalid"
+    assert "in that order" in result.reason
+    assert result.ghost_state == GhostState.BLOCKED
+
+
+def test_create_index_unnamed_blocked(validator: SQLValidator, index_missing_diff: Difference):
+    """An unnamed index gets a Postgres-generated name, not ix_<table>_<cols>."""
+    change = SQLChange(
+        statement="CREATE INDEX ON users (email)",
+        operation="CREATE_INDEX",
+        target="ix_users_email",
+    )
+    result = validator.validate(_proposal(change), index_missing_diff)
+    assert result.status == "invalid"
+    assert "must name the index" in result.reason
+    assert result.ghost_state == GhostState.BLOCKED
+
+
+def test_create_index_non_btree_blocked(validator: SQLValidator, index_missing_diff: Difference):
+    """Only plain B-tree indexes are auto-fixable."""
+    change = SQLChange(
+        statement="CREATE INDEX ix_users_email ON users USING hash (email)",
+        operation="CREATE_INDEX",
+        target="ix_users_email",
+    )
+    result = validator.validate(_proposal(change), index_missing_diff)
+    assert result.status == "invalid"
+    assert "B-tree" in result.reason
+    assert result.ghost_state == GhostState.BLOCKED
+
+
+def test_create_index_explicit_btree_allowed(validator: SQLValidator, index_missing_diff: Difference):
+    """Spelling out USING btree is still a plain B-tree."""
+    change = SQLChange(
+        statement="CREATE INDEX ix_users_email ON users USING btree (email)",
+        operation="CREATE_INDEX",
+        target="ix_users_email",
+    )
+    result = validator.validate(_proposal(change), index_missing_diff)
+    assert result.status == "valid"
+
+
+@pytest.mark.parametrize("column", ["email DESC", "email NULLS FIRST", "email DESC NULLS LAST"])
+def test_create_index_non_default_sort_blocked(
+    validator: SQLValidator, index_missing_diff: Difference, column: str
+):
+    """Index columns must use the default sort order."""
+    change = SQLChange(
+        statement=f"CREATE INDEX ix_users_email ON users ({column})",
+        operation="CREATE_INDEX",
+        target="ix_users_email",
+    )
+    result = validator.validate(_proposal(change), index_missing_diff)
+    assert result.status == "invalid"
+    assert "default sort order" in result.reason
+    assert result.ghost_state == GhostState.BLOCKED
+
+
 # --------------------------------------------------------------------------
 # 4. ALTER COLUMN TYPE validation
 # --------------------------------------------------------------------------

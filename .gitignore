@@ -16,6 +16,7 @@ build/
 
 # Pytest
 .pytest_cache/
+.hypothesis/
 .coverage
 htmlcov/
 

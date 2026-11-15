@@ -30,7 +30,7 @@ The skeleton is `core/` — exactly 5 files. Three applications (`schema-drift`,
 python -m pytest tests/test_skeleton.py tests/test_fourth_domain.py tests/test_apps_structure.py -v
 ```
 
-**Test suite:** 478 passed, 1 skipped with no service credentials set.
+**Test suite:** 625 passed, 12 skipped offline (no credentials); 632 passed, 5 skipped with a Neon `DATABASE_URL`. The 5 end-to-end tests run only right after a re-seed.
 
 ---
 
@@ -250,10 +250,11 @@ API contract changes are never auto-applied to a live system. The executor opens
 - **Target binding** — validator extracts table/column/index from the SQL AST and compares against `Difference.target`; a mismatch blocks regardless of resolver confidence.
 - **Connection-level timeout** — 30s via `options="-c statement_timeout=30000"` at connect time; never via `SET`.
 - **USING clause / expression index / partial index** — structurally rejected.
+- **CREATE INDEX is exactly the declared index** — name must be `ix_<table>_<cols>`, columns in the declared order, plain B-tree (no `USING hash`/`gin`), default sort order (no `DESC` / `NULLS FIRST`). These rules come from tech.md; property-based testing showed the validator was not enforcing them (see below).
 
 ### Contract Observer (API)
 - **Two-stage validation.** The orchestrator-level `ContractValidator` runs at scan time (step 5) on a lightweight metadata proposal that contains only field metadata — no patched content yet. It performs structural pre-checks (operation == FILE_PATCH, file_name present, target matches diff). The resolver intentionally does not call the LLM at scan time because that would slow down Compare. The result is always BLOCKED until the human authorizes. When the human clicks Exorcise, `ContractExecutor.execute_batch()` calls `deepseek_pro()` to generate the patched content and then validates it with `ultra()` before opening a PR. **`ultra()` inside `execute_batch` is the patch validation boundary for the API domain — not the orchestrator-level validator.**
-- **SSRF protection** — all outbound HTTP blocks loopback, private, link-local, reserved, and IPv4-mapped-IPv6 destinations. Validated before every request.
+- **SSRF protection** — before every request, every resolved address (including IPv4-mapped IPv6) is checked against the exact blocked-range list in tech.md, and anything multicast or not globally routable is refused. The same guard covers Context7 calls.
 - **`follow_redirects=False`** — redirects are not auto-followed. Same-host redirects are manually followed (max 5 hops) with SSRF revalidation on each hop.
 - **`trust_env=False`** — no proxy env vars.
 - **No live mutations** — the executor opens a GitHub PR; it never patches the live API.
@@ -361,7 +362,22 @@ Observed effect: with docs in the prompt, the resolver's rationale for narrowing
 
 ### Property-based testing (PBT)
 
-Property-based testing with Hypothesis (Req 41) is planned across the type normalizer, SQL validator, state machine, and redaction layers.
+`tests/test_properties.py` uses Hypothesis (Req 41). Each test states a rule and Hypothesis generates the inputs, usually 100 per property:
+
+- **Type normalizer** — the 30+ reference triples, any letter case and outer whitespace, generated `varchar(n)` and `numeric(p,s)`, SQLAlchemy ↔ Postgres round-trip, unsupported and array types raise.
+- **SQL validator** — generated valid SQL for every auto-fixable matrix row is accepted; every mutation of it (wrong table/column/name, extra statement, `USING`, expression/partial/unique index, other schema, `DELETE`/`TRUNCATE`/`SET`/`DROP`, wrong operation, reordered columns, unnamed, non-btree, `DESC`) is rejected, with and without human authorization. Narrowing type changes need human authorization. The generated SQL is also executed through `SQLExecutor` on real Postgres (Neon), on throwaway `pbt_*` tables that are created and dropped inside the test.
+- **State machine** — all 56 cells (7 states × 8 events) checked against the transition table in `design.md`, with and without human authorization; random event sequences keep the invariants (nothing returns to PENDING, rollback never changes state, terminal states stay put, gated states need authorization), and the report reloaded from disk always matches memory.
+- **Redaction** — the required key variants (`clientSecret`, `CLIENTSECRET`, `private_key`, …) are redacted and `monkey` / `accessibility` / `author` are not; generated camelCase, snake, kebab and header-style keys built around sensitive words are redacted, while look-alikes (`keyboard`, `tokenizer`, `secretary`) are not; a secret never survives at any nesting depth.
+- **SSRF guard** — random addresses from every blocked range in tech.md, plain and IPv4-mapped, are refused; public addresses pass.
+
+**What PBT caught that unit tests missed:**
+
+1. **SSRF guard let blocked ranges through.** It relied on Python's `is_private`-style flags. Hypothesis found `100.64.0.0` (carrier-grade NAT, also as `::ffff:100.64.0.0`), then `224.0.0.0` (multicast), then `192.0.0.9` (Python treats it as global; tech.md blocks all of `192.0.0.0/24`). The 13 existing SSRF unit tests passed throughout because they only tried addresses someone thought of. Fix: the guard now checks tech.md's range list directly, plus multicast and non-global.
+2. **The index validator accepted "almost right" SQL.** It compared columns sorted, so `ON t (b, a)` passed for a declared `(a, b)` index, and it accepted unnamed, `USING hash` and `DESC` indexes, all contrary to tech.md. A reversed index would have been created and then reported STILL_PRESENT. Fix: columns are compared in order, the `ix_` name is required, and only plain B-tree with default sort order is accepted. The LLM prompt now states the same rules.
+
+Both fixes have plain regression tests in `test_ssrf.py` and `test_validator_sql.py`.
+
+**Limitation:** the 56-cell table in `design.md` was written from the code, so it catches future changes but can't prove the rules themselves are right. The random-sequence test is the independent check: its rules (nothing returns to PENDING, rollback never changes state, saved report matches memory) come from the spec, not the code.
 
 ### Kiro powers
 
@@ -379,12 +395,17 @@ Target repos are declared in **`repos.json`** at the repo root. No env var, no c
 # Restore Schema Drift demo state (or use the Reset Demo button in the UI)
 python fixtures/seed.py $DATABASE_URL
 
-# Run offline tests (no DB needed)
+# Run tests. Tests load .env, so if DATABASE_URL is set there they run against Neon.
 python -m pytest tests/ -q
-# 478 passed, 1 skipped (no service credentials set)
+# offline (no credentials):        625 passed, 12 skipped
+# with Neon DATABASE_URL in .env:   632 passed, 5 skipped (e2e tests need a fresh seed)
 
 # Run Postgres integration tests
 DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v
+
+# WARNING: with a real DATABASE_URL, test_sql_execution.py widens users.email on the
+# demo database, which removes that ghost. Re-seed (or click Reset Demo) afterwards.
+# The property tests only touch throwaway pbt_* tables and drop them.
 ```
 
 ---
@@ -476,6 +497,7 @@ touchstone/
 │   ├── test_context7.py                  # Context7 docs grounding (faked HTTP)
 │   ├── test_executor_api.py              # ContractExecutor batch, idempotency, demo reset
 │   ├── test_ssrf.py                      # SSRF guard
+│   ├── test_properties.py                # property-based tests (Hypothesis, Req 41)
 │   ├── test_comparator_api.py            # OpenAPI comparator
 │   ├── test_redaction.py                 # token-based redaction
 │   ├── test_comparator_cache.py          # Redis cache comparator

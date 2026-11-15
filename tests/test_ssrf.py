@@ -76,6 +76,32 @@ def test_private_172_16_range_blocked():
         validate("http://172.16.0.1/api")
 
 
+# ----- regression: ranges found by property-based testing ----------------
+
+
+def test_carrier_grade_nat_blocked():
+    """100.64.0.0/10 is not private per Python but is non-global (tech.md blocks it)."""
+    with pytest.raises(SSRFError, match="100.64.0.0/10"):
+        validate("http://100.64.0.1/internal")
+
+
+def test_ipv4_multicast_blocked():
+    with pytest.raises(SSRFError, match="multicast"):
+        validate("http://224.0.0.1/")
+
+
+def test_ipv6_multicast_blocked():
+    with pytest.raises(SSRFError, match="multicast"):
+        validate("http://[ff02::1]/")
+
+
+@pytest.mark.parametrize("ip", ["192.0.0.9", "192.0.0.10"])
+def test_ietf_protocol_assignments_blocked(ip):
+    """Python counts these as global; tech.md blocks all of 192.0.0.0/24."""
+    with pytest.raises(SSRFError, match="192.0.0.0/24"):
+        validate(f"http://{ip}/")
+
+
 # ----- no host -----------------------------------------------------------
 
 

@@ -516,8 +516,10 @@ Requirement 41: Property-Based Testing (Non-Tautological)
 4. State machine:
    · Enumerate 7 states × 8 events = 56 cells; assert each matches documented
      transition table
-   · No sequence transitions BLOCKED→PENDING/RESOLVED,
-     REVIEW_REQUIRED→PENDING, EXECUTION_FAILED→PENDING
+   · No sequence transitions any state back to PENDING
+   · BLOCKED / REVIEW_REQUIRED never change on apply without human
+     authorization (with it they may reach RESOLVED / STILL_PRESENT /
+     EXECUTION_FAILED — Req 19, Req 26.3)
    · validator_status != "valid" implies state is never PENDING after any
      sequence
    · Rollback of resolved file-domain does NOT change state to PENDING

@@ -48,6 +48,7 @@ Rules:
 - Always use action="sql" and propose a fix. Use action="review" ONLY if identifiers are unsafe to use unquoted.
 - Never emit DELETE, TRUNCATE, SET, GRANT, or more than one statement.
 - Never add a USING clause to ALTER COLUMN TYPE.
+- CREATE INDEX must name the index exactly as the drift target (ix_<table>_<cols>), list the columns in the order given, and use a plain B-tree with no USING method, DESC or NULLS FIRST.
 - Never quote identifiers unless they contain uppercase, spaces, or reserved words.
 - operation must exactly match the DDL kind: CREATE_INDEX, DROP_INDEX, ALTER_COLUMN_TYPE, ADD_COLUMN, DROP_COLUMN, CREATE_TABLE, DROP_TABLE.
 """

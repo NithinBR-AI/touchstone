@@ -308,10 +308,30 @@ class SQLValidator:
         if schema_err:
             return schema_err
         ast_table = self._canonical_name(table_expr)
+
+        # tech.md: plain B-tree. An explicit USING is allowed only for btree.
+        using = params.args.get("using") if params else None
+        if using is not None and str(getattr(using, "name", using)).lower() != "btree":
+            return ValidationResult(
+                status="invalid",
+                reason=f"only plain B-tree indexes are auto-fixable; got USING {using}",
+                ghost_state=GhostState.BLOCKED,
+            )
+
+        # tech.md: default sort order — no DESC, no NULLS FIRST.
+        index_cols = (params.args.get("columns") if params else None) or []
+        for col in index_cols:
+            if isinstance(col, exp.Ordered) and (col.args.get("desc") or col.args.get("nulls_first")):
+                return ValidationResult(
+                    status="invalid",
+                    reason="index columns must use the default sort order (no DESC / NULLS FIRST)",
+                    ghost_state=GhostState.BLOCKED,
+                )
+
+        # Columns in declared order: (a, b) and (b, a) are different indexes.
         ast_cols = [
-            self._canonical_name(c.this if isinstance(c, exp.Ordered) else c)
-            for c in index_expr.find_all(exp.Column)
-        ]
+            self._canonical_name(c.this if isinstance(c, exp.Ordered) else c) for c in index_cols
+        ] or [self._canonical_name(c) for c in index_expr.find_all(exp.Column)]
 
         # Bind table: the SQL must target the same table as the difference.
         # Both sides are lowercased — quoted SQL identifiers preserve case but
@@ -327,22 +347,28 @@ class SQLValidator:
                 ghost_state=GhostState.BLOCKED,
             )
 
-        # Bind columns: the SQL must index the same columns as the difference.
+        # Bind columns: same columns, in the same order, as the difference.
         diff_cols = [c.lower() for c in difference.context.get("columns", [])]
-        if diff_cols and sorted(c.lower() for c in ast_cols) != sorted(diff_cols):
+        if diff_cols and [c.lower() for c in ast_cols] != diff_cols:
             return ValidationResult(
                 status="invalid",
                 reason=(
                     f"CREATE INDEX covers columns {ast_cols} but difference "
-                    f"requires columns {diff_cols}"
+                    f"requires columns {diff_cols} in that order"
                 ),
                 ghost_state=GhostState.BLOCKED,
             )
 
-        # If the SQL supplies an explicit index name it must match the target.
+        # tech.md: name = ix_<table>_<cols>, i.e. the difference target. Required.
         index_name_expr = index_expr.args.get("this")
         ast_index_name = self._canonical_name(index_name_expr) if index_name_expr else ""
-        if ast_index_name and ast_index_name.lower() != difference.target.lower():
+        if not ast_index_name:
+            return ValidationResult(
+                status="invalid",
+                reason=f"CREATE INDEX must name the index '{difference.target}'",
+                ghost_state=GhostState.BLOCKED,
+            )
+        if ast_index_name.lower() != difference.target.lower():
             return ValidationResult(
                 status="invalid",
                 reason=(

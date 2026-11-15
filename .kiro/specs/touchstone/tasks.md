@@ -632,7 +632,8 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       · VERIFIED live in Schema Drift with cache moved aside: 4 ghosts resolved
         fresh, no LOW notes; users.age rationale cited PostgreSQL implicit
         casting, matching the Context7 excerpt.
-      · Full suite: 478 passed, 1 skipped (service env vars blanked).
+      · Full suite at the time: 478 passed, 1 skipped (that run had .env loaded,
+        so Neon tests ran; see Notes for current offline/Neon counts).
   - _Req 16_
 - [x] 8.3 .kiro/agents/validator-reviewer.md — frontmatter + input contract
       + constraints
@@ -652,11 +653,26 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ### 9. PBT (Week 4)
 
-- [ ] 9.1 test_properties.py — reference round-trip, SQL positive+negative
+- [x] 9.1 test_properties.py — reference round-trip, SQL positive+negative
       (executes against real Postgres), state machine 56 cells, redaction
       variants
+      DONE 2026-11-15: normalizer, SQL validator (positive + mutations, with and
+      without human_authorized; generated SQL run through SQLExecutor on Neon
+      against throwaway pbt_* tables, 3 examples each), 56 cells × {no-auth,
+      human-auth} against design.md table + random event sequences with
+      persisted-state check, redaction variants/look-alikes/depth, SSRF ranges.
+      Offline 625 passed / 12 skipped; with Neon 632 passed / 5 skipped.
   - _Req 41_
-- [ ] 9.2 Document PBT catches in submission write-up
+- [x] 9.2 Document PBT catches in submission write-up
+      DONE: README "Property-based testing" section. Catches: (1) SSRF guard let
+      100.64.0.0/10, 224.0.0.0/4 and 192.0.0.9/.10 through — fixed by checking
+      tech.md's range list directly; (2) index validator accepted reversed
+      columns, unnamed, USING hash, DESC — fixed in _validate_create_index, rules
+      added to the LLM prompt. Regression tests in test_ssrf.py and
+      test_validator_sql.py. Limitation: the 56-cell table was written from
+      the code, so it catches future changes but can't prove the rules
+      themselves are right; the random-sequence invariants (from the spec)
+      are the independent check.
   - _Req 41_
 
 ### 10. CI and proof (Week 5)
@@ -712,8 +728,11 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ## Notes
 
-- Current test count: **478 passed, 1 skipped** (2026-11-15, service env vars blanked).
-  Skips: 2 Neon DB integration tests (require DATABASE_URL), 3 e2e cache/Redis tests.
+- Current test count (2026-11-15): **625 passed, 12 skipped offline** (credentials
+  blanked inside Python; PowerShell `$env:X = ""` deletes the variable and .env
+  reloads it). **632 passed, 5 skipped with Neon**; the 5 e2e tests need a fresh seed.
+- A full run with Neon modifies the demo DB (test_sql_execution widens users.email).
+  Re-seed / Reset Demo afterwards. Property tests only use throwaway pbt_* tables.
 - Real Neon run (2026-11-11): test_postgres_e2e + test_sql_execution → 9 passed, 1 skipped.
   Seed with `fixtures/seed.py` before each full Neon run to restore drift state.
 - .venv at project root (Python 3.12). git safe.directory configured for CORP domain.

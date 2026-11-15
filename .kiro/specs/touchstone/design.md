@@ -168,6 +168,8 @@ Validator
   core/validator.py deleted. Operation matrix + canonical target + target
   binding + widening table (from Difference.context, not resolver). Reject
   multi-statement, SET, USING, expression/partial indexes. Fail closed.
+  CREATE INDEX must be exactly the declared index: name = target
+  (ix_<table>_<cols>), columns in declared order, plain B-tree, default sort.
   human_authorized=True skips auto-fixability gate; SET/DELETE/TRUNCATE
   always forbidden regardless of authorization.
 · API (adapters/openapi/validator.py — ContractValidator):
@@ -281,7 +283,7 @@ test_normalize.py 30 triples; unsupported raises
 test_sqlglot_ast_assumptions.py AST shapes verified for pinned version
 test_validator_sql.py Matrix rows + injection + target binding + widening
 test_sql_execution.py Auto-fixable cases run against real Postgres
-test_ssrf.py Blocked ranges, DNS rebinding, redirect, proxy, IPv6
+test_ssrf.py Blocked ranges (tech.md list), multicast, DNS rebinding, redirect, proxy, IPv6
 test_redaction.py All surfaces, token boundaries, error evidence
 test_comparator_pg.py 5 diffs, 0 false positives on control
 test_comparator_api.py safe_fix classification, batched fields
@@ -296,7 +298,7 @@ test_context7.py Docs excerpt in db prompt, prompt hash covers docs, LOW on fail
 test_demo_repeatability.py Two runs → identical semantic outcomes by signature
 test_skeleton.py AST-enforced: 6 files, no external imports, no sqlglot, no domain-string comparisons
 test_fourth_domain.py Full lifecycle with in-memory config domain — zero core changes required
-test_properties.py Reference round-trip, SQL positive+negative, state machine, redaction variants
+test_properties.py Reference round-trip, SQL positive+negative (+ real Postgres on pbt_* tables), 56-cell state machine + random sequences, redaction variants, SSRF ranges
 test_apps_structure.py 2 or 3 apps; each has 4 files; shared UI has 3 files
 
 Shared UI — Halloween theme (implemented, deviates from plain-console original spec)
