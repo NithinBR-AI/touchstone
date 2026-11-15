@@ -1,7 +1,7 @@
 """
 adapters/redis/executor.py
 
-Executor for cache drift. Only KEY_MISSING is auto-fixable.
+Executor for cache drift. Both kinds are fixable once a human clicks Exorcise.
 
 For KEY_MISSING: calls POST /cache/warm?key=<key> on the target app to
 populate the declared key from the app's own DB. Safe — only sets keys
