@@ -68,7 +68,7 @@ Click **Hunt Ghosts** → three cards appear → click **Exorcise** to apply aut
 
 After applying, click **↺ Reset Demo** to re-seed the DB and start over.
 
-Page refresh restores the last report automatically (via `/config` → `latest_report_id`).
+Refreshing the page restores that tab's last report (the report ID is kept in `sessionStorage`). A new tab or visitor starts on the Hunt Ghosts screen.
 
 ## Runtime files
 

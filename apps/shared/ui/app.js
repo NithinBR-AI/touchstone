@@ -535,8 +535,7 @@ async function apiCompare() {
     if (!res.ok) throw new Error(`/compare returned ${res.status}`);
     const report = await res.json();
     REPORT = report;
-    // update latest_report_id on server via config re-fetch isn't needed —
-    // server updates it internally; we just hold the report in memory.
+    rememberReport(REPORT.id);
     renderCards(REPORT);
     updateHealthBar(REPORT);
   } catch (err) {
@@ -630,15 +629,32 @@ async function apiRollback(diffId) {
   }
 }
 
+// ----- same-tab report recovery ------------------------------
+// The report ID lives in sessionStorage, which is scoped to this browser tab
+// and this app's origin. A refresh restores this tab's own hunt; a new visitor
+// or a new tab always starts on the Hunt Ghosts screen, even though the server
+// holds one shared orchestrator.
+const REPORT_KEY = "touchstone.reportId";
+
+function rememberReport(id) {
+  try { if (id) sessionStorage.setItem(REPORT_KEY, id); } catch (_) { /* storage disabled */ }
+}
+
+function forgetReport() {
+  try { sessionStorage.removeItem(REPORT_KEY); } catch (_) { /* storage disabled */ }
+}
+
 async function loadLatestReport() {
-  if (!CONFIG.latest_report_id) return;
+  let id = null;
+  try { id = sessionStorage.getItem(REPORT_KEY); } catch (_) { /* storage disabled */ }
+  if (!id) return;
   try {
-    const res = await fetch(`/report/${CONFIG.latest_report_id}`);
-    if (!res.ok) return;
+    const res = await fetch(`/report/${encodeURIComponent(id)}`);
+    if (!res.ok) { forgetReport(); return; }  // server restarted; report gone
     REPORT = await res.json();
     renderCards(REPORT);
     updateHealthBar(REPORT);
-  } catch (_) { /* silent — no prior report yet */ }
+  } catch (_) { /* silent: offline, keep the ID for the next refresh */ }
 }
 
 // ----- confirm dialog ----------------------------------------
@@ -742,6 +758,7 @@ async function apiReset() {
     const res = await fetch("/demo/reset", { method: "POST" });
     if (!res.ok) throw new Error(`/demo/reset returned ${res.status}`);
 
+    forgetReport();
     REPORT = null;
     renderCards(null);
     updateHealthBar(null);
@@ -833,6 +850,7 @@ async function boot() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo_id: repoSelect.value }),
       });
+      forgetReport();
       REPORT = null;
       renderCards(null);
       updateHealthBar(null);
@@ -863,7 +881,7 @@ async function boot() {
   // scan line on load
   triggerScanLine();
 
-  // restore previous report if server has one from this session
+  // restore this tab's previous report, if it ran a hunt before a refresh
   await loadLatestReport();
 
   // show demo banner if no report loaded

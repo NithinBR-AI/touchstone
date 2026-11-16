@@ -137,12 +137,15 @@ wiring. `orch.run()` replaces `orch._report` in-place; callers use
 `orch.report` to read the latest. This means a single concurrent user is the
 target — correct for demo.
 
-### Page-refresh recovery — `latest_report_id` in `/config`
-`/config` response includes `latest_report_id: str | null`. After every
-`POST /compare` the server updates this field. On page load the UI reads
-`/config`, and if `latest_report_id` is set, fetches `GET /report/{id}` to
-restore state without re-running compare. No separate `/report/latest` route
-needed.
+### Page-refresh recovery — same tab only (updated 2026-11-16)
+After every `POST /compare` the UI stores the report ID in `sessionStorage`
+(scoped to that browser tab and app origin). On page load the UI fetches
+`GET /report/{id}` for that stored ID, restoring the tab's own hunt without
+re-running compare. A new visitor or a new tab always starts on the Hunt
+Ghosts screen, so nobody lands on another person's session from the shared
+orchestrator. Reset Demo and switching repo clear the stored ID; a 404
+(server restarted) clears it too. `/config` still returns `latest_report_id`
+but the UI no longer restores from it. No separate `/report/latest` route.
 
 ## Tone
 Restrained and atmospheric. A serious instrument with a haunting narrative —

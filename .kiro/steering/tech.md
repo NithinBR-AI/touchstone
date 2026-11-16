@@ -194,8 +194,10 @@ def get_config():
     return {**CONFIG, "latest_report_id": _latest_report_id}
 ```
 `CONFIG` comes from `config.json` (domain, accent, title). `latest_report_id`
-is `null` until the first `/compare` call. The UI uses it to restore state
-on page refresh via `GET /report/{id}`.
+is `null` until the first `/compare` call. The UI does **not** restore from
+it: page-refresh recovery uses the report ID kept in the tab's
+`sessionStorage` (key `touchstone.reportId`), so a new visitor never sees
+another session's report. See product.md "Page-refresh recovery".
 
 ### Scan line animation — fires once only
 ```css

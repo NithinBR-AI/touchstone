@@ -1,4 +1,4 @@
-# Implementation Plan: Touchstone
+﻿# Implementation Plan: Touchstone
 
 ## Overview
 
@@ -276,9 +276,11 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
   `orch` instance created at import time. If extended to multiple concurrent
   users, replace with a dict keyed by session ID in `main.py` — do not touch
   `core/`.
-- **Page-refresh recovery**: `/config` response includes `latest_report_id`
-  (null until first `/compare`). UI reads it on load and fetches
-  `GET /report/{id}` to restore state. No separate `/report/latest` route.
+- **Page-refresh recovery** (same tab only, updated 2026-11-16): after
+  `/compare` the UI stores the report ID in `sessionStorage`; on load it
+  fetches `GET /report/{id}` for that ID. New visitors and new tabs start
+  clean. `/config` still includes `latest_report_id` but the UI no longer
+  restores from it. No separate `/report/latest` route.
 - **Demo reset**: `POST /demo/reset` re-seeds Neon DB with drift so judges can
   replay the experience. Reset Demo button in shared UI clears the report and
   fires the endpoint.
