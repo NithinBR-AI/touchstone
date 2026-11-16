@@ -23,7 +23,7 @@ repo) and what actually exists in the live Redis instance.
 | Kind | Severity | State | Description |
 |---|---|---|---|
 | `KEY_MISSING` | MEDIUM | PENDING | Key declared in config but absent from Redis — fix: POST /cache/warm |
-| `UNDECLARED_KEY` | HIGH | PENDING | Key exists in Redis but not declared — fix: DELETE /cache/delete |
+| `UNDECLARED_KEY` | HIGH | BLOCKED | Key exists in Redis but not declared — fix: DELETE /cache/delete, once a human clicks Exorcise |
 
 ## Demo drift (always present)
 
@@ -32,11 +32,9 @@ repo) and what actually exists in the live Redis instance.
 
 ## How to run
 
-```bash
-# Set env vars
-export UPSTASH_REDIS_REST_URL=https://your-endpoint.upstash.io
-export UPSTASH_REDIS_REST_TOKEN=your_token
+No environment variables needed. The Poltergeist never connects to Redis itself: it reads and fixes keys through the demo target API (`cache_status_url` and `cache_warm_url` in `repos.json`), and that service holds the Upstash credentials.
 
+```bash
 ./apps/poltergeist/run.sh
 # → http://localhost:8003
 ```

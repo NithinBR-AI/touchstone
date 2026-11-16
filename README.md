@@ -438,9 +438,8 @@ DATABASE_URL=postgresql://neondb_owner:<password>@<host>/neondb?sslmode=require
 # GitHub token — required for App 2 (Contract Observer) to open PRs
 GITHUB_TOKEN=ghp_...
 
-# Upstash Redis — required for App 3 (The Poltergeist)
-UPSTASH_REDIS_REST_URL=https://your-endpoint.upstash.io
-UPSTASH_REDIS_REST_TOKEN=...
+# The Poltergeist (App 3) needs nothing here: it reaches Redis through the
+# demo target API, which holds the Upstash credentials.
 
 # Mantle LLM — required for App 1 and App 2 LLM fix proposals
 # Without this, MantleResolver falls back to MockResolver (deterministic, no LLM)
