@@ -26,9 +26,9 @@ touchstone/
 │   └── redaction.py
 ├── apps/
 │   ├── shared/ui/{index.html, app.js, style.css}
-│   ├── schema-drift/{main.py, config.json, README.md, run.sh}
-│   ├── contract-observer/{main.py, config.json, README.md, run.sh}
-│   └── poltergeist/{main.py, config.json, README.md, run.sh}
+│   ├── schema-drift/{main.py, config.json, README.md, run.sh, Dockerfile}
+│   ├── contract-observer/{main.py, config.json, README.md, run.sh, Dockerfile}
+│   └── poltergeist/{main.py, config.json, README.md, run.sh, Dockerfile}
 ├── scripts/
 │   └── run_comparator_test.py      # helper for hook command action
 ├── repos.json
@@ -300,7 +300,7 @@ test_demo_repeatability.py Two runs → identical semantic outcomes by signature
 test_skeleton.py AST-enforced: 6 files, no external imports, no sqlglot, no domain-string comparisons
 test_fourth_domain.py Full lifecycle with in-memory config domain — zero core changes required
 test_properties.py Reference round-trip, SQL positive+negative (+ real Postgres on pbt_* tables), 56-cell state machine + random sequences, redaction variants, SSRF ranges
-test_apps_structure.py 2 or 3 apps; each has 4 files; shared UI has 3 files
+test_apps_structure.py 2 or 3 apps; each has 5 files (incl. its Dockerfile); shared UI has 3 files
 
 Shared UI — Halloween theme (implemented, deviates from plain-console original spec)
 

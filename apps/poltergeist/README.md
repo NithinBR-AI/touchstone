@@ -1,5 +1,16 @@
 # The Poltergeist — Cache Drift Detector
 
+> **Where this app's code lives** — Touchstone App 3, built on the shared `core/` skeleton.
+>
+> | Part | Location |
+> |---|---|
+> | App (FastAPI wiring, endpoints, Reset Demo) | `apps/poltergeist/` — this folder |
+> | Domain adapters | [`adapters/redis/`](../../adapters/redis/) — intended, actual, comparator, validator, executor, verifier |
+> | Skeleton (shared by every app; holds no domain code) | [`core/`](../../core/) |
+> | Resolver (deterministic, no LLM) | [`agents/resolver.py`](../../agents/resolver.py) — `MockResolver` |
+> | Shared UI template | [`apps/shared/ui/`](../shared/ui/) |
+> | Deployment | [`Dockerfile`](Dockerfile) in this folder — copies `core/` + `adapters/redis/` only; build from the repo root |
+
 Detects drift between declared cache keys (`cache_config.yaml` in the target
 repo) and what actually exists in the live Redis instance.
 

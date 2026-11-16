@@ -401,7 +401,7 @@ Requirement 30: Applications in Separate Folders
 2. apps/poltergeist/ — SHIPPED third app (cache domain).
 3. Each app folder contains: main.py (~250 lines — FastAPI endpoints,
    serialisation helpers, demo reset, wiring of core + domain adapter),
-   config.json, README.md, run.sh.
+   config.json, README.md, run.sh, and its own Dockerfile.
 4. main.py imports from core/ and its domain adapter. No domain logic.
 5. config.json specifies domain, accent, title.
 6. run.sh starts only that app.

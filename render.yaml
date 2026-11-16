@@ -1,0 +1,53 @@
+# Render Blueprint — three web services, one per app.
+# Each app has its own Dockerfile in its own folder. Every image is built from
+# the repo root, because each app is the shared core/ skeleton + its own adapter.
+# Values marked `sync: false` are secrets: Render asks for them when the
+# Blueprint is first applied, and they are never stored in this file.
+
+services:
+  # App 1 — Schema Drift · The Crypt
+  - type: web
+    name: touchstone-schema-drift
+    runtime: docker
+    dockerfilePath: ./apps/schema-drift/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon            # same AWS region family as the Neon database (us-west-2)
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: MANTLE_API_KEY
+        sync: false
+      - key: MANTLE_BASE_URL
+        value: https://bedrock-mantle.us-east-1.api.aws/v1
+      - key: CONTEXT7_API_KEY   # optional; Context7 works without a key at a lower rate limit
+        sync: false
+
+  # App 2 — Contract Observer · The Séance
+  - type: web
+    name: touchstone-contract-observer
+    runtime: docker
+    dockerfilePath: ./apps/contract-observer/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: MANTLE_API_KEY
+        sync: false
+      - key: MANTLE_BASE_URL
+        value: https://bedrock-mantle.us-east-1.api.aws/v1
+
+  # App 3 — The Poltergeist (no LLM, no secrets: it reads and fixes the cache
+  # through the demo target API, which holds the Upstash credentials)
+  - type: web
+    name: touchstone-poltergeist
+    runtime: docker
+    dockerfilePath: ./apps/poltergeist/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health

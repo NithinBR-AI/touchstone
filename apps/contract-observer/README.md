@@ -1,5 +1,17 @@
 # Contract Observer — Touchstone App 2
 
+> **Where this app's code lives** — Touchstone App 2, built on the shared `core/` skeleton.
+>
+> | Part | Location |
+> |---|---|
+> | App (FastAPI wiring, endpoints, batch apply, Reset Demo) | `apps/contract-observer/` — this folder |
+> | Domain adapters | [`adapters/openapi/`](../../adapters/openapi/) — intended, actual, comparator, validator, executor, verifier |
+> | Skeleton (shared by every app; holds no domain code) | [`core/`](../../core/) |
+> | Shared SSRF guard | [`adapters/ssrf.py`](../../adapters/ssrf.py) |
+> | LLM resolver | [`agents/`](../../agents/) |
+> | Shared UI template | [`apps/shared/ui/`](../shared/ui/) |
+> | Deployment | [`Dockerfile`](Dockerfile) in this folder — copies `core/` + `adapters/openapi/` only; build from the repo root |
+
 Detects **API contract drift**: fields the live API returns that are not documented in the OpenAPI spec, or fields declared in the spec that the API no longer returns.
 
 ## What it does

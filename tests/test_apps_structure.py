@@ -1,5 +1,5 @@
 """
-Req 30 — each app folder must ship exactly 4 files; shared UI must have 3 files.
+Req 30 — each app folder must ship its 5 files (incl. its own Dockerfile); shared UI must have 3 files.
 Skeleton Crew proof: at least 2 app folders must be complete.
 """
 
@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).parent.parent
 APPS_DIR = REPO_ROOT / "apps"
 SHARED_UI = APPS_DIR / "shared" / "ui"
 
-REQUIRED_APP_FILES = {"main.py", "config.json", "README.md", "run.sh"}
+REQUIRED_APP_FILES = {"main.py", "config.json", "README.md", "run.sh", "Dockerfile"}
 REQUIRED_UI_FILES = {"index.html", "app.js", "style.css"}
 
 # Apps that must be complete before submission (Skeleton Crew — 2+ required)

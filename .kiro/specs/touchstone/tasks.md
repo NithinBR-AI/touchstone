@@ -1,4 +1,4 @@
-﻿# Implementation Plan: Touchstone
+# Implementation Plan: Touchstone
 
 ## Overview
 
@@ -677,9 +677,12 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ### 10. CI and proof (Week 5)
 
-- [ ] 10.1 .github/workflows/drift.yml
+- [x] 10.1 ~~.github/workflows/drift.yml~~
+      DEFERRED: optional (Req 36 is not mandatory). Not built. Listed in README
+      "What's Next", Stage 3 (drift check on every PR with a PR comment).
   - _Req 36_
-- [ ] 10.2 Manual run + screenshot PR comment
+- [x] 10.2 ~~Manual run + screenshot PR comment~~
+      DEFERRED with 10.1 — nothing to run until the workflow exists.
   - _Req 36, 38_
 - [x] 10.3 README "Skeleton proof"
       DONE: README "Skeleton Crew entry" section (top of README) — what the
@@ -701,6 +704,10 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       behind profile
   - _Req 37_
 - [ ] 11.2 Deploy two mandatory apps to URLs
+      PREPARED 2026-11-15: one Dockerfile per app (apps/<app>/Dockerfile), each copying
+      core/ + its own adapter folder only; render.yaml = three web services. Verified by
+      rebuilding each image's file set in an empty folder: all three serve /health,
+      /config and the UI, and load only their own adapter. Not yet deployed.
   - _Req 37_
 - [ ] 11.3 Apps accessible until Jan 29, 2027
   - _Req 37_

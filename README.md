@@ -6,6 +6,10 @@ Touchstone makes all three visible — and fixable — before they cause inciden
 
 **Kiroween 2026 — Skeleton Crew category** · Built with Qwen3 and DeepSeek models via [AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)
 
+![Touchstone architecture — one skeleton (core/), three apps](docs/architecture.png)
+
+*One skeleton, three apps: the `core/` pipeline is shared, and each app plugs in its own adapters. Interactive version: [`docs/architecture.html`](docs/architecture.html).*
+
 ---
 
 ## What it does
@@ -460,6 +464,27 @@ bash apps/poltergeist/run.sh
 python fixtures/seed.py $DATABASE_URL
 ```
 
+### Deploy to Render
+
+Each app deploys on its own, from its own Dockerfile. Every image is the shared `core/` skeleton plus that app's adapter folder only — The Crypt's image contains no API-contract or cache code, and so on. Images are built from the repo root because the skeleton lives outside the app folders.
+
+| App | Dockerfile | Copies | Secrets |
+|---|---|---|---|
+| Schema Drift | `apps/schema-drift/Dockerfile` | `core/` + `adapters/postgres/` + `fixtures/seed.py` | `DATABASE_URL`, `MANTLE_API_KEY` (optional `CONTEXT7_API_KEY`) |
+| Contract Observer | `apps/contract-observer/Dockerfile` | `core/` + `adapters/openapi/` | `GITHUB_TOKEN`, `MANTLE_API_KEY` |
+| The Poltergeist | `apps/poltergeist/Dockerfile` | `core/` + `adapters/redis/` | none |
+
+All three also copy `agents/`, `adapters/ssrf.py`, the shared UI and `repos.json`.
+
+**Blueprint:** in Render, choose *New → Blueprint* and select this repo. `render.yaml` creates three web services — one URL per app — and asks for the secrets. **Locally:**
+
+```bash
+docker build -f apps/schema-drift/Dockerfile -t touchstone-schema-drift .
+docker run --rm -p 8001:8000 --env-file .env touchstone-schema-drift
+```
+
+On the free tier each service sleeps when idle (~30 s to wake), and its fix cache and reports reset on every restart.
+
 ### Running tests
 
 ```bash
@@ -535,19 +560,23 @@ touchstone/
 │   ├── schema-drift/                     # mandatory app 1 — The Crypt
 │   ├── contract-observer/                # mandatory app 2 — The Séance
 │   └── poltergeist/                      # third app — The Poltergeist
-│       # each app: main.py, config.json, README.md, run.sh
+│       # each app: main.py, config.json, README.md, run.sh, Dockerfile
 ├── fixtures/
 │   ├── seed.py                           # seeds Neon DB with drift cases
 │   ├── cases.json                        # drift cases for demo + cache seeding
 │   └── docker-compose.yml                # local Postgres 16 alternative
+├── docs/
+│   ├── architecture.html                 # architecture diagram (source)
+│   └── architecture.png                  # architecture diagram (image, shown above)
 ├── scripts/
 │   └── run_comparator_test.py            # helper for comparator-test hook
+├── render.yaml                           # Render Blueprint: one web service per app
 ├── cli.py                                # CLI: touchstone compare / touchstone report
 ├── pyproject.toml
 ├── tests/
 │   ├── test_skeleton.py                  # AST-enforced: exact core/ file set, no external imports, no sqlglot, no domain branching
 │   ├── test_fourth_domain.py             # extensibility proof: full lifecycle with in-memory config domain, zero core changes
-│   ├── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 4 files each
+│   ├── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 5 files each
 │   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes
 │   ├── test_normalize.py                 # type normaliser
 │   ├── test_validator_sql.py             # operation matrix + target binding + widening

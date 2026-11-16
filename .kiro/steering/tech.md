@@ -67,7 +67,9 @@ docker compose -f fixtures/docker-compose.yml up
 - `adapters/ssrf.py` — SSRF guard shared by every domain (and agents/context7.py);
   domain folders never import from each other
 - `apps/shared/ui/` — one template: index.html, app.js, style.css
-- `apps/<app-name>/` — main.py, config.json, README.md, run.sh
+- `apps/<app-name>/` — main.py, config.json, README.md, run.sh, Dockerfile
+  (each app deploys on its own: its Dockerfile copies core/ + its own adapter
+  folder only; built from the repo root; render.yaml = one service per app)
 - `fixtures/` — seed.py, cases.json, docker-compose.yml
 - `.kiro/` — committed, never gitignored
 

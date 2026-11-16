@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Touchstone Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Cormorant+Garamond:wght@300;400&family=Inter:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    /* Touchstone UI palette (apps/shared/ui/style.css) */
+    --bg:            #0a0a0f;
+    --bg-card:       #12111a;
+    --bg-card-alt:   #0e0d15;
+    --bg-pipeline:   #100f17;
+    --border:        #1e1c2a;
+    --border-accent: #2e2a3d;
+    --text-primary:  #f0ead6;
+    --text-secondary:#9b8fa8;
+    --text-muted:    #4a4360;
+    --pumpkin:       #f97316;
+    --pumpkin-dim:   rgba(249,115,22,0.08);
+    --pumpkin-mid:   rgba(249,115,22,0.25);
+    --amber:         #fbbf24;
+    --blood:         #ef4444;
+    --blood-dim:     #1a0808;
+    --spirit:        #4ade80;
+    --spirit-dim:    #06180d;
+    --seance:        #67e8f9;
+    --polter:        #c084fc;
+    --connector:     #2e2a3d;
+    --font-mono:     'JetBrains Mono', 'Courier New', monospace;
+    --font-sans:     'Inter', -apple-system, sans-serif;
+    --font-display:  'Cormorant Garamond', Georgia, serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    padding: 2rem;
+    min-height: 100svh;
+  }
+
+  /* faint grid + fog */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(249,115,22,0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(249,115,22,0.022) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(249,115,22,0.10), transparent 55%),
+      radial-gradient(ellipse at 0% 100%, rgba(192,132,252,0.06), transparent 45%),
+      radial-gradient(ellipse at 100% 100%, rgba(192,132,252,0.06), transparent 45%);
+    pointer-events: none;
+  }
+
+  /* ── Header ── */
+  .page-header { text-align: center; margin-bottom: 2.5rem; position: relative; z-index: 1; }
+  .page-header h1 {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+  }
+  .page-header h1 span { color: var(--pumpkin); }
+  .page-header .tagline {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin-top: 0.3rem;
+  }
+  .page-header .sub {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Diagram grid ── */
+  .diagram {
+    display: grid;
+    grid-template-columns: 130px 1fr 230px;
+    align-items: start;
+    max-width: 1140px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Entry column ── */
+  .entry-col { display: flex; flex-direction: column; align-items: center; padding-top: 3rem; gap: 0.4rem; }
+
+  .ghost-ring {
+    width: 60px; height: 18px;
+    border-radius: 100px;
+    border: 1.5px solid var(--pumpkin-mid);
+    position: relative;
+    overflow: hidden;
+    background: var(--pumpkin-dim);
+  }
+  .ghost-ring::before {
+    content: '';
+    position: absolute;
+    top: -2px; left: -60%;
+    width: 50%; height: calc(100% + 4px);
+    background: linear-gradient(90deg, transparent, var(--pumpkin), transparent);
+    filter: blur(1px);
+    animation: sweep 2.5s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0% { left: -60%; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: 110%; opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .ghost-ring::before { animation: none; left: 20%; opacity: 0.7; } }
+
+  .entry-label { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 600; color: var(--pumpkin); text-align: center; margin-top: 0.35rem; }
+  .entry-sub { font-family: var(--font-mono); font-size: 0.6rem; color: var(--text-muted); text-align: center; max-width: 115px; line-height: 1.4; }
+
+  .entry-arrow { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; margin-top: 0.8rem; }
+  .v-line { width: 1px; height: 22px; background: var(--connector); }
+  .arrow-label { font-family: var(--font-mono); font-size: 0.58rem; color: var(--text-muted); text-align: center; }
+  .arrow-tip { font-size: 0.75rem; color: var(--connector); }
+  .entry-arrow.exorcise { margin-top: 19.75rem; }
+  .entry-arrow.exorcise .arrow-label, .entry-arrow.exorcise .arrow-tip { color: var(--amber); }
+  .entry-arrow.exorcise .v-line { background: var(--amber); opacity: 0.35; }
+  .entry-arrow.returns { margin-top: 11rem; }
+  .entry-arrow.returns .arrow-label, .entry-arrow.returns .arrow-tip { color: var(--spirit); }
+  .entry-arrow.returns .v-line { background: var(--spirit); opacity: 0.35; }
+
+  /* ── Pipeline column ── */
+  .pipeline-col { padding: 0 1.2rem; }
+  .pipeline-boundary {
+    border: 2px solid var(--pumpkin-mid);
+    border-radius: 14px;
+    padding: 1.2rem;
+    background: var(--bg-pipeline);
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(249,115,22,0.06), 0 0 42px rgba(249,115,22,0.10);
+  }
+
+  /* ── Skeleton header (core/ is the Skeleton Crew entry) ── */
+  .skeleton-head {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.4rem 0.2rem 1rem;
+    margin-bottom: 0.9rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .skeleton-title { font-family: var(--font-display); font-size: 1.9rem; font-weight: 300; line-height: 1; color: var(--pumpkin); }
+  .skeleton-title small { display: block; font-family: var(--font-mono); font-size: 0.56rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase; margin-top: 0.35rem; }
+  .file-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .file-chip {
+    font-family: var(--font-mono); font-size: 0.58rem; font-weight: 600;
+    padding: 0.2rem 0.5rem; border-radius: 4px;
+    background: var(--pumpkin-dim); border: 1px solid var(--pumpkin-mid); color: var(--pumpkin);
+  }
+  .file-chip.dim { background: transparent; border-color: var(--border-accent); color: var(--text-muted); }
+  .skeleton-proof { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; margin-top: 0.45rem; }
+  .skeleton-proof span { font-family: var(--font-mono); font-size: 0.56rem; color: var(--text-secondary); }
+  .skeleton-proof span::before { content: '✓ '; color: var(--spirit); }
+
+  /* ── Plug-in connector between adapters and core ── */
+  .plug {
+    text-align: center;
+    font-family: var(--font-mono); font-size: 0.6rem; font-weight: 600;
+    color: var(--pumpkin); letter-spacing: 0.06em;
+    padding: 0.55rem 0 0.45rem;
+  }
+  .plug small { display: block; color: var(--text-muted); font-weight: 400; margin-top: 0.15rem; }
+  .plug { font-size: 0.68rem; padding: 0.7rem 0 0.55rem; }
+  .plug-arrows { display: block; font-size: 0.9rem; letter-spacing: 2.4rem; margin-bottom: 0.25rem; }
+  .plug-arrows i { font-style: normal; }
+
+  /* ── Category ribbon + Skeleton Crew header ── */
+  .category-ribbon {
+    display: inline-block; margin-bottom: 0.9rem;
+    font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: #0a0a0f; background: var(--pumpkin);
+    padding: 0.35rem 1rem; border-radius: 4px;
+    box-shadow: 0 0 28px rgba(249,115,22,0.35);
+  }
+  .page-header h1 { font-size: 2.4rem; }
+  .page-header .tagline {
+    font-style: normal; font-family: var(--font-sans); font-size: 0.85rem;
+    max-width: 760px; margin: 0.5rem auto 0; line-height: 1.5;
+  }
+  .page-header .tagline b { color: var(--pumpkin); font-family: var(--font-mono); font-weight: 700; }
+  .page-header .pitch {
+    font-family: var(--font-display); font-style: italic; font-size: 0.95rem;
+    color: var(--text-muted); margin-top: 0.4rem;
+  }
+  .pipeline-badge {
+    position: absolute; top: -11px; right: 14px;
+    background: var(--pumpkin); color: #0a0a0f;
+    font-family: var(--font-mono); font-size: 0.58rem; font-weight: 700;
+    padding: 0.18rem 0.65rem; border-radius: 4px; letter-spacing: 0.08em;
+  }
+  .pipeline-sub-badge {
+    position: absolute; top: -11px; left: 14px;
+    background: var(--bg-card-alt); color: var(--amber);
+    font-family: var(--font-mono); font-size: 0.58rem; font-weight: 600;
+    padding: 0.18rem 0.65rem; border-radius: 4px;
+    border: 1px solid rgba(251,191,36,0.3); letter-spacing: 0.04em;
+  }
+  .pipeline-label {
+    font-family: var(--font-mono); font-size: 0.58rem; font-weight: 700;
+    color: var(--text-muted); letter-spacing: 0.12em; text-transform: uppercase;
+    margin-bottom: 0.9rem; padding-left: 2px;
+  }
+  .stages-stack { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  /* ── Stage cards ── */
+  .stage-card {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 0.7rem 0.9rem;
+    display: flex; align-items: flex-start; gap: 0.75rem;
+    position: relative;
+  }
+  .stage-card.detect   { border-left: 3px solid var(--pumpkin); }
+  .stage-card.resolve  { border-left: 3px solid var(--amber); }
+  .stage-card.validate { border-left: 3px solid var(--blood); }
+  .stage-card.human    { border-left: 3px solid var(--amber); }
+  .stage-card.execute  { border-left: 3px solid var(--polter); }
+  .stage-card.verify   { border-left: 3px solid var(--spirit); }
+
+  .stage-num {
+    font-family: var(--font-mono); font-size: 0.56rem; font-weight: 700;
+    color: var(--text-muted); position: absolute; top: 0.5rem; right: 0.7rem; letter-spacing: 0.04em;
+  }
+  .stage-icon {
+    width: 30px; height: 30px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.95rem; flex-shrink: 0;
+  }
+  .icon-detect   { background: rgba(249,115,22,0.10); }
+  .icon-resolve  { background: rgba(251,191,36,0.10); }
+  .icon-validate { background: rgba(239,68,68,0.10); }
+  .icon-human    { background: rgba(251,191,36,0.10); }
+  .icon-execute  { background: rgba(192,132,252,0.10); }
+  .icon-verify   { background: rgba(74,222,128,0.10); }
+
+  .stage-info { flex: 1; min-width: 0; padding-right: 2rem; }
+  .stage-name { font-family: var(--font-mono); font-size: 0.76rem; font-weight: 700; line-height: 1.2; }
+  .stage-desc { font-size: 0.66rem; color: var(--text-secondary); margin-top: 0.2rem; line-height: 1.4; }
+  .stage-tools { font-family: var(--font-mono); font-size: 0.56rem; color: var(--text-muted); margin-top: 0.25rem; line-height: 1.4; }
+  .stage-tools span   { color: var(--pumpkin); opacity: 0.9; }
+  .stage-tools .amber { color: var(--amber); opacity: 1; }
+  .stage-tools .blood { color: var(--blood); opacity: 1; }
+  .stage-tools .spirit{ color: var(--spirit); opacity: 1; }
+
+  .flow-arrow { text-align: center; color: var(--connector); font-size: 0.9rem; padding: 0.1rem 0; user-select: none; line-height: 1; }
+  .flow-arrow.lbl { font-family: var(--font-mono); font-size: 0.58rem; color: var(--text-muted); }
+
+  /* ── Apps boundary (three apps, one skeleton) ── */
+  .apps-boundary {
+    border: 1px dashed var(--border-accent);
+    border-radius: 10px;
+    padding: 0.8rem;
+    background: var(--bg-card-alt);
+    position: relative;
+    margin-top: 0.5rem;
+  }
+  .boundary-badge {
+    position: absolute; top: -10px; left: 12px;
+    font-family: var(--font-mono); font-size: 0.56rem; font-weight: 700;
+    padding: 0.15rem 0.55rem; border-radius: 3px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .apps-boundary .boundary-badge { background: var(--bg-card-alt); color: var(--pumpkin); border: 1px solid var(--border-accent); }
+  .apps-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.4rem; }
+  .app-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 7px; padding: 0.55rem 0.6rem; border-top: 2px solid; }
+  .app-box.crypt  { border-top-color: var(--pumpkin); }
+  .app-box.seance { border-top-color: var(--seance); }
+  .app-box.polter { border-top-color: var(--polter); }
+  .app-title { font-family: var(--font-display); font-size: 1.05rem; font-weight: 400; line-height: 1.1; }
+  .app-box.crypt  .app-title { color: var(--pumpkin); }
+  .app-box.seance .app-title { color: var(--seance); }
+  .app-box.polter .app-title { color: var(--polter); }
+  .app-name { font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700; color: var(--text-primary); margin-top: 0.15rem; }
+  .app-desc { font-size: 0.58rem; color: var(--text-secondary); margin-top: 0.2rem; line-height: 1.4; }
+
+  /* ── Safety boundary ── */
+  .safety-boundary {
+    border: 1px dashed rgba(239,68,68,0.25);
+    border-radius: 10px;
+    padding: 0.8rem;
+    background: var(--blood-dim);
+    position: relative;
+    margin-top: 0.5rem;
+  }
+  .safety-boundary .boundary-badge { background: var(--blood-dim); color: var(--blood); border: 1px solid rgba(239,68,68,0.25); }
+  .safety-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.4rem; }
+  .safety-box { background: var(--bg-card); border: 1px solid rgba(239,68,68,0.15); border-radius: 7px; padding: 0.5rem 0.6rem; }
+  .safety-name { font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700; color: var(--blood); }
+  .safety-desc { font-size: 0.58rem; color: var(--text-secondary); margin-top: 0.1rem; line-height: 1.4; }
+
+  /* ── State bar ── */
+  .state-bar {
+    margin-top: 1rem; padding-top: 0.85rem;
+    border-top: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center;
+  }
+  .state-bar-label {
+    font-family: var(--font-mono); font-size: 0.56rem; color: var(--text-muted);
+    letter-spacing: 0.08em; text-transform: uppercase; width: 100%; margin-bottom: 0.2rem;
+  }
+  .state-pill {
+    font-family: var(--font-mono); font-size: 0.56rem; font-weight: 600;
+    padding: 0.15rem 0.5rem; border-radius: 3px;
+    background: var(--bg-card-alt); border: 1px solid var(--border);
+    color: var(--text-muted); letter-spacing: 0.04em;
+  }
+  .state-pill.pending  { background: rgba(249,115,22,0.08); border-color: var(--pumpkin-mid); color: var(--pumpkin); }
+  .state-pill.review   { background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.3); color: var(--amber); }
+  .state-pill.blocked  { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); color: var(--blood); }
+  .state-pill.resolved { background: var(--spirit-dim); border-color: rgba(74,222,128,0.3); color: var(--spirit); }
+  .state-pill.still    { background: rgba(251,191,36,0.05); border-color: rgba(251,191,36,0.2); color: var(--amber); }
+  .state-pill.failed   { background: rgba(239,68,68,0.05); border-color: rgba(239,68,68,0.2); color: var(--blood); }
+  .state-arrow { font-size: 0.6rem; color: var(--border-accent); }
+
+  /* ── Services column ── */
+  .tools-col { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.2rem; }
+  .tool-group-label {
+    font-family: var(--font-mono); font-size: 0.56rem; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted);
+    padding-left: 2px; margin-top: 0.6rem;
+  }
+  .tool-group-label:first-child { margin-top: 0; }
+  .tool-card {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    display: flex; align-items: center; gap: 0.55rem;
+  }
+  .tool-card.declared-t { border-left: 3px solid var(--text-secondary); }
+  .tool-card.crypt-t    { border-left: 3px solid var(--pumpkin); }
+  .tool-card.seance-t   { border-left: 3px solid var(--seance); }
+  .tool-card.polter-t   { border-left: 3px solid var(--polter); }
+  .tool-card.llm-t      { border-left: 3px solid var(--amber); }
+  .tool-card.kiro-t     { border-left: 3px solid var(--spirit); }
+
+  .tool-emoji { font-size: 0.95rem; flex-shrink: 0; }
+  .tool-info  { min-width: 0; }
+  .tool-name  { font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700; line-height: 1.2; }
+  .tool-desc  { font-size: 0.6rem; color: var(--text-secondary); line-height: 1.35; margin-top: 0.1rem; }
+  .svc-badge {
+    font-family: var(--font-mono); font-size: 0.52rem; font-weight: 700;
+    border-radius: 3px; padding: 0.1rem 0.35rem; letter-spacing: 0.05em;
+    display: inline-block; margin-top: 0.2rem; border: 1px solid;
+  }
+  .svc-badge.aws   { color: var(--amber);  background: rgba(251,191,36,0.06);  border-color: rgba(251,191,36,0.3); }
+  .svc-badge.kiro  { color: var(--spirit); background: rgba(74,222,128,0.06);  border-color: rgba(74,222,128,0.3); }
+  .svc-badge.app1  { color: var(--pumpkin);background: rgba(249,115,22,0.06);  border-color: var(--pumpkin-mid); }
+  .svc-badge.app2  { color: var(--seance); background: rgba(103,232,249,0.06); border-color: rgba(103,232,249,0.3); }
+  .svc-badge.app3  { color: var(--polter); background: rgba(192,132,252,0.06); border-color: rgba(192,132,252,0.3); }
+
+  /* ── Legend ── */
+  .legend {
+    max-width: 1140px;
+    margin: 1.5rem auto 0;
+    display: flex; gap: 1.2rem; flex-wrap: wrap; align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    position: relative; z-index: 1;
+  }
+  .legend-title { font-family: var(--font-mono); font-size: 0.58rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .legend-item  { display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; color: var(--text-secondary); font-family: var(--font-mono); }
+  .legend-dot   { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="category-ribbon">☠ Kiroween 2026 · Skeleton Crew category</div>
+  <h1>Touchstone — <span>One Skeleton</span>, Three Apps</h1>
+  <div class="tagline">A lean, domain-agnostic skeleton — <b>core/</b> — and three different drift detectors built on it. Every app plugs in through the same protocols and adds zero code to the skeleton.</div>
+  <div class="pitch">Your code says what should exist. Your system says what does. Touchstone finds the gap — and proves every fix.</div>
+  <div class="sub">Built in Kiro IDE · AWS Bedrock Mantle (Qwen3-235B · DeepSeek v3.2) · Context7 · Neon Postgres · Render · Upstash Redis · GitHub</div>
+</div>
+
+<div class="diagram">
+
+  <!-- ENTRY: human in the shared UI -->
+  <div class="entry-col">
+    <div class="ghost-ring"></div>
+    <div class="entry-label">👻 Shared UI</div>
+    <div class="entry-sub">one template<br>three apps<br>engineer · judge</div>
+
+    <div class="entry-arrow">
+      <div class="v-line"></div>
+      <div class="arrow-label">Hunt Ghosts</div>
+      <div class="arrow-tip">→</div>
+    </div>
+
+    <div class="entry-arrow exorcise">
+      <div class="arrow-tip">→</div>
+      <div class="arrow-label">⚡ Exorcise<br>human_authorized</div>
+      <div class="v-line"></div>
+    </div>
+
+    <div class="entry-arrow returns">
+      <div class="arrow-tip">←</div>
+      <div class="arrow-label">✝ verified<br>evidence</div>
+      <div class="v-line"></div>
+    </div>
+  </div>
+
+  <!-- PIPELINE: the core/ skeleton -->
+  <div class="pipeline-col">
+    <div class="pipeline-boundary">
+      <div class="pipeline-sub-badge">Domain-agnostic · knows no Postgres, API or Redis</div>
+      <div class="pipeline-badge">THE SKELETON · SKELETON CREW ENTRY</div>
+
+      <div class="skeleton-head">
+        <div class="skeleton-title">core/<small>6 files · 1,257 lines</small></div>
+        <div>
+          <div class="file-chips">
+            <span class="file-chip">interfaces.py</span>
+            <span class="file-chip">models.py</span>
+            <span class="file-chip">orchestrator.py</span>
+            <span class="file-chip">cache.py</span>
+            <span class="file-chip">persistence.py</span>
+            <span class="file-chip dim">__init__.py</span>
+          </div>
+          <div class="skeleton-proof">
+            <span>imports nothing from adapters/ agents/ apps/</span>
+            <span>AST-enforced every test run</span>
+            <span>4th domain added with zero core changes</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipeline-label">Compare → Verify pipeline · owned by core/ · 7 protocols + 2 capabilities</div>
+
+      <div class="stages-stack">
+
+        <div class="stage-card detect">
+          <div class="stage-num">S1</div>
+          <div class="stage-icon icon-detect">🔍</div>
+          <div class="stage-info">
+            <div class="stage-name">Detect</div>
+            <div class="stage-desc">Reads what the repo declares and what the live system runs, normalizes both into a State, and classifies every gap as a ghost with a stable signature.</div>
+            <div class="stage-tools">core protocols: <span>InputSource</span> · <span>SourceAdapter</span> · <span>Comparator</span> · adapters: SchemaComparator · ContractComparator · CacheComparator</div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="stage-card resolve">
+          <div class="stage-num">S2</div>
+          <div class="stage-icon icon-resolve">🔮</div>
+          <div class="stage-info">
+            <div class="stage-name">Resolve</div>
+            <div class="stage-desc">Checks the cache of proven fixes first. Otherwise proposes one fix per ghost: SQL from Qwen3-235B grounded in Context7 PostgreSQL docs · field metadata for API ghosts · a deterministic warm/delete for cache keys.</div>
+            <div class="stage-tools">core protocol: <span>Resolver</span> · core <span>Cache</span> · agents: <span class="amber">MantleResolver</span> · <span class="amber">Context7 REST</span> · MockResolver</div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="stage-card validate">
+          <div class="stage-num">S3</div>
+          <div class="stage-icon icon-validate">⛓</div>
+          <div class="stage-info">
+            <div class="stage-name">Validate — the safety boundary</div>
+            <div class="stage-desc">The LLM's rationale is never trusted. The SQL is parsed into an AST and checked against the operation matrix, bound to the ghost's exact target, and type changes must be in the widening table.</div>
+            <div class="stage-tools">core protocol: <span>Validator</span> · adapters: <span class="blood">SQLValidator (sqlglot)</span> · ContractValidator · CacheValidator</div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="stage-card human">
+          <div class="stage-num">S4</div>
+          <div class="stage-icon icon-human">⚡</div>
+          <div class="stage-info">
+            <div class="stage-name">Authorize</div>
+            <div class="stage-desc">A human reads the proposal on the card and clicks Exorcise. Authorization unlocks REVIEW_REQUIRED and BLOCKED ghosts; the validator still runs, and SET / DELETE / TRUNCATE stay forbidden.</div>
+            <div class="stage-tools">core orchestrator gate: <span class="amber">apply_one(id, human_authorized=True)</span> · <span>apply_batch()</span></div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="stage-card execute">
+          <div class="stage-num">S5</div>
+          <div class="stage-icon icon-execute">🕯</div>
+          <div class="stage-info">
+            <div class="stage-name">Execute</div>
+            <div class="stage-desc">Applies the validated fix: DDL on Postgres with a 30 s connection-level timeout · a GitHub PR per file (DeepSeek v3.2 writes the patch, Qwen3 checks it) · cache warm or delete on the demo API.</div>
+            <div class="stage-tools">core protocols: <span>Executor</span> · <span>BatchExecutor</span> · <span>RollbackSupport</span> · adapters: SQLExecutor · ContractExecutor · CacheExecutor</div>
+          </div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="stage-card verify">
+          <div class="stage-num">S6</div>
+          <div class="stage-icon icon-verify">✝</div>
+          <div class="stage-info">
+            <div class="stage-name">Verify</div>
+            <div class="stage-desc">Re-reads the live system and re-runs the comparison. Only a ghost that is truly gone is RESOLVED — and only then is its fix written to the cache. The report is saved atomically after every state change.</div>
+            <div class="stage-tools">core protocol: <span>Verifier</span> · core <span class="spirit">VerificationResult + evidence</span> · <span>Persistence</span> · <span>Cache</span></div>
+          </div>
+        </div>
+
+        <!-- Ghost states -->
+        <div class="state-bar">
+          <div class="state-bar-label">Ghost lifecycle · 7 states × 8 events = 56 tested cells</div>
+          <span class="state-pill pending">👻 HAUNTING</span>
+          <span class="state-arrow">|</span>
+          <span class="state-pill review">🕯 SÉANCE NEEDED</span>
+          <span class="state-arrow">|</span>
+          <span class="state-pill blocked">⛓ BOUND</span>
+          <span class="state-arrow">→ ⚡ →</span>
+          <span class="state-pill resolved">✝ LAID TO REST</span>
+          <span class="state-arrow">|</span>
+          <span class="state-pill still">😱 STILL HAUNTING</span>
+          <span class="state-arrow">|</span>
+          <span class="state-pill failed">💀 RITUAL FAILED</span>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="plug"><span class="plug-arrows"><i style="color:var(--pumpkin)">▲</i><i style="color:var(--seance)">▲</i><i style="color:var(--polter)">▲</i></span>three apps plug into one skeleton through the same 7 + 2 protocols<small>adapters/ and apps/ import core/ — core/ never imports them · the skeleton is the same for every domain</small></div>
+
+    <!-- Three apps, one skeleton -->
+    <div class="apps-boundary">
+      <div class="boundary-badge">adapters/ + apps/ · three domains on one skeleton</div>
+      <div class="apps-row">
+        <div class="app-box crypt">
+          <div class="app-title">The Crypt</div>
+          <div class="app-name">Schema Drift</div><div class="app-name" style="color:var(--text-muted);font-weight:600;">adapters/postgres/</div>
+          <div class="app-desc">SQLAlchemy models vs live Neon Postgres. Missing indexes, type wraiths, phantom indexes. Fix: DDL.</div>
+        </div>
+        <div class="app-box seance">
+          <div class="app-title">The Séance</div>
+          <div class="app-name">Contract Observer</div><div class="app-name" style="color:var(--text-muted);font-weight:600;">adapters/openapi/</div>
+          <div class="app-desc">openapi.yaml vs the live API on Render. Shadow and vanished fields. Fix: one GitHub PR per file.</div>
+        </div>
+        <div class="app-box polter">
+          <div class="app-title">The Poltergeist</div>
+          <div class="app-name">Cache Drift</div><div class="app-name" style="color:var(--text-muted);font-weight:600;">adapters/redis/</div>
+          <div class="app-desc">cache_config.yaml vs live Upstash Redis keys. Missing and undeclared keys. Fix: warm or delete. No LLM.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Safety -->
+    <div class="safety-boundary">
+      <div class="boundary-badge">Safety boundaries · core + adapters</div>
+      <div class="safety-row">
+        <div class="safety-box">
+          <div class="safety-name">Operation matrix + target binding</div>
+          <div class="safety-desc">Only listed DDL kinds pass. Index must be exactly ix_&lt;table&gt;_&lt;cols&gt;, declared column order, plain B-tree. Destructive ops fail closed.</div>
+        </div>
+        <div class="safety-box">
+          <div class="safety-name">SSRF guard · adapters/ssrf.py</div>
+          <div class="safety-desc">Every outbound request — API probes, cache status, Context7, models.py download — checked against tech.md's blocked ranges. No redirects, no proxies.</div>
+        </div>
+        <div class="safety-box">
+          <div class="safety-name">Token-based redaction</div>
+          <div class="safety-desc">Secrets stripped from headers, queries and JSON before persistence, logging, or the LLM sees them. Errors stored as code + class, never raw text.</div>
+        </div>
+        <div class="safety-box">
+          <div class="safety-name">AST-enforced skeleton</div>
+          <div class="safety-desc">test_skeleton.py walks core/'s AST: exact file set, no adapter imports, no sqlglot, no domain branching. Checked on every test run.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SERVICES -->
+  <div class="tools-col">
+
+    <div class="tool-group-label">Declared · what the code says</div>
+
+    <div class="tool-card declared-t">
+      <div class="tool-emoji">📜</div>
+      <div class="tool-info">
+        <div class="tool-name">Demo target repo</div>
+        <div class="tool-desc">models.py · openapi.yaml<br>cache_config.yaml · via repos.json</div>
+        <div class="svc-badge app2">GITHUB</div>
+      </div>
+    </div>
+
+    <div class="tool-group-label">Live · what the system does</div>
+
+    <div class="tool-card crypt-t">
+      <div class="tool-emoji">🗄️</div>
+      <div class="tool-info">
+        <div class="tool-name">Neon Postgres</div>
+        <div class="tool-desc">Live schema · seeded drift<br>DDL target for fixes</div>
+        <div class="svc-badge app1">THE CRYPT</div>
+      </div>
+    </div>
+
+    <div class="tool-card seance-t">
+      <div class="tool-emoji">🌐</div>
+      <div class="tool-info">
+        <div class="tool-name">Demo API on Render</div>
+        <div class="tool-desc">Probed per endpoint · /health<br>wake-up before every scan</div>
+        <div class="svc-badge app2">THE SÉANCE</div>
+      </div>
+    </div>
+
+    <div class="tool-card polter-t">
+      <div class="tool-emoji">🧊</div>
+      <div class="tool-info">
+        <div class="tool-name">Upstash Redis</div>
+        <div class="tool-desc">Live key set via /cache/status<br>/cache/warm · /cache/delete</div>
+        <div class="svc-badge app3">THE POLTERGEIST</div>
+      </div>
+    </div>
+
+    <div class="tool-group-label">Fix proposals</div>
+
+    <div class="tool-card llm-t">
+      <div class="tool-emoji">🧠</div>
+      <div class="tool-info">
+        <div class="tool-name">AWS Bedrock Mantle</div>
+        <div class="tool-desc">Qwen3-235B · SQL + patch check<br>DeepSeek v3.2 · API patches · temp 0</div>
+        <div class="svc-badge aws">AWS</div>
+      </div>
+    </div>
+
+    <div class="tool-card llm-t">
+      <div class="tool-emoji">📚</div>
+      <div class="tool-info">
+        <div class="tool-name">Context7</div>
+        <div class="tool-desc">PostgreSQL docs in the SQL prompt<br>no docs → confidence: LOW</div>
+        <div class="svc-badge aws">REST · MCP</div>
+      </div>
+    </div>
+
+    <div class="tool-card seance-t">
+      <div class="tool-emoji">🔀</div>
+      <div class="tool-info">
+        <div class="tool-name">GitHub Pull Requests</div>
+        <div class="tool-desc">One PR per file · idempotent<br>draft PR if validation fails twice</div>
+        <div class="svc-badge app2">THE SÉANCE</div>
+      </div>
+    </div>
+
+    <div class="tool-group-label">Built with Kiro</div>
+
+    <div class="tool-card kiro-t">
+      <div class="tool-emoji">🧭</div>
+      <div class="tool-info">
+        <div class="tool-name">Specs + steering</div>
+        <div class="tool-desc">requirements · design · tasks<br>product · tech · kiro-features</div>
+        <div class="svc-badge kiro">KIRO IDE</div>
+      </div>
+    </div>
+
+    <div class="tool-card kiro-t">
+      <div class="tool-emoji">🪝</div>
+      <div class="tool-info">
+        <div class="tool-name">Hooks + custom agent</div>
+        <div class="tool-desc">new-adapter · comparator-test<br>demo-case-cache · validator-reviewer</div>
+        <div class="svc-badge kiro">KIRO IDE</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <span class="legend-title">Legend</span>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--pumpkin);"></div>Skeleton · The Crypt</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--seance);"></div>The Séance</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--polter);"></div>The Poltergeist · Execute</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--amber);"></div>LLM · human authorization</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--blood);"></div>Safety boundary</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--spirit);"></div>Verified · Kiro</div>
+  <div class="legend-item" style="margin-left:auto;">
+    <span style="font-family:var(--font-mono);font-size:0.58rem;color:var(--text-muted);">Kiroween 2026 · Skeleton Crew</span>
+  </div>
+</div>
+
+</body>
+</html>

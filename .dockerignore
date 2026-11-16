@@ -1,0 +1,36 @@
+# Keep the image small and free of secrets and local state.
+
+# Secrets — set these as environment variables on Render instead
+.env
+.env.*
+!.env_sample
+
+# VCS, editors, local environments
+.git
+.github
+.idea
+.vscode
+.venv
+venv
+
+# Python build and test artefacts
+__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.hypothesis
+.coverage
+
+# Per-app runtime state (rebuilt at runtime)
+apps/**/.reports
+apps/**/.cache.json
+apps/**/.cache.json.bak
+
+# Not needed to run the apps
+tests
+docs
+.kiro
+scripts
+cli.py
+README.md
+*.log

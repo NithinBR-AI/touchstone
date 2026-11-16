@@ -1,5 +1,16 @@
 # The Crypt — Schema Drift
 
+> **Where this app's code lives** — Touchstone App 1, built on the shared `core/` skeleton.
+>
+> | Part | Location |
+> |---|---|
+> | App (FastAPI wiring, endpoints, Reset Demo) | `apps/schema-drift/` — this folder |
+> | Domain adapters | [`adapters/postgres/`](../../adapters/postgres/) — intended, actual, normalize, comparator, validator, executor, verifier |
+> | Skeleton (shared by every app; holds no domain code) | [`core/`](../../core/) |
+> | LLM resolver + Context7 grounding | [`agents/`](../../agents/) |
+> | Shared UI template | [`apps/shared/ui/`](../shared/ui/) |
+> | Deployment | [`Dockerfile`](Dockerfile) in this folder — copies `core/` + `adapters/postgres/` only; build from the repo root |
+
 Touchstone app — detects drift between the SQLAlchemy model declarations and
 the live Postgres schema. The declared schema lives in a separate target repo
 ([touchstone-demo-target](https://github.com/NithinBR-AI/touchstone-demo-target-repo));
