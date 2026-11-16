@@ -297,7 +297,9 @@ function renderCard(diff, report, index) {
     state === "PENDING" ||
     ((state === "REVIEW_REQUIRED" || state === "BLOCKED") && hasProposal)
   );
-  const canRollback = (state === "RESOLVED" || state === "STILL_PRESENT") && CONFIG.domain !== "database";
+  // No shipped executor implements rollback (database: unsupported by design;
+  // api and cache: refused). Show the button only if an app opts in via /config.
+  const canRollback = (state === "RESOLVED" || state === "STILL_PRESENT") && CONFIG.supports_rollback === true;
 
   const applyBtn = canApply
     ? `<button class="btn btn-primary" data-action="apply" data-id="${esc(diff.id)}" ${_applying.has(diff.id) ? "disabled" : ""}>
