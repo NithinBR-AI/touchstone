@@ -25,9 +25,8 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
-
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -198,7 +197,9 @@ class ConfigExecutor:
     def __init__(self, live: dict[str, dict[str, Any]]) -> None:
         self._live = live
 
-    def execute(self, resolution: Resolution, difference: Difference) -> ExecutionResult:
+    def execute(
+        self, resolution: Resolution, difference: Difference
+    ) -> ExecutionResult:
         proposal = resolution.proposed_change
         if proposal is None:
             return ExecutionResult(
@@ -225,7 +226,9 @@ class ConfigVerifier:
     def __init__(self, live: dict[str, dict[str, Any]]) -> None:
         self._live = live
 
-    def verify(self, target: ComparisonTarget, difference: Difference) -> VerificationResult:
+    def verify(
+        self, target: ComparisonTarget, difference: Difference
+    ) -> VerificationResult:
         section = difference.context.get("section", "default")
         key = difference.target
         present = key in self._live.get(section, {})
@@ -416,7 +419,9 @@ class TestConfigDomainFullLifecycle:
         # Executor was never called — live dict unchanged
         assert live["default"] == {}
 
-    def test_undeclared_key_stays_review_required_without_authorization(self, tmp_path: Path) -> None:
+    def test_undeclared_key_stays_review_required_without_authorization(
+        self, tmp_path: Path
+    ) -> None:
         declared = {"default": {}}
         live = {"default": {"debug_mode": True}}
         orch = _make_orchestrator(declared, live, ["default"], tmp_path)
@@ -527,7 +532,8 @@ class TestFourthDomainNoCoreModification:
                                 f"string 'config' in comparison"
                             )
 
-        assert not violations, (
-            "core/ references 'config' as a domain string — forbidden:\n"
-            + "\n".join(f"  {v}" for v in violations)
+        assert (
+            not violations
+        ), "core/ references 'config' as a domain string — forbidden:\n" + "\n".join(
+            f"  {v}" for v in violations
         )

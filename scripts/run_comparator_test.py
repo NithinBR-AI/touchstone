@@ -65,8 +65,10 @@ def _log_run(test_file: str, output: str, returncode: int) -> None:
     summary = lines[-1] if lines else "no output"
     log = Path(__file__).resolve().parent.parent / ".kiro" / "hook-runs.log"
     with log.open("a", encoding="utf-8") as f:
-        f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} "
-                f"{test_file} exit={returncode} {summary}\n")
+        f.write(
+            f"{datetime.datetime.now().isoformat(timespec='seconds')} "
+            f"{test_file} exit={returncode} {summary}\n"
+        )
 
 
 if __name__ == "__main__":

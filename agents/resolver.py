@@ -98,7 +98,10 @@ def validate_payload(payload: Any) -> str:
         for key in ("statement", "operation"):
             if key not in payload:
                 return f"missing key '{key}'"
-        if not isinstance(payload["statement"], str) or not payload["statement"].strip():
+        if (
+            not isinstance(payload["statement"], str)
+            or not payload["statement"].strip()
+        ):
             return "sql action requires a statement"
         if payload["operation"] not in ALLOWED_OPERATIONS:
             return "invalid operation"
@@ -122,7 +125,12 @@ def validate_payload(payload: Any) -> str:
 
 
 def _review(rationale: str) -> dict[str, Any]:
-    return {"action": "review", "statement": None, "operation": None, "rationale": rationale}
+    return {
+        "action": "review",
+        "statement": None,
+        "operation": None,
+        "rationale": rationale,
+    }
 
 
 def canned_responder(prompt: str, difference: Difference) -> dict[str, Any]:
@@ -130,8 +138,12 @@ def canned_responder(prompt: str, difference: Difference) -> dict[str, Any]:
     if difference.kind == "INDEX_MISSING":
         table = ctx.get("table", "")
         cols = list(ctx.get("columns", []))
-        if not cols or not all(_PLAIN_IDENT.match(x) for x in [table, *cols, difference.target]):
-            return _review("Identifiers need quoting; not generating SQL automatically.")
+        if not cols or not all(
+            _PLAIN_IDENT.match(x) for x in [table, *cols, difference.target]
+        ):
+            return _review(
+                "Identifiers need quoting; not generating SQL automatically."
+            )
         return {
             "action": "sql",
             "statement": f"CREATE INDEX {difference.target} ON {table} ({', '.join(cols)})",
@@ -142,7 +154,9 @@ def canned_responder(prompt: str, difference: Difference) -> dict[str, Any]:
         table, col = ctx.get("table", ""), ctx.get("column", "")
         new_type = str(ctx.get("intended_type", ""))
         if not (_PLAIN_IDENT.match(table) and _PLAIN_IDENT.match(col)):
-            return _review("Identifiers need quoting; not generating SQL automatically.")
+            return _review(
+                "Identifiers need quoting; not generating SQL automatically."
+            )
         if not re.fullmatch(r"[a-z ]+(\(\d+\))?", new_type):
             return _review("Intended type is not a simple widening target.")
         return {
@@ -225,8 +239,13 @@ class MockResolver:
                 f"Cache {proposal.operation} for key {difference.target}",
             )
 
-        if not difference.context.get("safe_fix", False) or difference.kind in REVIEW_ONLY_KINDS:
-            return self._resolution(difference, digest, None, "Review required: not auto-fixable.")
+        if (
+            not difference.context.get("safe_fix", False)
+            or difference.kind in REVIEW_ONLY_KINDS
+        ):
+            return self._resolution(
+                difference, digest, None, "Review required: not auto-fixable."
+            )
 
         last_error = ""
         for _ in range(MAX_ATTEMPTS):
@@ -336,13 +355,18 @@ class MantleResolver:
                 payload = json.loads(raw)
             except (json.JSONDecodeError, Exception) as exc:
                 last_error = f"LLM call/parse error: {type(exc).__name__}"
-                logger.warning("Attempt %d/%d failed: %s", attempt + 1, MAX_ATTEMPTS, last_error)
+                logger.warning(
+                    "Attempt %d/%d failed: %s", attempt + 1, MAX_ATTEMPTS, last_error
+                )
                 continue
 
             last_error = validate_payload(payload)
             if last_error:
                 logger.warning(
-                    "Attempt %d/%d invalid payload: %s", attempt + 1, MAX_ATTEMPTS, last_error
+                    "Attempt %d/%d invalid payload: %s",
+                    attempt + 1,
+                    MAX_ATTEMPTS,
+                    last_error,
                 )
                 continue
 

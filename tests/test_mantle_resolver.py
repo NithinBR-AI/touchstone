@@ -13,7 +13,12 @@ import os
 import pytest
 
 from agents import context7
-from agents.prompts import _API_SYSTEM_PROMPT, _CACHE_SYSTEM_PROMPT, _DB_SYSTEM_PROMPT, build_prompt
+from agents.prompts import (
+    _API_SYSTEM_PROMPT,
+    _CACHE_SYSTEM_PROMPT,
+    _DB_SYSTEM_PROMPT,
+    build_prompt,
+)
 from agents.resolver import MantleResolver
 from core.models import Difference, GhostState
 
@@ -30,6 +35,7 @@ def _offline_context7(monkeypatch):
     monkeypatch.setattr("agents.context7.ssrf_validate", lambda url: url)
     yield
     context7.clear_cache()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -273,7 +279,9 @@ def test_api_domain_returns_deferred_rationale(monkeypatch):
         return _ok_review_payload("Field exists in API but missing from spec.")
 
     monkeypatch.setattr("agents.mantle_client.deepseek_pro", fake_deepseek)
-    monkeypatch.setattr("agents.mantle_client.ultra", lambda *a, **kw: _ok_review_payload())
+    monkeypatch.setattr(
+        "agents.mantle_client.ultra", lambda *a, **kw: _ok_review_payload()
+    )
     diff = _api_diff(safe_fix=False)
     res = MantleResolver().resolve(diff)
     assert len(calls) == 0  # no LLM call — deferred to executor
@@ -295,7 +303,9 @@ def test_llm_wrapper_stripped_before_parse(monkeypatch):
     monkeypatch.setattr("agents.mantle_client.ultra", fake_ultra)
     monkeypatch.setattr(
         "agents.mantle_client.strip_llm_wrapper",
-        __import__("agents.mantle_client", fromlist=["strip_llm_wrapper"]).strip_llm_wrapper,
+        __import__(
+            "agents.mantle_client", fromlist=["strip_llm_wrapper"]
+        ).strip_llm_wrapper,
     )
     res = MantleResolver().resolve(_db_diff())
     assert res.proposed_change is not None
@@ -304,7 +314,9 @@ def test_llm_wrapper_stripped_before_parse(monkeypatch):
 
 def test_valid_sql_response_produces_sql_change(monkeypatch):
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
-    monkeypatch.setattr("agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload())
+    monkeypatch.setattr(
+        "agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload()
+    )
     monkeypatch.setattr("agents.mantle_client.strip_llm_wrapper", lambda x: x)
     res = MantleResolver().resolve(_db_diff())
     assert res.proposed_change is not None
@@ -384,7 +396,9 @@ def test_resolution_carries_prompt_sha256(monkeypatch):
     import re
 
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
-    monkeypatch.setattr("agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload())
+    monkeypatch.setattr(
+        "agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload()
+    )
     monkeypatch.setattr("agents.mantle_client.strip_llm_wrapper", lambda x: x)
     res = MantleResolver().resolve(_db_diff())
     assert re.fullmatch(r"[0-9a-f]{64}", res.prompt_sha256)
@@ -392,7 +406,9 @@ def test_resolution_carries_prompt_sha256(monkeypatch):
 
 def test_resolution_difference_id_matches(monkeypatch):
     monkeypatch.setenv("MANTLE_API_KEY", "test-key")
-    monkeypatch.setattr("agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload())
+    monkeypatch.setattr(
+        "agents.mantle_client.ultra", lambda *a, **kw: _ok_sql_payload()
+    )
     monkeypatch.setattr("agents.mantle_client.strip_llm_wrapper", lambda x: x)
     diff = _db_diff()
     res = MantleResolver().resolve(diff)

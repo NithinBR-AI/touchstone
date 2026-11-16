@@ -42,7 +42,9 @@ class CacheValidator:
             )
 
         # --- 2. Operation must match kind ---
-        expected_op = "CACHE_WARM" if difference.kind == "KEY_MISSING" else "CACHE_DELETE"
+        expected_op = (
+            "CACHE_WARM" if difference.kind == "KEY_MISSING" else "CACHE_DELETE"
+        )
         if proposal.operation != expected_op:
             return ValidationResult(
                 status="blocked",

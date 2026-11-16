@@ -36,8 +36,8 @@ touchstone/
 ├── inputs/
 ├── fixtures/
 ├── tests/
-├── .github/workflows/drift.yml
-├── Dockerfile
+├── .github/workflows/          # CI planned (tasks 10.1/10.2 deferred, see README What's Next)
+├── render.yaml                   # Render Blueprint: one web service per app (each app has its own Dockerfile)
 ├── pyproject.toml
 └── README.md
 

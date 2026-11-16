@@ -47,7 +47,9 @@ class FakeDB:
     def __init__(self) -> None:
         self.tables = copy.deepcopy(INTENDED)
         self.tables["users"]["indexes"] = {}  # ghost: missing index
-        self.tables["users"]["columns"]["email"]["type"] = "varchar(100)"  # ghost: narrower type
+        self.tables["users"]["columns"]["email"][
+            "type"
+        ] = "varchar(100)"  # ghost: narrower type
 
     def state(self) -> State:
         return State(domain="database", data={"tables": copy.deepcopy(self.tables)})
@@ -125,7 +127,9 @@ def test_full_loop_resolves_both_ghosts(tmp_path: Path) -> None:
 
     # Persisted report matches in-memory state
     saved = Persistence(tmp_path / "reports").load(report.id)
-    assert {d.id: d.state for d in saved.differences} == {d.id: d.state for d in report.differences}
+    assert {d.id: d.state for d in saved.differences} == {
+        d.id: d.state for d in report.differences
+    }
 
 
 def test_apply_without_effect_is_still_present(tmp_path: Path) -> None:
@@ -212,5 +216,7 @@ def test_cache_populated_after_successful_apply(tmp_path: Path) -> None:
     data = _json.loads(cache_file.read_text(encoding="utf-8"))
     assert len(data) >= 1, "Expected at least one cache entry after successful apply"
     for entry in data.values():
-        assert entry.get("proposed_change") is not None, "Cached entry has no proposed_change"
+        assert (
+            entry.get("proposed_change") is not None
+        ), "Cached entry has no proposed_change"
         assert "expires_at" in entry, "Cached entry missing expires_at TTL field"

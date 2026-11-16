@@ -54,8 +54,12 @@ def create_orchestrator(domain: str = "database"):
         ComparisonTarget(domain=domain, target="users.email", context={})
     ]
     source_adapter = MagicMock()
-    source_adapter.intended.return_value = State(domain=domain, data={"email": "VARCHAR(100)"})
-    source_adapter.actual.return_value = State(domain=domain, data={"email": "VARCHAR(50)"})
+    source_adapter.intended.return_value = State(
+        domain=domain, data={"email": "VARCHAR(100)"}
+    )
+    source_adapter.actual.return_value = State(
+        domain=domain, data={"email": "VARCHAR(50)"}
+    )
     diff = Difference(
         kind="TYPE_CHANGED",
         target="users.email",

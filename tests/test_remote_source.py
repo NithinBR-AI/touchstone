@@ -50,7 +50,9 @@ def _serve(monkeypatch, handler) -> list[str]:
 
     monkeypatch.setattr(
         "adapters.remote_source._make_client",
-        lambda: httpx.Client(transport=httpx.MockTransport(recording), follow_redirects=False),
+        lambda: httpx.Client(
+            transport=httpx.MockTransport(recording), follow_redirects=False
+        ),
     )
     return requests
 
@@ -106,7 +108,9 @@ def test_blocked_destination_refused_before_any_request(monkeypatch):
 def test_redirect_is_not_followed(monkeypatch, status):
     requests = _serve(
         monkeypatch,
-        lambda req: httpx.Response(status, headers={"location": "https://evil.example/models.py"}),
+        lambda req: httpx.Response(
+            status, headers={"location": "https://evil.example/models.py"}
+        ),
     )
     with pytest.raises(httpx.HTTPStatusError):
         remote_source.fetch(URL)
@@ -134,7 +138,9 @@ def test_failed_download_leaves_no_temp_file(monkeypatch, tmp_path):
 def test_http_client_disables_proxies_and_redirects(monkeypatch):
     """trust_env=False, follow_redirects=False, OS trust store, short timeout."""
     seen = {}
-    monkeypatch.setattr("adapters.remote_source.httpx.Client", lambda **kw: seen.update(kw))
+    monkeypatch.setattr(
+        "adapters.remote_source.httpx.Client", lambda **kw: seen.update(kw)
+    )
     remote_source._make_client()
     assert seen["trust_env"] is False
     assert seen["follow_redirects"] is False

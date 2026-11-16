@@ -156,7 +156,9 @@ def build_prompt(difference: Difference) -> str:
     The system prompt is domain-specific. The user section carries only
     stable, redacted fields so the same ghost always hashes to the same SHA-256.
     """
-    ctx = {k: v for k, v in difference.context.items() if k not in ("safe_fix", "policy")}
+    ctx = {
+        k: v for k, v in difference.context.items() if k not in ("safe_fix", "policy")
+    }
     payload = {
         "domain": difference.domain,
         "kind": difference.kind,
@@ -196,7 +198,11 @@ def build_api_batch_user_message(
     """
     Build the user-turn message for a batched API patch call.
     """
-    target = f"the '{schema_name}' schema" if schema_name else f"the schema for endpoint '{path}'"
+    target = (
+        f"the '{schema_name}' schema"
+        if schema_name
+        else f"the schema for endpoint '{path}'"
+    )
     # For main.py patches, use operationId to identify the exact function
     func_name = operation_id if operation_id else path
 

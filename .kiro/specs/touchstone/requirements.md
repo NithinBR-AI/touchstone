@@ -468,6 +468,18 @@ Third app behind a compose profile, NOT started by default. One URL per
 mandatory app. Sandbox DB read-only or reseeded nightly. Apps accessible
 until Jan 29, 2027.
 
+Implemented (v1): Render, not docker compose. Each app has its own
+Dockerfile (apps/<app>/Dockerfile, built from the repo root, copying core/ +
+its own adapter folder only) and render.yaml creates one free-tier web service
+per app — all three apps deployed, one URL each:
+· https://touchstone-schema-drift.onrender.com
+· https://touchstone-contract-observer.onrender.com
+· https://touchstone-poltergeist.onrender.com
+The demo DB is reseeded on demand by Reset Demo, not nightly. Free-tier
+services sleep after 15 min idle and take about a minute to wake; the API and
+cache adapters wait up to 120 s for the demo target API (measured wake: ~33 s). No keep-alive pinger:
+750 free instance hours per workspace would not cover four always-on services.
+
 Requirement 38: Category Proof Artifacts
 
 README "Skeleton Crew entry" section (at top of README) documents: what the

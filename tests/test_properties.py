@@ -103,16 +103,25 @@ def test_pg_reference_table_ignores_case_and_outer_whitespace(case):
 @given(st.sampled_from(SA_REFERENCE))
 def test_sa_reference_table(case):
     sa_expr, expected = case
-    assert normalize_sqlalchemy_type(eval(sa_expr)) == expected  # noqa: S307 — controlled input
+    assert (
+        normalize_sqlalchemy_type(eval(sa_expr)) == expected
+    )  # noqa: S307 — controlled input
 
 
 @given(st.sampled_from(ROUND_TRIP_PAIRS))
 def test_round_trip_sa_equals_pg(case):
     sa_expr, pg_type, expected = case
-    assert normalize_sqlalchemy_type(eval(sa_expr)) == normalize_pg_type(pg_type) == expected  # noqa: S307
+    assert (
+        normalize_sqlalchemy_type(eval(sa_expr))
+        == normalize_pg_type(pg_type)
+        == expected
+    )  # noqa: S307
 
 
-@given(st.integers(min_value=1, max_value=10_485_760), st.sampled_from(["varchar", "character varying"]))
+@given(
+    st.integers(min_value=1, max_value=10_485_760),
+    st.sampled_from(["varchar", "character varying"]),
+)
 def test_generated_varchar_round_trip(n, spelling):
     canonical = f"varchar({n})"
     assert normalize_pg_type(f"{spelling}({n})") == canonical
@@ -208,10 +217,22 @@ def _type_case(draw, pairs=_WIDENING):
         domain="database",
         kind="TYPE_CHANGED",
         target=f"{table}.{col}",
-        context={"table": table, "column": col, "original_actual_type": old, "safe_fix": True},
+        context={
+            "table": table,
+            "column": col,
+            "original_actual_type": old,
+            "safe_fix": True,
+        },
     )
     sql = f"ALTER TABLE {table} ALTER COLUMN {col} TYPE {new}"
-    return {"diff": diff, "sql": sql, "table": table, "col": col, "old": old, "new": new}
+    return {
+        "diff": diff,
+        "sql": sql,
+        "table": table,
+        "col": col,
+        "old": old,
+        "new": new,
+    }
 
 
 def _proposal(diff: Difference, sql: str, operation: str) -> ChangeProposal:
@@ -223,10 +244,16 @@ def _proposal(diff: Difference, sql: str, operation: str) -> ChangeProposal:
     )
 
 
-def _status(diff: Difference, sql: str, operation: str, *, human_authorized: bool = False) -> str:
-    return SQLValidator().validate(
-        _proposal(diff, sql, operation), diff, human_authorized=human_authorized
-    ).status
+def _status(
+    diff: Difference, sql: str, operation: str, *, human_authorized: bool = False
+) -> str:
+    return (
+        SQLValidator()
+        .validate(
+            _proposal(diff, sql, operation), diff, human_authorized=human_authorized
+        )
+        .status
+    )
 
 
 @given(_index_case())
@@ -267,9 +294,17 @@ def _index_mutations(case) -> list[tuple[str, str]]:
         ("unnamed", f"CREATE INDEX ON {t} ({col_list})"),
         ("non-btree", f"CREATE INDEX {name} ON {t} USING hash ({col_list})"),
         ("desc", f"CREATE INDEX {name} ON {t} ({_first_col_with(cols, ' DESC')})"),
-        ("nulls first", f"CREATE INDEX {name} ON {t} ({_first_col_with(cols, ' NULLS FIRST')})"),
+        (
+            "nulls first",
+            f"CREATE INDEX {name} ON {t} ({_first_col_with(cols, ' NULLS FIRST')})",
+        ),
     ] + (
-        [("reversed column order", f"CREATE INDEX {name} ON {t} ({', '.join(reversed(cols))})")]
+        [
+            (
+                "reversed column order",
+                f"CREATE INDEX {name} ON {t} ({', '.join(reversed(cols))})",
+            )
+        ]
         if len(cols) > 1
         else []
     )
@@ -296,15 +331,21 @@ def test_mutated_create_index_rejected_even_with_human_authorization(case):
     for label, sql in _index_mutations(case):
         for auth in (False, True):
             status = _status(case["diff"], sql, "CREATE_INDEX", human_authorized=auth)
-            assert status != "valid", f"{label} accepted (human_authorized={auth}): {sql}"
+            assert (
+                status != "valid"
+            ), f"{label} accepted (human_authorized={auth}): {sql}"
 
 
 @given(_type_case())
 def test_mutated_alter_type_rejected_even_with_human_authorization(case):
     for label, sql in _type_mutations(case):
         for auth in (False, True):
-            status = _status(case["diff"], sql, "ALTER_COLUMN_TYPE", human_authorized=auth)
-            assert status != "valid", f"{label} accepted (human_authorized={auth}): {sql}"
+            status = _status(
+                case["diff"], sql, "ALTER_COLUMN_TYPE", human_authorized=auth
+            )
+            assert (
+                status != "valid"
+            ), f"{label} accepted (human_authorized={auth}): {sql}"
 
 
 @given(_type_case(pairs=_NARROWING))
@@ -317,7 +358,9 @@ def test_non_widening_needs_human_authorization(case):
 
 # --- Real Postgres execution (Neon) ---------------------------------------
 
-needs_db = pytest.mark.skipif(not DB_URL, reason="DATABASE_URL not set — skipping real Postgres")
+needs_db = pytest.mark.skipif(
+    not DB_URL, reason="DATABASE_URL not set — skipping real Postgres"
+)
 # Few examples: each costs a fresh Neon connection (~3 s) inside SQLExecutor.
 _db_settings = settings(
     max_examples=3, deadline=None, suppress_health_check=[HealthCheck.too_slow]
@@ -342,7 +385,9 @@ def _ddl(conn, sql: str, table: str) -> None:
     conn.commit()
 
 
-def _run_through_executor(diff: Difference, sql: str, operation: str) -> ExecutionResult:
+def _run_through_executor(
+    diff: Difference, sql: str, operation: str
+) -> ExecutionResult:
     resolution = Resolution(
         difference_id=diff.id,
         difference_signature=diff.signature,
@@ -360,14 +405,19 @@ def test_generated_create_index_executes_on_postgres(case):
     assert _status(case["diff"], case["sql"], "CREATE_INDEX") == "valid"
     conn = _setup_conn()
     _ddl(conn, f"DROP TABLE IF EXISTS {table}", table)
-    _ddl(conn, f"CREATE TABLE {table} ({', '.join(f'{c} integer' for c in cols)})", table)
+    _ddl(
+        conn, f"CREATE TABLE {table} ({', '.join(f'{c} integer' for c in cols)})", table
+    )
     try:
         result = _run_through_executor(case["diff"], case["sql"], "CREATE_INDEX")
         assert result.success, result.error_code
-        indexes = [r[0] for r in conn.execute(
-            "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename=%s",
-            (table,),
-        )]
+        indexes = [
+            r[0]
+            for r in conn.execute(
+                "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename=%s",
+                (table,),
+            )
+        ]
         assert indexes == [case["name"]]
     finally:
         conn.rollback()
@@ -406,7 +456,9 @@ def test_generated_widening_executes_on_postgres(case):
 # ===========================================================================
 
 VALID = ValidationResult(status="valid", ghost_state=GhostState.PENDING)
-REVIEW = ValidationResult(status="review_required", reason="pbt", ghost_state=GhostState.REVIEW_REQUIRED)
+REVIEW = ValidationResult(
+    status="review_required", reason="pbt", ghost_state=GhostState.REVIEW_REQUIRED
+)
 BLOCK = ValidationResult(status="blocked", reason="pbt", ghost_state=GhostState.BLOCKED)
 
 TERMINAL = {
@@ -476,7 +528,9 @@ class _Resolver:
                 domain="database",
                 target=difference.target,
                 operation="ALTER_COLUMN_TYPE",
-                payload={"statement": "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"},
+                payload={
+                    "statement": "ALTER TABLE users ALTER COLUMN email TYPE varchar(255)"
+                },
             ),
             prompt_sha256="pbt",
         )
@@ -489,7 +543,9 @@ atexit.register(shutil.rmtree, _REPORTS_ROOT, ignore_errors=True)
 
 def _make(*, rollback_support: bool):
     input_source = MagicMock()
-    input_source.targets.return_value = [ComparisonTarget(domain="database", target="public")]
+    input_source.targets.return_value = [
+        ComparisonTarget(domain="database", target="public")
+    ]
     source = MagicMock()
     source.intended.return_value = State(domain="database")
     source.actual.return_value = State(domain="database")
@@ -516,7 +572,10 @@ def _make(*, rollback_support: bool):
 def _arrive_at(state: GhostState, *, rollback_support: bool):
     """Reach *state* the way the app does; SUPERSEDED (reserved, never produced) is set directly."""
     orch, p = _make(rollback_support=rollback_support)
-    p["validator"].result = {GhostState.REVIEW_REQUIRED: REVIEW, GhostState.BLOCKED: BLOCK}.get(state, VALID)
+    p["validator"].result = {
+        GhostState.REVIEW_REQUIRED: REVIEW,
+        GhostState.BLOCKED: BLOCK,
+    }.get(state, VALID)
     report = orch.run()
     diff = report.differences[0]
     p["validator"].result = VALID
@@ -600,7 +659,9 @@ def test_transition_table_cell(state, event, auth):
     if event == "E7":
         assert rollback.success is False
     if event == "E8":
-        assert rollback.success is (state in (GhostState.RESOLVED, GhostState.STILL_PRESENT))
+        assert rollback.success is (
+            state in (GhostState.RESOLVED, GhostState.STILL_PRESENT)
+        )
 
 
 @settings(max_examples=150, deadline=None)
@@ -638,7 +699,9 @@ def test_invariants_hold_over_random_event_sequences(initial, steps):
 
         persisted = orch.persistence.load(report.id)
         assert persisted is not None
-        assert persisted.differences[0].state == after, "persisted state differs from memory"
+        assert (
+            persisted.differences[0].state == after
+        ), "persisted state differs from memory"
 
 
 # ===========================================================================
@@ -649,15 +712,33 @@ REDACTED = "***REDACTED***"
 TRUNCATED = "***TRUNCATED***"
 
 REQUIRED_SENSITIVE = [
-    "authorization", "Authorization",
-    "client_secret", "clientSecret", "CLIENTSECRET",
-    "private_key", "privateKey", "privatekey",
+    "authorization",
+    "Authorization",
+    "client_secret",
+    "clientSecret",
+    "CLIENTSECRET",
+    "private_key",
+    "privateKey",
+    "privatekey",
 ]
 SUBSTRING_TRAPS = ["monkey", "accessibility", "author"]
 SENSITIVE_BASES = ["authorization", "secret", "token", "password", "key"]
 SAFE_WORDS = [
-    "monkey", "accessibility", "author", "keyboard", "tokenizer", "secretary",
-    "passport", "user", "name", "email", "status", "created", "value", "count", "id",
+    "monkey",
+    "accessibility",
+    "author",
+    "keyboard",
+    "tokenizer",
+    "secretary",
+    "passport",
+    "user",
+    "name",
+    "email",
+    "status",
+    "created",
+    "value",
+    "count",
+    "id",
 ]
 
 
@@ -677,7 +758,9 @@ def _join(parts: list[str], style: str) -> str:
     raise ValueError(style)
 
 
-_STYLES = st.sampled_from(["snake", "kebab", "upper_snake", "camel", "pascal", "header"])
+_STYLES = st.sampled_from(
+    ["snake", "kebab", "upper_snake", "camel", "pascal", "header"]
+)
 
 
 @st.composite
@@ -732,17 +815,36 @@ def test_secret_never_survives_any_depth(depth, key):
 # 5. SSRF guard — tech.md blocked ranges
 # ===========================================================================
 
-BLOCKED_V4 = [ipaddress.ip_network(n) for n in (
-    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
-    "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16",
-    "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
-)]
-BLOCKED_V6 = [ipaddress.ip_network(n) for n in ("::1/128", "::/128", "fc00::/7", "fe80::/10", "ff00::/8")]
+BLOCKED_V4 = [
+    ipaddress.ip_network(n)
+    for n in (
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.0.0.0/24",
+        "192.0.2.0/24",
+        "192.168.0.0/16",
+        "198.18.0.0/15",
+        "198.51.100.0/24",
+        "203.0.113.0/24",
+        "224.0.0.0/4",
+        "240.0.0.0/4",
+    )
+]
+BLOCKED_V6 = [
+    ipaddress.ip_network(n)
+    for n in ("::1/128", "::/128", "fc00::/7", "fe80::/10", "ff00::/8")
+]
 
 
 def _address_in(networks):
     return st.sampled_from(networks).flatmap(
-        lambda net: st.integers(min_value=0, max_value=net.num_addresses - 1).map(lambda k: net[k])
+        lambda net: st.integers(min_value=0, max_value=net.num_addresses - 1).map(
+            lambda k: net[k]
+        )
     )
 
 

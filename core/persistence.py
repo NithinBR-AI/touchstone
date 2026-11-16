@@ -128,14 +128,18 @@ def _deserialise_difference(data: dict[str, Any]) -> Difference:
     d = dict(data)
     d["state"] = GhostState(d.get("state", "PENDING"))
     d["detected_at"] = _parse_dt(d.get("detected_at"))
-    return Difference(**{k: v for k, v in d.items() if k in Difference.__dataclass_fields__})
+    return Difference(
+        **{k: v for k, v in d.items() if k in Difference.__dataclass_fields__}
+    )
 
 
 def _deserialise_resolution(data: dict[str, Any]) -> Resolution:
     d = dict(data)
     d["proposed_change"] = _deserialise_proposal(d.get("proposed_change"))
     d["resolved_at"] = _parse_dt(d.get("resolved_at"))
-    return Resolution(**{k: v for k, v in d.items() if k in Resolution.__dataclass_fields__})
+    return Resolution(
+        **{k: v for k, v in d.items() if k in Resolution.__dataclass_fields__}
+    )
 
 
 def _deserialise_execution(data: dict[str, Any] | None) -> ExecutionResult | None:
@@ -170,13 +174,17 @@ def _deserialise_outcome(data: dict[str, Any]) -> ApplyOutcome:
     d["state"] = GhostState(d.get("state", "PENDING"))
     d["execution"] = _deserialise_execution(d.get("execution"))
     d["verification"] = _deserialise_verification(d.get("verification"))
-    return ApplyOutcome(**{k: v for k, v in d.items() if k in ApplyOutcome.__dataclass_fields__})
+    return ApplyOutcome(
+        **{k: v for k, v in d.items() if k in ApplyOutcome.__dataclass_fields__}
+    )
 
 
 def _deserialise_rollback_event(data: dict[str, Any]) -> RollbackEvent:
     d = dict(data)
     d["attempted_at"] = _parse_dt(d.get("attempted_at"))
-    return RollbackEvent(**{k: v for k, v in d.items() if k in RollbackEvent.__dataclass_fields__})
+    return RollbackEvent(
+        **{k: v for k, v in d.items() if k in RollbackEvent.__dataclass_fields__}
+    )
 
 
 def _deserialise_report(data: dict[str, Any]) -> Report:
@@ -187,11 +195,15 @@ def _deserialise_report(data: dict[str, Any]) -> Report:
         created_at=_parse_dt(data.get("created_at")),
         audit_log=data.get("audit_log", []),
     )
-    report.differences = [_deserialise_difference(d) for d in data.get("differences", [])]
+    report.differences = [
+        _deserialise_difference(d) for d in data.get("differences", [])
+    ]
     report.resolutions = {
         k: _deserialise_resolution(v) for k, v in data.get("resolutions", {}).items()
     }
-    report.outcomes = {k: _deserialise_outcome(v) for k, v in data.get("outcomes", {}).items()}
+    report.outcomes = {
+        k: _deserialise_outcome(v) for k, v in data.get("outcomes", {}).items()
+    }
     report.rollback_events = {
         k: [_deserialise_rollback_event(e) for e in events]
         for k, events in data.get("rollback_events", {}).items()

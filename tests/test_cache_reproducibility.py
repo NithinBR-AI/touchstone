@@ -234,12 +234,16 @@ class TestCacheReproducibility:
 
         for sig, entry in data.items():
             assert "cache_version" in entry, f"cache_version missing for {sig}"
-            assert "validator_contract" in entry, f"validator_contract missing for {sig}"
+            assert (
+                "validator_contract" in entry
+            ), f"validator_contract missing for {sig}"
             assert "prompt_hash" in entry, f"prompt_hash missing for {sig}"
             assert "expires_at" in entry, f"expires_at TTL missing for {sig}"
             assert entry["cache_version"] == CACHE_VERSION
             assert entry["validator_contract"] == VALIDATOR_CONTRACT
-            assert entry["proposed_change"] is not None, f"null proposed_change cached for {sig}"
+            assert (
+                entry["proposed_change"] is not None
+            ), f"null proposed_change cached for {sig}"
 
     def test_cache_lookup_skips_on_version_mismatch(self, tmp_path: Path) -> None:
         """Cache.get returns None when cache_version in file differs."""
@@ -283,7 +287,9 @@ class TestCacheReproducibility:
 
         db2 = _FakeDB()
         _build_orch(tmp_path, db2, counting).run()
-        assert len(calls) >= 1, "Expected responder to be called after prompt_hash mismatch"
+        assert (
+            len(calls) >= 1
+        ), "Expected responder to be called after prompt_hash mismatch"
 
     def test_first_run_no_cached_flag(self, tmp_path: Path) -> None:
         """First run resolutions are NOT marked cached (they came from the resolver)."""
@@ -291,7 +297,9 @@ class TestCacheReproducibility:
         report = _build_orch(tmp_path, db).run()
 
         for sig, res in report.resolutions.items():
-            assert res.cached is False, f"Resolution {sig} wrongly marked cached on first run"
+            assert (
+                res.cached is False
+            ), f"Resolution {sig} wrongly marked cached on first run"
 
     def test_cache_not_written_before_apply(self, tmp_path: Path) -> None:
         """run() alone must not write to cache — only apply+verify does."""

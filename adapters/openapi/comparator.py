@@ -49,7 +49,9 @@ def _make(
     ctx = dict(context)
     ctx["policy"] = policy
     ctx["safe_fix"] = False  # API drift always requires a PR — never auto-apply
-    state = GhostState.BLOCKED if policy == POLICY_BLOCKED else GhostState.REVIEW_REQUIRED
+    state = (
+        GhostState.BLOCKED if policy == POLICY_BLOCKED else GhostState.REVIEW_REQUIRED
+    )
     return Difference(
         signature=_signature(kind, target, key_ctx or {}),
         domain=DOMAIN,

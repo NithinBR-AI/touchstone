@@ -29,10 +29,25 @@ _BLOCKED_HOSTS = {
 _BLOCKED_NETWORKS = tuple(
     ipaddress.ip_network(n)
     for n in (
-        "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
-        "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16",
-        "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
-        "::1/128", "::/128", "fc00::/7", "fe80::/10", "ff00::/8",
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.0.0.0/24",
+        "192.0.2.0/24",
+        "192.168.0.0/16",
+        "198.18.0.0/15",
+        "198.51.100.0/24",
+        "203.0.113.0/24",
+        "224.0.0.0/4",
+        "240.0.0.0/4",
+        "::1/128",
+        "::/128",
+        "fc00::/7",
+        "fe80::/10",
+        "ff00::/8",
     )
 )
 
@@ -98,7 +113,9 @@ def validate(url: str) -> str:
             raise SSRFError(f"host '{host}' resolves to multicast address {addr}")
         for net in _BLOCKED_NETWORKS:
             if addr.version == net.version and addr in net:
-                raise SSRFError(f"host '{host}' resolves to blocked range {net} ({addr})")
+                raise SSRFError(
+                    f"host '{host}' resolves to blocked range {net} ({addr})"
+                )
         # tech.md: reject every non-global address. Catches ranges the checks
         # above miss, e.g. 100.64.0.0/10 (carrier-grade NAT shared space).
         if not addr.is_global:

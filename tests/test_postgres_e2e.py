@@ -161,7 +161,9 @@ class TestPostgresE2E:
         with tempfile.TemporaryDirectory() as _td:
             _probe = _build_orch(pathlib.Path(_td))
             _probe_report = _probe.run()
-        pending = [d for d in _probe_report.differences if d.state == GhostState.PENDING]
+        pending = [
+            d for d in _probe_report.differences if d.state == GhostState.PENDING
+        ]
         if not pending:
             pytest.skip(
                 "No PENDING differences in DB — drift may have been applied by an earlier test"
@@ -182,5 +184,7 @@ class TestPostgresE2E:
         orch2.resolver = MockResolver(counting)
         orch2.run()
 
-        assert first >= 1, "Resolver was never called on first run — no PENDING diffs resolved"
+        assert (
+            first >= 1
+        ), "Resolver was never called on first run — no PENDING diffs resolved"
         assert len(calls) == first, "Responder called again on second run — cache miss"

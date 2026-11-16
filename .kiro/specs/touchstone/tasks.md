@@ -700,14 +700,23 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ### 11. Deployment (Week 5)
 
-- [ ] 11.1 docker-compose.yml — two mandatory apps in default profile; third
-      behind profile
+- [x] 11.1 ~~docker-compose.yml — two mandatory apps in default profile; third
+      behind profile~~
+      SUPERSEDED: deployment is one Dockerfile per app (apps/<app>/Dockerfile) plus a
+      Render Blueprint (render.yaml, one web service per app), so each app builds and
+      deploys on its own. No compose file for the apps; fixtures/docker-compose.yml
+      still runs a local Postgres 16 for development.
   - _Req 37_
-- [ ] 11.2 Deploy two mandatory apps to URLs
-      PREPARED 2026-11-15: one Dockerfile per app (apps/<app>/Dockerfile), each copying
-      core/ + its own adapter folder only; render.yaml = three web services. Verified by
-      rebuilding each image's file set in an empty folder: all three serve /health,
-      /config and the UI, and load only their own adapter. Not yet deployed.
+- [x] 11.2 Deploy ~~two mandatory apps~~ all three apps to URLs
+      DONE 2026-11-15 on Render (free tier, region oregon), one service per app:
+      · Schema Drift      https://touchstone-schema-drift.onrender.com
+      · Contract Observer https://touchstone-contract-observer.onrender.com
+      · The Poltergeist   https://touchstone-poltergeist.onrender.com
+      Each image copies core/ + its own adapter folder only. Verified: all three
+      /health and /config return 200; secrets set (db_configured, github_token_set).
+      First deploy: The Séance and The Poltergeist failed while the demo target API
+      was asleep — warmup raised from 60 s to 120 s (measured wake ~33 s; 120 s covers slow cold starts). Keep-alive cron rejected: 750 free
+      instance hours/workspace would run out in ~8 days with four services always on.
   - _Req 37_
 - [ ] 11.3 Apps accessible until Jan 29, 2027
   - _Req 37_

@@ -220,7 +220,9 @@ def test_request_targets_postgres_library(monkeypatch):
 
 
 def test_excerpt_truncated_to_max_chars(monkeypatch):
-    monkeypatch.setattr("agents.context7._http_get", lambda url, headers: (200, "x" * 10_000))
+    monkeypatch.setattr(
+        "agents.context7._http_get", lambda url, headers: (200, "x" * 10_000)
+    )
     assert len(context7.fetch_pg_docs("TYPE_CHANGED")) == context7.MAX_CHARS
 
 
@@ -254,7 +256,9 @@ def test_failure_cached_briefly(monkeypatch):
 
 @pytest.mark.parametrize("status", [401, 404, 429, 500, 503])
 def test_non_200_returns_none(monkeypatch, status):
-    monkeypatch.setattr("agents.context7._http_get", lambda url, headers: (status, "error"))
+    monkeypatch.setattr(
+        "agents.context7._http_get", lambda url, headers: (status, "error")
+    )
     assert context7.fetch_pg_docs("TYPE_CHANGED") is None
 
 
@@ -321,4 +325,6 @@ def test_http_client_disables_proxies_and_redirects(monkeypatch):
     assert seen["trust_env"] is False
     assert seen["follow_redirects"] is False
     assert seen["timeout"] == context7.TIMEOUT_S
-    assert isinstance(seen["verify"], ssl.SSLContext)  # OS trust store, never verify=False
+    assert isinstance(
+        seen["verify"], ssl.SSLContext
+    )  # OS trust store, never verify=False

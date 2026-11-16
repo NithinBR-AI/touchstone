@@ -10,6 +10,8 @@ Touchstone makes all three visible — and fixable — before they cause inciden
 
 *One skeleton, three apps: the `core/` pipeline is shared, and each app plugs in its own adapters. Interactive version: [`docs/architecture.html`](docs/architecture.html).*
 
+**Try it live:** [The Crypt](https://touchstone-schema-drift.onrender.com) · [The Séance](https://touchstone-contract-observer.onrender.com) · [The Poltergeist](https://touchstone-poltergeist.onrender.com) — the first load can take about a minute while the free-tier services wake.
+
 ---
 
 ## What it does
@@ -81,7 +83,7 @@ Probes a live API and compares each response against the declared `openapi.yaml`
 | `sku` returned by `/products`, not in spec | `FIELD_EXTRA` · Shadow Field | ⛓ BOUND | PR on `openapi.yaml` |
 | `loyalty_tier` declared in spec, not returned by `/users` | `FIELD_MISSING` · Vanished Field | 🕯 SÉANCE NEEDED | PR on `main.py` |
 
-The live API runs at **[touchstone-demo-target-repo.onrender.com](https://touchstone-demo-target-repo.onrender.com)** (Render free tier — may take ~30s to wake). The declared spec lives in **[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**.
+The live API runs at **[touchstone-demo-target-repo.onrender.com](https://touchstone-demo-target-repo.onrender.com)** (Render free tier — may take about a minute to wake on the first request). The declared spec lives in **[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**.
 
 All drifts of the same kind are batched into **one PR per file**. Clicking Exorcise again returns the already-open PR (idempotent). **↺ Reset Demo** closes open Touchstone PRs so the next run produces a fresh one.
 
@@ -102,15 +104,23 @@ Exorcise on `KEY_MISSING` warms the key via `/cache/warm`; on `UNDECLARED_KEY` i
 
 ## Demo
 
-> **Live URLs:** to be added once the apps are deployed (task 11.2). Until then, run them locally — see [Setup](#setup).
+Each app is deployed on its own:
+
+| App | Live URL |
+|---|---|
+| Schema Drift · *The Crypt* | **[touchstone-schema-drift.onrender.com](https://touchstone-schema-drift.onrender.com)** |
+| Contract Observer · *The Séance* | **[touchstone-contract-observer.onrender.com](https://touchstone-contract-observer.onrender.com)** |
+| The Poltergeist | **[touchstone-poltergeist.onrender.com](https://touchstone-poltergeist.onrender.com)** |
+
+> **First load can take about a minute.** The apps and the demo target API run on Render's free tier and sleep when idle. The first visit, or the first Hunt Ghosts after a quiet spell, wakes them; after that, scans are fast. To run locally instead, see [Setup](#setup).
 
 Target repos are declared in **`repos.json`** at the repo root. Touchstone fetches declared sources from their GitHub raw URLs at runtime — no cloning. The header's **repo selector** shows Touchstone is built to monitor more than one repo.
 
-**Schema Drift (http://localhost:8001).** Click **↺ Reset Demo**, then **Hunt Ghosts**. Four cards appear. The Missing Specter and the `users.email` Type Wraith are 👻 HAUNTING — the validator has accepted their SQL. The `users.age` narrowing and the Phantom Index wait at 🕯 SÉANCE NEEDED. Click **⚡ Exorcise** on any card: the SQL runs on Neon, the verifier re-reads the schema, and the card moves to ✝ LAID TO REST.
+**Schema Drift ([live](https://touchstone-schema-drift.onrender.com) · locally http://localhost:8001).** Click **↺ Reset Demo**, then **Hunt Ghosts**. Four cards appear. The Missing Specter and the `users.email` Type Wraith are 👻 HAUNTING — the validator has accepted their SQL. The `users.age` narrowing and the Phantom Index wait at 🕯 SÉANCE NEEDED. Click **⚡ Exorcise** on any card: the SQL runs on Neon, the verifier re-reads the schema, and the card moves to ✝ LAID TO REST.
 
-**Contract Observer (http://localhost:8002).** Click **Hunt Ghosts**. Shadow Fields and a Vanished Field appear. Click **⚡ Exorcise** on a Shadow Field: the LLM writes the spec patch, a second model checks it, and a pull request opens on the demo repo, with a **View PR ↗** link.
+**Contract Observer ([live](https://touchstone-contract-observer.onrender.com) · locally http://localhost:8002).** Click **Hunt Ghosts**. Shadow Fields and a Vanished Field appear. Click **⚡ Exorcise** on a Shadow Field: the LLM writes the spec patch, a second model checks it, and a pull request opens on the demo repo, with a **View PR ↗** link.
 
-**The Poltergeist (http://localhost:8003).** Click **Hunt Ghosts**. Exorcise the Missing Cache Specter to warm the key, then the Phantom Cache Key to delete it.
+**The Poltergeist ([live](https://touchstone-poltergeist.onrender.com) · locally http://localhost:8003).** Click **Hunt Ghosts**. Exorcise the Missing Cache Specter to warm the key, then the Phantom Cache Key to delete it.
 
 > **Replaying the demo:** after Reset Demo, Schema Drift and The Poltergeist replay every exorcised ghost from the cache with no LLM call (marked CACHED). Contract Observer's scan also repeats without an LLM call, but its Exorcise always generates a fresh patch with the LLM and opens a new GitHub PR, so it is never replayed from cache.
 
@@ -482,7 +492,7 @@ docker build -f apps/schema-drift/Dockerfile -t touchstone-schema-drift .
 docker run --rm -p 8001:8000 --env-file .env touchstone-schema-drift
 ```
 
-On the free tier each service sleeps when idle (~30 s to wake), and its fix cache and reports reset on every restart.
+On the free tier each service sleeps after 15 minutes without traffic and takes about a minute to wake; its fix cache and reports reset on every restart. The Séance and The Poltergeist also wait up to 120 seconds for the demo target API to wake before scanning. No keep-alive pinger is used: Render grants 750 free instance hours a month per workspace, and keeping four services awake around the clock would use them up in about eight days and suspend every app.
 
 ### Running tests
 

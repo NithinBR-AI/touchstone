@@ -53,7 +53,8 @@ def test_index_missing_proposal_passes_validator() -> None:
     diff = _index_diff()
     res = MockResolver().resolve(diff)
     assert (
-        res.proposed_change.payload["statement"] == "CREATE INDEX ix_users_email ON users (email)"
+        res.proposed_change.payload["statement"]
+        == "CREATE INDEX ix_users_email ON users (email)"
     )
     assert SQLValidator().validate(res.proposed_change, diff).status == "valid"
 

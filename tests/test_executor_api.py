@@ -126,7 +126,9 @@ class TestExecutionResultFields:
         with (
             patch("adapters.openapi.executor._gh_request") as mock_gh,
             patch.object(
-                ContractExecutor, "_llm_patch_and_validate", return_value=("patched\n", True)
+                ContractExecutor,
+                "_llm_patch_and_validate",
+                return_value=("patched\n", True),
             ),
         ):
             mock_gh.side_effect = [
@@ -163,7 +165,9 @@ class TestBatching:
         with (
             patch("adapters.openapi.executor._gh_request") as mock_gh,
             patch.object(
-                ContractExecutor, "_llm_patch_and_validate", return_value=("patched\n", True)
+                ContractExecutor,
+                "_llm_patch_and_validate",
+                return_value=("patched\n", True),
             ),
         ):
             mock_gh.side_effect = [
@@ -179,7 +183,9 @@ class TestBatching:
         assert len(results) == 3
         assert all(r.success for r in results)
         # All share the same PR URL
-        assert all(r.file_path_ref == "https://github.com/owner/repo/pull/1" for r in results)
+        assert all(
+            r.file_path_ref == "https://github.com/owner/repo/pull/1" for r in results
+        )
         # Each result maps to its own diff id
         assert {r.difference_id for r in results} == {d.id for d in diffs}
 
@@ -197,7 +203,9 @@ class TestBatching:
         with (
             patch("adapters.openapi.executor._gh_request") as mock_gh,
             patch.object(
-                ContractExecutor, "_llm_patch_and_validate", return_value=("patched\n", True)
+                ContractExecutor,
+                "_llm_patch_and_validate",
+                return_value=("patched\n", True),
             ),
         ):
             mock_gh.side_effect = [
@@ -310,7 +318,9 @@ class TestIdempotency:
         with (
             patch("adapters.openapi.executor._gh_request") as mock_gh,
             patch.object(
-                ContractExecutor, "_llm_patch_and_validate", return_value=("patched\n", True)
+                ContractExecutor,
+                "_llm_patch_and_validate",
+                return_value=("patched\n", True),
             ),
         ):
             mock_gh.side_effect = [
@@ -353,7 +363,8 @@ class TestDemoReset:
         patch_calls = [
             c
             for c in mock_gh.call_args_list
-            if c.kwargs.get("method") == "PATCH" or (len(c.args) > 1 and c.args[1] == "PATCH")
+            if c.kwargs.get("method") == "PATCH"
+            or (len(c.args) > 1 and c.args[1] == "PATCH")
         ]
         assert len(patch_calls) == 2
 

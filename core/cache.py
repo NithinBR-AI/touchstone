@@ -113,7 +113,9 @@ class Cache:
             "prompt_hash": resolution.prompt_hash,
             "cached": True,
             "resolved_at": resolution.resolved_at.isoformat(),
-            "expires_at": (datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS)).isoformat(),
+            "expires_at": (
+                datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS)
+            ).isoformat(),
         }
 
     def _deserialise(self, entry: dict[str, Any]) -> Resolution:

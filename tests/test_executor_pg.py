@@ -50,7 +50,9 @@ class FakeConn:
 
 def _res(change) -> Resolution:
     proposal = _proposal(change) if isinstance(change, SQLChange) else change
-    return Resolution(difference_id="d1", difference_signature="s1", proposed_change=proposal)
+    return Resolution(
+        difference_id="d1", difference_signature="s1", proposed_change=proposal
+    )
 
 
 def _diff_stub() -> Difference:
@@ -64,12 +66,16 @@ def _diff_stub() -> Difference:
 
 
 def _sql(statement: str = GOOD_SQL) -> SQLChange:
-    return SQLChange(statement=statement, operation="CREATE_INDEX", target="ix_users_email")
+    return SQLChange(
+        statement=statement, operation="CREATE_INDEX", target="ix_users_email"
+    )
 
 
 def test_success_commits_and_closes() -> None:
     conn = FakeConn()
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()), _diff_stub())
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
+        _res(_sql()), _diff_stub()
+    )
     assert result.success
     assert conn.executed == [GOOD_SQL]
     assert conn.committed and conn.closed and not conn.rolled_back
@@ -79,7 +85,9 @@ def test_success_commits_and_closes() -> None:
 
 def test_execution_error_rolls_back_without_raw_text() -> None:
     conn = FakeConn(RuntimeError("password=hunter2 leaked in driver message"))
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()), _diff_stub())
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
+        _res(_sql()), _diff_stub()
+    )
     assert not result.success
     assert conn.rolled_back and conn.closed and not conn.committed
     assert result.error_code == "EXECUTION_ERROR"
@@ -91,7 +99,9 @@ def test_execution_error_rolls_back_without_raw_text() -> None:
 
 def test_statement_timeout_is_classified() -> None:
     conn = FakeConn(psycopg.errors.QueryCanceled("canceling statement due to timeout"))
-    result = SQLExecutor("dsn", connect=lambda _: conn).execute(_res(_sql()), _diff_stub())
+    result = SQLExecutor("dsn", connect=lambda _: conn).execute(
+        _res(_sql()), _diff_stub()
+    )
     assert result.error_code == "STATEMENT_TIMEOUT"
     assert conn.rolled_back
 
@@ -130,7 +140,9 @@ def test_no_change_and_non_sql_change_refused() -> None:
     non_sql = ChangeProposal(
         domain="api", target="f", operation="FILE_PATCH", payload={"file_path": "f"}
     )
-    non_sql_res = Resolution(difference_id="d1", difference_signature="s1", proposed_change=non_sql)
+    non_sql_res = Resolution(
+        difference_id="d1", difference_signature="s1", proposed_change=non_sql
+    )
     assert ex.execute(non_sql_res, _diff_stub()).error_code == "NOT_SQL"
 
 

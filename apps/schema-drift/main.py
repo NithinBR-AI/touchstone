@@ -126,7 +126,10 @@ def get_config():
         **CONFIG,
         "latest_report_id": _latest_report_id,
         "active_repo": _active_repo["id"],
-        "repos": [{"id": r["id"], "name": r["name"], "github": r.get("github", "")} for r in REPOS],
+        "repos": [
+            {"id": r["id"], "name": r["name"], "github": r.get("github", "")}
+            for r in REPOS
+        ],
     }
 
 

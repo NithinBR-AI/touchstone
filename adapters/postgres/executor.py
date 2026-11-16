@@ -64,7 +64,9 @@ class SQLExecutor:
         self._dsn = dsn
         self._connect = connect or default_connect
 
-    def execute(self, resolution: Resolution, difference: Difference) -> ExecutionResult:
+    def execute(
+        self, resolution: Resolution, difference: Difference
+    ) -> ExecutionResult:
         proposal = resolution.proposed_change
         if proposal is None:
             return self._fail(resolution, None, "NO_CHANGE")
@@ -104,7 +106,9 @@ class SQLExecutor:
     @staticmethod
     def _precheck(statement: str) -> str:
         try:
-            parsed = [s for s in sqlglot.parse(statement, dialect="postgres") if s is not None]
+            parsed = [
+                s for s in sqlglot.parse(statement, dialect="postgres") if s is not None
+            ]
         except Exception:
             return "PARSE_ERROR"
         if len(parsed) != 1:

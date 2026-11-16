@@ -141,7 +141,10 @@ def get_config():
         **CONFIG,
         "latest_report_id": _latest_report_id,
         "active_repo": _active_repo["id"],
-        "repos": [{"id": r["id"], "name": r["name"], "github": r.get("github", "")} for r in REPOS],
+        "repos": [
+            {"id": r["id"], "name": r["name"], "github": r.get("github", "")}
+            for r in REPOS
+        ],
     }
 
 
@@ -183,7 +186,9 @@ def compare():
     try:
         report = orch.run()
     except Exception as exc:
-        raise HTTPException(503, detail=f"compare failed: {type(exc).__name__}") from exc
+        raise HTTPException(
+            503, detail=f"compare failed: {type(exc).__name__}"
+        ) from exc
     _latest_report_id = report.id
     return _serialise_report(report)
 
@@ -198,7 +203,9 @@ def apply(req: ApplyRequest):
     if report is None:
         raise HTTPException(503, detail="No report — run /compare first")
 
-    trigger_diff = next((d for d in report.differences if d.id == req.difference_id), None)
+    trigger_diff = next(
+        (d for d in report.differences if d.id == req.difference_id), None
+    )
     if trigger_diff is None:
         raise HTTPException(404, detail="difference not found")
 
@@ -207,15 +214,20 @@ def apply(req: ApplyRequest):
         d.id
         for d in report.differences
         if d.kind == trigger_diff.kind
-        and d.state not in (GhostState.RESOLVED, GhostState.SUPERSEDED, GhostState.EXECUTION_FAILED)
+        and d.state
+        not in (GhostState.RESOLVED, GhostState.SUPERSEDED, GhostState.EXECUTION_FAILED)
     ]
 
     # human_authorized=True: user clicked Exorcise after seeing the LLM proposal
     outcomes = orch.apply_batch(same_kind_ids, human_authorized=True)
 
-    response_outcome = next((o for o in outcomes if o.difference_id == req.difference_id), None)
+    response_outcome = next(
+        (o for o in outcomes if o.difference_id == req.difference_id), None
+    )
     if response_outcome is None:
-        response_outcome = ApplyOutcome(difference_id=req.difference_id, state=trigger_diff.state)
+        response_outcome = ApplyOutcome(
+            difference_id=req.difference_id, state=trigger_diff.state
+        )
     return _serialise_outcome(response_outcome)
 
 

@@ -153,7 +153,10 @@ class Orchestrator:
 
         if diff.state == GhostState.PENDING:
             pass
-        elif diff.state in (GhostState.REVIEW_REQUIRED, GhostState.BLOCKED) and human_authorized:
+        elif (
+            diff.state in (GhostState.REVIEW_REQUIRED, GhostState.BLOCKED)
+            and human_authorized
+        ):
             pass
         else:
             return ApplyOutcome(difference_id=difference_id, state=diff.state)
@@ -260,7 +263,8 @@ class Orchestrator:
             if diff.state == GhostState.PENDING:
                 eligible.append(diff)
             elif (
-                diff.state in (GhostState.REVIEW_REQUIRED, GhostState.BLOCKED) and human_authorized
+                diff.state in (GhostState.REVIEW_REQUIRED, GhostState.BLOCKED)
+                and human_authorized
             ):
                 eligible.append(diff)
             else:

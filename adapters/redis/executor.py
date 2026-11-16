@@ -62,7 +62,9 @@ class CacheExecutor:
                 error_summary="",
             )
         except Exception as exc:
-            code = getattr(getattr(exc, "response", None), "status_code", "CONNECTION_ERROR")
+            code = getattr(
+                getattr(exc, "response", None), "status_code", "CONNECTION_ERROR"
+            )
             return ExecutionResult(
                 difference_id=difference.id,
                 success=False,
@@ -86,7 +88,9 @@ class CacheExecutor:
                 error_summary="",
             )
         except Exception as exc:
-            code = getattr(getattr(exc, "response", None), "status_code", "CONNECTION_ERROR")
+            code = getattr(
+                getattr(exc, "response", None), "status_code", "CONNECTION_ERROR"
+            )
             return ExecutionResult(
                 difference_id=difference.id,
                 success=False,

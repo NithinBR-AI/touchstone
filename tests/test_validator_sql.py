@@ -73,7 +73,9 @@ def type_changed_diff() -> Difference:
 # --------------------------------------------------------------------------
 
 
-def test_operation_matrix_positive(validator: SQLValidator, index_missing_diff: Difference):
+def test_operation_matrix_positive(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """Valid CREATE INDEX passes."""
     change = SQLChange(
         statement="CREATE INDEX ix_users_email ON users (email)",
@@ -160,7 +162,9 @@ def test_forbidden_node_types(validator: SQLValidator):
         "DROP INDEX ix_users_email",
     ]:
         diff = Difference(kind="INDEX_MISSING", target="ix_users_email", context={})
-        change = SQLChange(statement=forbidden_sql, operation="DROP", target="ix_users_email")
+        change = SQLChange(
+            statement=forbidden_sql, operation="DROP", target="ix_users_email"
+        )
         result = validator.validate(_proposal(change), diff)
         assert result.status == "blocked"
         assert "forbidden SQL operation" in result.reason
@@ -172,7 +176,9 @@ def test_forbidden_node_types(validator: SQLValidator):
 # --------------------------------------------------------------------------
 
 
-def test_create_index_unique_rejected(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_unique_rejected(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """UNIQUE indexes are forbidden."""
     change = SQLChange(
         statement="CREATE UNIQUE INDEX ix_users_email ON users (email)",
@@ -185,7 +191,9 @@ def test_create_index_unique_rejected(validator: SQLValidator, index_missing_dif
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_expression_rejected(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_expression_rejected(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """Expression indexes are forbidden."""
     change = SQLChange(
         statement="CREATE INDEX idx ON users (LOWER(email))",
@@ -198,7 +206,9 @@ def test_create_index_expression_rejected(validator: SQLValidator, index_missing
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_partial_rejected(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_partial_rejected(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """Partial indexes (WHERE) are forbidden."""
     # sqlglot 30.29.0 represents WHERE clause in IndexParameters
     change = SQLChange(
@@ -212,7 +222,9 @@ def test_create_index_partial_rejected(validator: SQLValidator, index_missing_di
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_name_mismatch(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_name_mismatch(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """Index name must match difference target."""
     change = SQLChange(
         statement="CREATE INDEX wrong_name ON users (email)",
@@ -225,7 +237,9 @@ def test_create_index_name_mismatch(validator: SQLValidator, index_missing_diff:
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_wrong_table_blocked(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_wrong_table_blocked(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """CREATE INDEX on wrong table is blocked even if index name matches."""
     change = SQLChange(
         statement="CREATE INDEX ix_users_email ON orders (email)",
@@ -238,7 +252,9 @@ def test_create_index_wrong_table_blocked(validator: SQLValidator, index_missing
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_wrong_columns_blocked(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_wrong_columns_blocked(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """CREATE INDEX on wrong columns is blocked even if table and name match."""
     change = SQLChange(
         statement="CREATE INDEX ix_users_email ON users (id)",
@@ -251,7 +267,9 @@ def test_create_index_wrong_columns_blocked(validator: SQLValidator, index_missi
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_named_wrong_table_blocked(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_named_wrong_table_blocked(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """Named CREATE INDEX on wrong table is blocked (was silently allowed before the fix)."""
     change = SQLChange(
         statement="CREATE INDEX ix_users_email ON orders (id)",
@@ -284,7 +302,9 @@ def test_create_index_reversed_column_order_blocked(validator: SQLValidator):
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_unnamed_blocked(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_unnamed_blocked(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """An unnamed index gets a Postgres-generated name, not ix_<table>_<cols>."""
     change = SQLChange(
         statement="CREATE INDEX ON users (email)",
@@ -297,7 +317,9 @@ def test_create_index_unnamed_blocked(validator: SQLValidator, index_missing_dif
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_non_btree_blocked(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_non_btree_blocked(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """Only plain B-tree indexes are auto-fixable."""
     change = SQLChange(
         statement="CREATE INDEX ix_users_email ON users USING hash (email)",
@@ -310,7 +332,9 @@ def test_create_index_non_btree_blocked(validator: SQLValidator, index_missing_d
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_create_index_explicit_btree_allowed(validator: SQLValidator, index_missing_diff: Difference):
+def test_create_index_explicit_btree_allowed(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """Spelling out USING btree is still a plain B-tree."""
     change = SQLChange(
         statement="CREATE INDEX ix_users_email ON users USING btree (email)",
@@ -321,7 +345,9 @@ def test_create_index_explicit_btree_allowed(validator: SQLValidator, index_miss
     assert result.status == "valid"
 
 
-@pytest.mark.parametrize("column", ["email DESC", "email NULLS FIRST", "email DESC NULLS LAST"])
+@pytest.mark.parametrize(
+    "column", ["email DESC", "email NULLS FIRST", "email DESC NULLS LAST"]
+)
 def test_create_index_non_default_sort_blocked(
     validator: SQLValidator, index_missing_diff: Difference, column: str
 ):
@@ -342,7 +368,9 @@ def test_create_index_non_default_sort_blocked(
 # --------------------------------------------------------------------------
 
 
-def test_alter_type_us_clause_rejected(validator: SQLValidator, type_changed_diff: Difference):
+def test_alter_type_us_clause_rejected(
+    validator: SQLValidator, type_changed_diff: Difference
+):
     """USING clause is forbidden."""
     change = SQLChange(
         statement="ALTER TABLE users ALTER COLUMN age TYPE bigint USING (age::bigint)",
@@ -369,7 +397,10 @@ def test_alter_type_target_binding(validator: SQLValidator):
     )
     result = validator.validate(_proposal(change), diff)
     assert result.status == "invalid"
-    assert "targets 'users.age'" in result.reason or "targets 'orders.total'" in result.reason
+    assert (
+        "targets 'users.age'" in result.reason
+        or "targets 'orders.total'" in result.reason
+    )
     assert result.ghost_state == GhostState.BLOCKED
 
 
@@ -453,7 +484,9 @@ def test_widening_pairs_allowed(validator: SQLValidator, old_type: str, new_type
         ("numeric", "integer"),  # not in matrix
     ],
 )
-def test_non_widening_review_required(validator: SQLValidator, old_type: str, new_type: str):
+def test_non_widening_review_required(
+    validator: SQLValidator, old_type: str, new_type: str
+):
     """Non-widening pairs yield REVIEW_REQUIRED."""
     diff = Difference(
         kind="TYPE_CHANGED",
@@ -537,7 +570,9 @@ def test_canonical_identifier_binding(
 # --------------------------------------------------------------------------
 
 
-def test_sql_injection_attempt_blocked(validator: SQLValidator, index_missing_diff: Difference):
+def test_sql_injection_attempt_blocked(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """SQL with injection attempt should be blocked by structural rules."""
     # This tries to sneak in a DROP via a comment + multi-statement
     change = SQLChange(
@@ -559,7 +594,9 @@ def test_empty_sql_rejected(validator: SQLValidator, index_missing_diff: Differe
     assert result.ghost_state == GhostState.BLOCKED
 
 
-def test_malformed_sql_rejected(validator: SQLValidator, index_missing_diff: Difference):
+def test_malformed_sql_rejected(
+    validator: SQLValidator, index_missing_diff: Difference
+):
     """Malformed SQL."""
     change = SQLChange(
         statement="CREAT INDEX ix ON users (email)",
@@ -580,7 +617,9 @@ def test_malformed_sql_rejected(validator: SQLValidator, index_missing_diff: Dif
 def test_sqlglot_ast_assumptions_regression(validator: SQLValidator):
     """Verify sqlglot 30.29.0 AST assumptions still hold."""
     # Check that sqlglot still parses CREATE INDEX with WHERE as IndexParameters
-    stmt = sqlglot.parse_one("CREATE INDEX idx ON t (col) WHERE cond", dialect="postgres")
+    stmt = sqlglot.parse_one(
+        "CREATE INDEX idx ON t (col) WHERE cond", dialect="postgres"
+    )
     assert isinstance(stmt, exp.Create)
     assert isinstance(stmt.this, exp.Index)
     params = stmt.this.args.get("params")

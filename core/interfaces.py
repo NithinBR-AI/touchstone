@@ -109,7 +109,9 @@ class Validator(Protocol):
 class Executor(Protocol):
     """Applies a validated Resolution atomically."""
 
-    def execute(self, resolution: Resolution, difference: Difference) -> ExecutionResult:
+    def execute(
+        self, resolution: Resolution, difference: Difference
+    ) -> ExecutionResult:
         """Apply the proposed change. Raise on unrecoverable failure."""
         ...
 

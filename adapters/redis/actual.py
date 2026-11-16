@@ -28,7 +28,7 @@ import httpx
 from adapters.ssrf import validate as ssrf_validate
 from core.models import State
 
-MAX_WARMUP_SECS = 60
+MAX_WARMUP_SECS = 120
 _WARMUP_INTERVAL = 5
 
 _SSL_CTX = ssl.create_default_context()

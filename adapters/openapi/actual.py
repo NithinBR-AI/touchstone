@@ -38,12 +38,11 @@ from typing import Any
 
 import httpx
 
+from adapters.ssrf import validate as ssrf_validate
 from agents.redaction import redact_value
 from core.models import State
 
-from adapters.ssrf import validate as ssrf_validate
-
-MAX_WARMUP_SECS = 60
+MAX_WARMUP_SECS = 120
 _WARMUP_INTERVAL = 5
 
 _SSL_CTX = _ssl.create_default_context()

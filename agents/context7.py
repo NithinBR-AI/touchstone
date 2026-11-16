@@ -86,7 +86,9 @@ def _fetch(query: str) -> str | None:
         logger.warning("Context7 URL failed SSRF validation; proceeding without docs")
         return None
     except Exception as exc:  # network errors, timeouts
-        logger.warning("Context7 unreachable (%s); proceeding without docs", type(exc).__name__)
+        logger.warning(
+            "Context7 unreachable (%s); proceeding without docs", type(exc).__name__
+        )
         return None
 
     if status != 200 or not body.strip():

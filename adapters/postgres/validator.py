@@ -173,7 +173,9 @@ class SQLValidator:
         if allowed_op == "CREATE_INDEX":
             return self._validate_create_index(stmt, difference)
         if allowed_op == "ALTER_COLUMN_TYPE":
-            return self._validate_alter_type(stmt, difference, human_authorized=human_authorized)
+            return self._validate_alter_type(
+                stmt, difference, human_authorized=human_authorized
+            )
         if allowed_op == "ADD_COLUMN":
             return self._validate_alter_add_column(stmt, difference)
         if allowed_op == "DROP_COLUMN":
@@ -255,7 +257,9 @@ class SQLValidator:
             return True
         return False
 
-    def _reject_nonpublic_schema(self, table_expr: exp.Expression | None) -> ValidationResult | None:
+    def _reject_nonpublic_schema(
+        self, table_expr: exp.Expression | None
+    ) -> ValidationResult | None:
         """Return a blocked ValidationResult if table_expr targets a non-public schema."""
         if table_expr is None:
             return None
@@ -304,7 +308,9 @@ class SQLValidator:
                 reason="CREATE INDEX missing table reference",
                 ghost_state=GhostState.BLOCKED,
             )
-        schema_err = self._reject_nonpublic_schema(table_expr if isinstance(table_expr, exp.Table) else None)
+        schema_err = self._reject_nonpublic_schema(
+            table_expr if isinstance(table_expr, exp.Table) else None
+        )
         if schema_err:
             return schema_err
         ast_table = self._canonical_name(table_expr)
@@ -321,7 +327,9 @@ class SQLValidator:
         # tech.md: default sort order — no DESC, no NULLS FIRST.
         index_cols = (params.args.get("columns") if params else None) or []
         for col in index_cols:
-            if isinstance(col, exp.Ordered) and (col.args.get("desc") or col.args.get("nulls_first")):
+            if isinstance(col, exp.Ordered) and (
+                col.args.get("desc") or col.args.get("nulls_first")
+            ):
                 return ValidationResult(
                     status="invalid",
                     reason="index columns must use the default sort order (no DESC / NULLS FIRST)",
@@ -330,7 +338,8 @@ class SQLValidator:
 
         # Columns in declared order: (a, b) and (b, a) are different indexes.
         ast_cols = [
-            self._canonical_name(c.this if isinstance(c, exp.Ordered) else c) for c in index_cols
+            self._canonical_name(c.this if isinstance(c, exp.Ordered) else c)
+            for c in index_cols
         ] or [self._canonical_name(c) for c in index_expr.find_all(exp.Column)]
 
         # Bind table: the SQL must target the same table as the difference.
@@ -361,7 +370,9 @@ class SQLValidator:
 
         # tech.md: name = ix_<table>_<cols>, i.e. the difference target. Required.
         index_name_expr = index_expr.args.get("this")
-        ast_index_name = self._canonical_name(index_name_expr) if index_name_expr else ""
+        ast_index_name = (
+            self._canonical_name(index_name_expr) if index_name_expr else ""
+        )
         if not ast_index_name:
             return ValidationResult(
                 status="invalid",
@@ -404,7 +415,9 @@ class SQLValidator:
                 reason="USING clause is forbidden in ALTER COLUMN TYPE",
                 ghost_state=GhostState.BLOCKED,
             )
-        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        schema_err = self._reject_nonpublic_schema(
+            stmt.this if isinstance(stmt.this, exp.Table) else None
+        )
         if schema_err:
             return schema_err
         ast_table = self._canonical_name(stmt.this)
@@ -426,7 +439,8 @@ class SQLValidator:
             return ValidationResult(
                 status="review_required",
                 reason=(
-                    f"type change '{old_type}' → '{new_type}' is not a " "permitted widening pair"
+                    f"type change '{old_type}' → '{new_type}' is not a "
+                    "permitted widening pair"
                 ),
                 ghost_state=GhostState.REVIEW_REQUIRED,
             )
@@ -451,7 +465,9 @@ class SQLValidator:
                 reason="ALTER TABLE does not contain ADD COLUMN",
                 ghost_state=GhostState.BLOCKED,
             )
-        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        schema_err = self._reject_nonpublic_schema(
+            stmt.this if isinstance(stmt.this, exp.Table) else None
+        )
         if schema_err:
             return schema_err
         ast_table = self._canonical_name(stmt.this)
@@ -496,7 +512,9 @@ class SQLValidator:
                 reason="ALTER TABLE does not contain DROP COLUMN",
                 ghost_state=GhostState.BLOCKED,
             )
-        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        schema_err = self._reject_nonpublic_schema(
+            stmt.this if isinstance(stmt.this, exp.Table) else None
+        )
         if schema_err:
             return schema_err
         ast_table = self._canonical_name(stmt.this)
@@ -541,7 +559,9 @@ class SQLValidator:
                 reason=f"expected DROP INDEX, got DROP {kind}",
                 ghost_state=GhostState.BLOCKED,
             )
-        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        schema_err = self._reject_nonpublic_schema(
+            stmt.this if isinstance(stmt.this, exp.Table) else None
+        )
         if schema_err:
             return schema_err
         ast_index = self._canonical_name(stmt.this)
@@ -571,7 +591,9 @@ class SQLValidator:
                 reason=f"expected DROP TABLE, got DROP {kind}",
                 ghost_state=GhostState.BLOCKED,
             )
-        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        schema_err = self._reject_nonpublic_schema(
+            stmt.this if isinstance(stmt.this, exp.Table) else None
+        )
         if schema_err:
             return schema_err
         ast_table = self._canonical_name(stmt.this)
@@ -601,7 +623,9 @@ class SQLValidator:
                 reason=f"expected CREATE TABLE, got CREATE {kind}",
                 ghost_state=GhostState.BLOCKED,
             )
-        schema_err = self._reject_nonpublic_schema(stmt.this if isinstance(stmt.this, exp.Table) else None)
+        schema_err = self._reject_nonpublic_schema(
+            stmt.this if isinstance(stmt.this, exp.Table) else None
+        )
         if schema_err:
             return schema_err
         ast_table = self._canonical_name(stmt.this)

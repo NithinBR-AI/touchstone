@@ -76,11 +76,15 @@ class ContractExecutor:
         self.repo = repo
         self.token = token or os.environ.get("GITHUB_TOKEN", "")
 
-    def execute(self, resolution: Resolution, difference: Difference) -> ExecutionResult:
+    def execute(
+        self, resolution: Resolution, difference: Difference
+    ) -> ExecutionResult:
         """Single-diff execute — delegates to execute_batch."""
         return self.execute_batch([(resolution, difference)])[0]
 
-    def execute_batch(self, items: list[tuple[Resolution, Difference]]) -> list[ExecutionResult]:
+    def execute_batch(
+        self, items: list[tuple[Resolution, Difference]]
+    ) -> list[ExecutionResult]:
         """
         Batch execute: group by kind, produce one PR per kind.
         Reads patched_content from each resolution's ChangeProposal payload.
@@ -100,7 +104,9 @@ class ContractExecutor:
                 for _, diff in items
             ]
 
-        field_extra = [(r, d) for r, d in items if d.kind in ("FIELD_EXTRA", "FIELD_UNDOCUMENTED")]
+        field_extra = [
+            (r, d) for r, d in items if d.kind in ("FIELD_EXTRA", "FIELD_UNDOCUMENTED")
+        ]
         field_missing = [(r, d) for r, d in items if d.kind == "FIELD_MISSING"]
         other = [
             (r, d)
@@ -210,16 +216,26 @@ class ContractExecutor:
             }
         )
 
-        all_paths = sorted({d.context.get("path", "") for _, d in items if d.context.get("path")})
+        all_paths = sorted(
+            {d.context.get("path", "") for _, d in items if d.context.get("path")}
+        )
         path = all_paths[0] if len(all_paths) == 1 else ", ".join(all_paths)
 
         # schema_name and operation_id from first diff that has it
         schema_name = next(
-            (d.context.get("schema_name", "") for _, d in items if d.context.get("schema_name")),
+            (
+                d.context.get("schema_name", "")
+                for _, d in items
+                if d.context.get("schema_name")
+            ),
             "",
         )
         operation_id = next(
-            (d.context.get("operation_id", "") for _, d in items if d.context.get("operation_id")),
+            (
+                d.context.get("operation_id", "")
+                for _, d in items
+                if d.context.get("operation_id")
+            ),
             "",
         )
 
@@ -245,12 +261,12 @@ class ContractExecutor:
                 f"fix(contract): {kind.lower().replace('_', ' ')} — "
                 f"{', '.join(field_names[:3])}{'…' if len(field_names) > 3 else ''}"
             )
-            self._commit_file(file_name, patched_content, file_sha, branch, message=commit_msg)
+            self._commit_file(
+                file_name, patched_content, file_sha, branch, message=commit_msg
+            )
 
             field_lines = "\n".join(f"- `{f}`" for f in field_names)
-            title = (
-                f"{title_prefix}: {', '.join(field_names[:3])}{'…' if len(field_names) > 3 else ''}"
-            )
+            title = f"{title_prefix}: {', '.join(field_names[:3])}{'…' if len(field_names) > 3 else ''}"
             is_draft = not validated
 
             body = (
@@ -308,7 +324,13 @@ class ContractExecutor:
 
         def _generate() -> str:
             user = build_api_batch_user_message(
-                kind, all_fields, path, file_name, current_content, schema_name, operation_id
+                kind,
+                all_fields,
+                path,
+                file_name,
+                current_content,
+                schema_name,
+                operation_id,
             )
             raw = deepseek_pro(system=_API_SYSTEM_PROMPT, user=user)
             raw = strip_llm_wrapper(raw)
@@ -324,7 +346,9 @@ class ContractExecutor:
         def _validate(patched: str) -> bool:
             # Build a precise, scoped description of the ONE change that was made.
             if kind in ("FIELD_EXTRA", "FIELD_UNDOCUMENTED"):
-                location = f"schema '{schema_name}'" if schema_name else f"path '{path}'"
+                location = (
+                    f"schema '{schema_name}'" if schema_name else f"path '{path}'"
+                )
                 change_desc = f"Add fields {all_fields} to {location} in {file_name}."
                 scope_note = (
                     f"SCOPE: This drift is scoped to {location} only. "
@@ -355,7 +379,9 @@ class ContractExecutor:
                     "Do NOT fail because other functions don't have these fields — that is out of scope."
                 ).format(func_name=func_name, fields=all_fields)
             else:
-                change_desc = f"Fix {kind} drift for fields {all_fields} in {file_name}."
+                change_desc = (
+                    f"Fix {kind} drift for fields {all_fields} in {file_name}."
+                )
                 scope_note = "SCOPE: Only the lines directly related to this drift should change."
                 rules = (
                     "1. Were the intended fields fixed correctly?\n"
@@ -426,16 +452,18 @@ class ContractExecutor:
             )
             for pr in prs:
                 head_ref = pr.get("head", {}).get("ref", "")
-                if head_ref.startswith("touchstone/") and pr.get("title", "").startswith(
-                    title_prefix
-                ):
+                if head_ref.startswith("touchstone/") and pr.get(
+                    "title", ""
+                ).startswith(title_prefix):
                     return pr.get("html_url", "")
         except Exception:
             pass
         return ""
 
     def _head_sha(self) -> str:
-        ref_info = _gh_request(f"/repos/{self.repo}/git/ref/heads/main", token=self.token)
+        ref_info = _gh_request(
+            f"/repos/{self.repo}/git/ref/heads/main", token=self.token
+        )
         return ref_info["object"]["sha"]
 
     def _create_branch(self, branch: str, head_sha: str) -> None:
@@ -465,6 +493,12 @@ class ContractExecutor:
         return _gh_request(
             f"/repos/{self.repo}/pulls",
             method="POST",
-            body={"title": title, "body": body, "head": branch, "base": "main", "draft": draft},
+            body={
+                "title": title,
+                "body": body,
+                "head": branch,
+                "base": "main",
+                "draft": draft,
+            },
             token=self.token,
         )

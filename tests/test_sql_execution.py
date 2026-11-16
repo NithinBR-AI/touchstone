@@ -105,7 +105,9 @@ class TestSQLExecution:
         """A long-running statement is cancelled by the connection-level timeout."""
 
         def fast_timeout_connect(dsn):
-            return psycopg.connect(dsn, connect_timeout=10, options="-c statement_timeout=1")
+            return psycopg.connect(
+                dsn, connect_timeout=10, options="-c statement_timeout=1"
+            )
 
         ex = SQLExecutor(DB_URL, connect=fast_timeout_connect)
         diff = _diff("INDEX_MISSING", "ix_test_slow", {})
@@ -122,7 +124,9 @@ class TestSQLExecution:
         """Connection failure stores error_code, not raw exception text."""
         ex = SQLExecutor("postgresql://bad:bad@localhost:9999/nonexistent")
         diff = _diff("INDEX_MISSING", "ix_test", {})
-        change = SQLChange(statement="SELECT 1", operation="CREATE_INDEX", target="ix_test")
+        change = SQLChange(
+            statement="SELECT 1", operation="CREATE_INDEX", target="ix_test"
+        )
         result = ex.execute(_res(diff, change), diff)
         assert not result.success
         assert result.error_code == "CONNECT_FAILED"

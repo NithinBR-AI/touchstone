@@ -118,7 +118,9 @@ class TestCoreImportRule:
                             "outside core/ — forbidden"
                         )
 
-        assert not violations, f"core/{filename} contains forbidden imports:\n" + "\n".join(
+        assert (
+            not violations
+        ), f"core/{filename} contains forbidden imports:\n" + "\n".join(
             f"  {v}" for v in violations
         )
 
@@ -201,9 +203,10 @@ class TestCoreNoDomainStrings:
                             f"('{ast.unparse(node)}')"
                         )
 
-        assert not violations, (
-            f"core/{filename} branches on domain strings — forbidden:\n"
-            + "\n".join(f"  {v}" for v in violations)
+        assert (
+            not violations
+        ), f"core/{filename} branches on domain strings — forbidden:\n" + "\n".join(
+            f"  {v}" for v in violations
         )
 
 

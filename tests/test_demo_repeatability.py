@@ -96,7 +96,9 @@ def _seeded_actual() -> dict:
     actual = copy.deepcopy(INTENDED)
     actual["users"]["columns"]["email"]["type"] = "varchar(50)"  # widening ghost
     actual["users"]["columns"]["age"]["type"] = "bigint"  # narrowing ghost
-    actual["users"]["indexes"] = {"ix_users_email": {"columns": ["email"], "unique": False}}
+    actual["users"]["indexes"] = {
+        "ix_users_email": {"columns": ["email"], "unique": False}
+    }
     actual["orders"]["indexes"] = {}  # missing index ghost
     return actual
 
@@ -146,7 +148,10 @@ class _FakeExecutor:
         ctx = difference.context
         table = self._db.tables[ctx["table"]]
         if difference.kind == "INDEX_MISSING":
-            table["indexes"][difference.target] = {"columns": list(ctx["columns"]), "unique": False}
+            table["indexes"][difference.target] = {
+                "columns": list(ctx["columns"]),
+                "unique": False,
+            }
         elif difference.kind == "TYPE_CHANGED":
             table["columns"][ctx["column"]]["type"] = ctx["intended_type"]
         elif difference.kind == "INDEX_EXTRA":
@@ -169,7 +174,10 @@ def _fake_sql(prompt: str) -> str:
     diff, _ = json.JSONDecoder().raw_decode(prompt[start:])
     kind, target, ctx = diff["kind"], diff["target"], diff["context"]
     if kind == "INDEX_MISSING":
-        sql, op = f"CREATE INDEX {target} ON {ctx['table']} ({', '.join(ctx['columns'])})", "CREATE_INDEX"
+        sql, op = (
+            f"CREATE INDEX {target} ON {ctx['table']} ({', '.join(ctx['columns'])})",
+            "CREATE_INDEX",
+        )
     elif kind == "TYPE_CHANGED":
         sql = f"ALTER TABLE {ctx['table']} ALTER COLUMN {ctx['column']} TYPE {ctx['intended_type']}"
         op = "ALTER_COLUMN_TYPE"
@@ -177,7 +185,14 @@ def _fake_sql(prompt: str) -> str:
         sql, op = f"DROP INDEX {target}", "DROP_INDEX"
     else:
         raise AssertionError(f"unexpected demo ghost {kind}")
-    return json.dumps({"action": "sql", "statement": sql, "operation": op, "rationale": f"Fix {kind}."})
+    return json.dumps(
+        {
+            "action": "sql",
+            "statement": sql,
+            "operation": op,
+            "rationale": f"Fix {kind}.",
+        }
+    )
 
 
 @pytest.fixture
@@ -189,7 +204,9 @@ def calls(monkeypatch):
         counts["llm"] += 1
         return _fake_sql(system)
 
-    def fake_deepseek(system, user, **kw):  # App 2's patch model — must not run at scan time
+    def fake_deepseek(
+        system, user, **kw
+    ):  # App 2's patch model — must not run at scan time
         counts["llm"] += 1
         raise AssertionError("deepseek_pro called during a demo run")
 
@@ -266,7 +283,9 @@ def demo(tmp_path, calls):
     calls["llm"] = calls["context7"] = 0
     context7.clear_cache()  # any resolver call would have to reach the fake
 
-    replay_report, replay_before = _hunt_and_exorcise(_orchestrator(tmp_path, db))  # app restart
+    replay_report, replay_before = _hunt_and_exorcise(
+        _orchestrator(tmp_path, db)
+    )  # app restart
     return {
         "record": record_report,
         "record_outcomes": _outcomes(record_report, record_before),
@@ -284,7 +303,10 @@ def demo(tmp_path, calls):
 
 def test_first_run_matches_the_seeded_demo(demo):
     """The four ghosts judges see after Reset Demo, in the states the UI shows."""
-    seen = {(o["kind"], o["target"]): o["state_after_hunt"] for o in demo["record_outcomes"].values()}
+    seen = {
+        (o["kind"], o["target"]): o["state_after_hunt"]
+        for o in demo["record_outcomes"].values()
+    }
     assert seen == EXPECTED_DEMO
 
 
@@ -292,13 +314,18 @@ def test_first_run_calls_llm_and_context7(demo):
     """Sanity check: the fakes are wired in, so zero calls on replay means something."""
     assert demo["record_calls"]["llm"] == len(EXPECTED_DEMO)
     assert demo["record_calls"]["context7"] >= 1
-    assert all(o["final_state"] == GhostState.RESOLVED for o in demo["record_outcomes"].values())
+    assert all(
+        o["final_state"] == GhostState.RESOLVED
+        for o in demo["record_outcomes"].values()
+    )
 
 
 def test_recording_run_hits_cache_for_every_ghost(demo):
     resolutions = demo["replay"].resolutions.values()
     assert len(resolutions) == len(EXPECTED_DEMO)
-    assert all(r.cached for r in resolutions), [r.difference_signature for r in resolutions if not r.cached]
+    assert all(r.cached for r in resolutions), [
+        r.difference_signature for r in resolutions if not r.cached
+    ]
 
 
 def test_recording_run_makes_no_llm_or_context7_calls(demo):
@@ -320,22 +347,44 @@ def test_recording_run_ghost_ids_are_fresh(demo):
 # App 2 — Contract Observer (Hunt Ghosts only; Exorcise is live by design)
 # ===========================================================================
 
+
 def _list_response(fields: list[str]) -> dict:
     props = {f: {"type": "string"} for f in fields}
-    return {"200": {"schema": {"type": "array", "items": {"type": "object", "properties": props}}}}
+    return {
+        "200": {
+            "schema": {
+                "type": "array",
+                "items": {"type": "object", "properties": props},
+            }
+        }
+    }
 
 
-API_INTENDED = State(domain="api", data={"paths": {
-    "/users": {"get": {
-        "operationId": "list_users",
-        "schema_names": {"200": "User"},
-        "responses": _list_response(["id", "email", "created_at"]),
-    }},
-}})
+API_INTENDED = State(
+    domain="api",
+    data={
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "list_users",
+                    "schema_names": {"200": "User"},
+                    "responses": _list_response(["id", "email", "created_at"]),
+                }
+            },
+        }
+    },
+)
 # Live API: drops created_at (FIELD_MISSING), adds account_status (FIELD_EXTRA).
-API_ACTUAL = State(domain="api", data={"paths": {
-    "/users": {"get": {"responses": _list_response(["id", "email", "account_status"])}},
-}})
+API_ACTUAL = State(
+    domain="api",
+    data={
+        "paths": {
+            "/users": {
+                "get": {"responses": _list_response(["id", "email", "account_status"])}
+            },
+        }
+    },
+)
 
 
 class _ApiSource:
@@ -348,7 +397,9 @@ class _ApiSource:
 
 class _ApiInputs:
     def targets(self):
-        return [ComparisonTarget("api", "customer-service", context={"repo": "demo/repo"})]
+        return [
+            ComparisonTarget("api", "customer-service", context={"repo": "demo/repo"})
+        ]
 
 
 class _NoApply:
@@ -394,7 +445,12 @@ def contract_demo(tmp_path, calls):
     first = _contract_orchestrator(tmp_path).run()
     first_calls = dict(calls)
     second = _contract_orchestrator(tmp_path).run()  # app restart, same cache file
-    return {"first": first, "second": second, "first_calls": first_calls, "calls": dict(calls)}
+    return {
+        "first": first,
+        "second": second,
+        "first_calls": first_calls,
+        "calls": dict(calls),
+    }
 
 
 def test_contract_demo_ghosts(contract_demo):
@@ -403,7 +459,9 @@ def test_contract_demo_ghosts(contract_demo):
 
 
 def test_contract_scan_is_identical_by_signature(contract_demo):
-    assert _scan_outcomes(contract_demo["second"]) == _scan_outcomes(contract_demo["first"])
+    assert _scan_outcomes(contract_demo["second"]) == _scan_outcomes(
+        contract_demo["first"]
+    )
 
 
 def test_contract_scan_makes_no_llm_or_context7_calls(contract_demo):
@@ -463,7 +521,9 @@ class _FakeCacheExecutor:
         elif difference.kind == "UNDECLARED_KEY":
             self._redis.keys.remove(difference.target)
         return ExecutionResult(
-            difference_id=difference.id, success=True, applied_change=resolution.proposed_change
+            difference_id=difference.id,
+            success=True,
+            applied_change=resolution.proposed_change,
         )
 
 
@@ -475,7 +535,10 @@ class _FakeCacheVerifier:
 
     def verify(self, target, difference):
         remaining = [
-            d for d in CacheComparator().compare(self._source.intended(), self._source.actual())
+            d
+            for d in CacheComparator().compare(
+                self._source.intended(), self._source.actual()
+            )
             if d.kind == difference.kind and d.target == difference.target
         ]
         return VerificationResult(difference_id=difference.id, resolved=not remaining)
@@ -484,7 +547,9 @@ class _FakeCacheVerifier:
 def _poltergeist_orchestrator(tmp_path: Path, redis: _FakeRedis) -> Orchestrator:
     source = _CacheSource(redis)
     return Orchestrator(
-        input_source=MagicMock(targets=lambda: [ComparisonTarget("cache", "customer-service")]),
+        input_source=MagicMock(
+            targets=lambda: [ComparisonTarget("cache", "customer-service")]
+        ),
         source_adapter=source,
         comparator=CacheComparator(),
         resolver=MockResolver(),
@@ -514,15 +579,23 @@ def poltergeist_demo(tmp_path, calls):
     for diff in replay.differences:
         replay_orch.apply_one(diff.id, human_authorized=True)
     return {
-        "record": record, "record_scan": record_scan,
-        "replay": replay, "replay_scan": replay_scan, "calls": dict(calls),
+        "record": record,
+        "record_scan": record_scan,
+        "replay": replay,
+        "replay_scan": replay_scan,
+        "calls": dict(calls),
     }
 
 
 def test_poltergeist_demo_ghosts(poltergeist_demo):
     seen = {(d.kind, d.target) for d in poltergeist_demo["record"].differences}
-    assert seen == {("KEY_MISSING", "products:list"), ("UNDECLARED_KEY", "session:debug")}
-    assert all(d.state == GhostState.RESOLVED for d in poltergeist_demo["record"].differences)
+    assert seen == {
+        ("KEY_MISSING", "products:list"),
+        ("UNDECLARED_KEY", "session:debug"),
+    }
+    assert all(
+        d.state == GhostState.RESOLVED for d in poltergeist_demo["record"].differences
+    )
 
 
 def test_poltergeist_recording_hits_cache_for_every_ghost(poltergeist_demo):
