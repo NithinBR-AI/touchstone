@@ -681,7 +681,12 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
   - _Req 36_
 - [ ] 10.2 Manual run + screenshot PR comment
   - _Req 36, 38_
-- [ ] 10.3 README "Skeleton proof"
+- [x] 10.3 README "Skeleton proof"
+      DONE: README "Skeleton Crew entry" section (top of README) — what the
+      skeleton is (6 files), what the apps are, fourth-domain proof
+      (test_fourth_domain.py), four AST-enforced rules (test_skeleton.py),
+      verification command, test count. States that core/ was extended once
+      during the build. test_skeleton.py + test_fourth_domain.py: 38 passed.
   - _Req 38, 40_
 - [x] 10.4 ~~Confirm one freeze commit~~
       SUPERSEDED: core/ was extended post-freeze (apply_batch, human_authorized,
@@ -708,7 +713,14 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       carry cache_version+validator_contract+prompt_hash+expires_at, lookup skips on
       version/prompt_hash mismatch, null proposed_change never cached. PASS.
   - _Req 33_
-- [ ] 12.2 test_demo_repeatability.py
+- [x] 12.2 test_demo_repeatability.py
+      DONE: 14 offline tests, each app wired as in its main.py with only
+      network I/O faked. App 1: record (Hunt + Exorcise all 4 seeded ghosts via
+      real MantleResolver/comparator/validator) → reset → replay on a fresh
+      orchestrator: all cached, 0 LLM / 0 Context7 calls, identical outcomes by
+      signature. App 2: two scans identical, 0 LLM calls (Exorcise is live by
+      design — documented). App 3: record → reset → replay, all cached, no LLM.
+      Disabling Cache.get makes the cache tests fail (checked).
   - _Req 39_
 
 ### 13. Submission (Week 5)
@@ -739,7 +751,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 - core/ has 5 substantive files + __init__.py. core/validator.py deleted — SQLValidator
   lives in adapters/postgres/validator.py. Skeleton Crew proof is test_skeleton.py AST
   checks (run every test pass), not git freeze commit history.
-- 10.1 (CI), 10.2, 10.3, 12.2 → "What's next" in submission write-up, not blocking.
+- 10.1 (CI), 10.2 → "What's next" in submission write-up, not blocking.
 
 ## Task Dependency Graph
 

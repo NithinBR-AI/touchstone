@@ -10,7 +10,7 @@ Touchstone makes all three visible — and fixable — before they cause inciden
 
 ## Skeleton Crew entry
 
-The skeleton is `core/` — exactly 5 files. Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it without modifying any skeleton file. Two mandatory apps satisfy the Skeleton Crew entry.
+The skeleton is `core/` — 6 files (5 modules + `__init__.py`). Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it. The apps contain no core code and wire their own adapters; `core/` was extended once during the build (batch apply and human authorization for Contract Observer), and `test_skeleton.py` keeps it domain-free. Two mandatory apps satisfy the Skeleton Crew entry.
 
 **What the skeleton is:** `core/interfaces.py` defines seven base protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, `Verifier`) plus two optional capability protocols (`BatchExecutor`, `RollbackSupport`). The remaining four files implement state management, caching, persistence, and the orchestrator. Domain-specific validators and models live in `adapters/`, not in `core/`.
 
@@ -18,7 +18,7 @@ The skeleton is `core/` — exactly 5 files. Three applications (`schema-drift`,
 
 **Extensibility proof — fourth domain, zero core changes:** `tests/test_fourth_domain.py` implements a complete in-memory `config` domain — its own `InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, and `Verifier` — and runs the full lifecycle (detect → resolve → validate → execute → verify → persist) without importing from any existing adapter package and without modifying a single line in `core/`. The test covers validation rejection stopping execution, the authorization gate, verification failure recording, and persistence after apply. The constraint is structural: if `core/` needed a change to support a new domain, the test would catch it.
 
-**AST-enforced boundary:** `test_skeleton.py` uses Python's `ast` module — not raw text search — to enforce three rules on every test run:
+**AST-enforced boundary:** `test_skeleton.py` uses Python's `ast` module — not raw text search — to enforce four rules on every test run:
 - Exact file set in `core/` (no domain files creeping in)
 - No module in `core/` imports from `adapters/`, `agents/`, or `apps/`
 - No `sqlglot` import anywhere in `core/` (domain library — forbidden)
@@ -101,7 +101,7 @@ Judges can click **Exorcise** on either ghost. `KEY_MISSING` → warms the key v
 
 ## Architecture — the skeleton
 
-The skeleton is `core/` — 5 files. It implements the compare-verify workflow and knows nothing about any specific domain.
+The skeleton is `core/` — 6 files (5 modules + `__init__.py`). It implements the compare-verify workflow and knows nothing about any specific domain.
 
 ```
 core/
@@ -389,6 +389,8 @@ No Kiro powers were used. Context7 is configured as a plain MCP server, not as a
 
 Target repos are declared in **`repos.json`** at the repo root. No env var, no cloning. Touchstone fetches declared sources from configured GitHub raw URLs at runtime. The UI shows a **repo selector** in the header — judges can see that Touchstone is built to monitor multiple repos.
 
+> **Replaying the demo:** after Reset Demo, Schema Drift and The Poltergeist replay every exorcised ghost from the cache with no LLM call (marked CACHED). Contract Observer's scan also repeats without an LLM call, but its Exorcise always generates a fresh patch with the LLM and opens a new GitHub PR, so it is never replayed from cache.
+
 > **Security note:** Schema Drift fetches and executes `models.py` from the configured `models_url` (a GitHub raw URL). Anyone who can push to that branch can run arbitrary code on the Touchstone server. For production use, pin the URL to a specific commit SHA (`/blob/<sha>/models.py`) rather than a branch (`/blob/main/models.py`), and treat the target repo's write access as equivalent to server access.
 
 ```bash
@@ -414,7 +416,7 @@ DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_
 
 ```
 touchstone/
-├── core/                                 # 5 files — no imports from outside core/
+├── core/                                 # 5 modules + __init__.py — no imports from outside core/
 │   ├── interfaces.py
 │   ├── models.py
 │   ├── cache.py
@@ -482,7 +484,7 @@ touchstone/
 ├── cli.py                                # CLI: touchstone compare / touchstone report
 ├── pyproject.toml
 ├── tests/
-│   ├── test_skeleton.py                  # AST-enforced: 5 files, no external imports, no sqlglot, no domain branching
+│   ├── test_skeleton.py                  # AST-enforced: exact core/ file set, no external imports, no sqlglot, no domain branching
 │   ├── test_fourth_domain.py             # extensibility proof: full lifecycle with in-memory config domain, zero core changes
 │   ├── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 4 files each
 │   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes

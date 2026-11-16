@@ -484,6 +484,17 @@ live Bedrock or MCP during recording. test_demo_repeatability.py runs twice,
 asserts identical semantic outcomes by signature. Cache hits marked
 cached=True with CACHED badge.
 
+Implemented (v1): there is no `--demo` flag (task 7.2 superseded). The cache
+fills when a ghost is exorcised and verified; after Reset Demo the next Hunt
+Ghosts replays from it. Per app:
+· Schema Drift — every ghost hits the cache on replay; zero LLM and Context7
+  calls; identical kind, target, state, operation, SQL and final state.
+· Contract Observer — Hunt Ghosts makes no LLM call and repeats identically.
+  Exorcise is not replayable: ContractExecutor generates the patch with the
+  LLM and opens a GitHub PR on every apply, against the current file.
+· The Poltergeist — no LLM at all; every ghost hits the cache on replay.
+tests/test_demo_repeatability.py checks all three (14 tests, offline).
+
 Requirement 40: Skeleton Crew Structural Compliance
 
 1. At least two app folders under apps/, each containing runnable app.
