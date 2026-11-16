@@ -616,7 +616,7 @@ function showApplyDialog(diffId) {
   if (!diff || !resolution) return;
 
   const change = resolution.proposed_change;
-  const sql    = change && change.statement ? change.statement : "(no SQL)";
+  const sql    = change?.payload?.statement || change?.statement || "(no SQL)";
   const isDb   = CONFIG.domain === "database";
 
   document.getElementById("dialog-title").textContent   = `Apply fix — ${diff.target}`;
