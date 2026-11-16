@@ -2,35 +2,9 @@
 
 **Schema drift is invisible until your DB migration fails in production. API contract drift is invisible until a client breaks. Cache drift is invisible until you wonder why your keys aren't there.**
 
-Touchstone makes all three visible — and fixable — before they cause incidents. It compares what your code declares against what actually runs, classifies every gap deterministically, calls an LLM to propose one validated fix per ghost, and — on human approval — applies it atomically and re-verifies the result.
+Touchstone makes all three visible — and fixable — before they cause incidents. It compares what your code declares against what actually runs, classifies every gap deterministically, proposes one validated fix per ghost (with an LLM where reasoning is needed), and — on human approval — applies it and re-verifies the result.
 
 **Kiroween 2026 — Skeleton Crew category** · Built with Qwen3 and DeepSeek models via [AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)
-
----
-
-## Skeleton Crew entry
-
-The skeleton is `core/` — 6 files (5 modules + `__init__.py`). Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it. The apps contain no core code and wire their own adapters; `core/` was extended once during the build (batch apply and human authorization for Contract Observer), and `test_skeleton.py` keeps it domain-free. Two mandatory apps satisfy the Skeleton Crew entry.
-
-**What the skeleton is:** `core/interfaces.py` defines seven base protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, `Verifier`) plus two optional capability protocols (`BatchExecutor`, `RollbackSupport`). The remaining four files implement state management, caching, persistence, and the orchestrator. Domain-specific validators and models live in `adapters/`, not in `core/`.
-
-**What the apps are:** Each app wires domain adapters to the orchestrator via `main.py`, plus a `config.json` (domain, accent, title), a `README.md`, and a `run.sh`. All domain logic lives in `adapters/`; `core/` owns only the workflow and state machine.
-
-**Extensibility proof — fourth domain, zero core changes:** `tests/test_fourth_domain.py` implements a complete in-memory `config` domain — its own `InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, and `Verifier` — and runs the full lifecycle (detect → resolve → validate → execute → verify → persist) without importing from any existing adapter package and without modifying a single line in `core/`. The test covers validation rejection stopping execution, the authorization gate, verification failure recording, and persistence after apply. The constraint is structural: if `core/` needed a change to support a new domain, the test would catch it.
-
-**AST-enforced boundary:** `test_skeleton.py` uses Python's `ast` module — not raw text search — to enforce four rules on every test run:
-- Exact file set in `core/` (no domain files creeping in)
-- No module in `core/` imports from `adapters/`, `agents/`, or `apps/`
-- No `sqlglot` import anywhere in `core/` (domain library — forbidden)
-- No Compare node in `core/` where `.domain` is compared to a string literal (no domain branching)
-
-**Verification:**
-
-```bash
-python -m pytest tests/test_skeleton.py tests/test_fourth_domain.py tests/test_apps_structure.py -v
-```
-
-**Test suite:** 625 passed, 12 skipped offline (no credentials); 632 passed, 5 skipped with a Neon `DATABASE_URL`. The 5 end-to-end tests run only right after a re-seed.
 
 ---
 
@@ -44,7 +18,33 @@ Two states exist for every system: what the code declares, and what the system a
 | API contracts | `openapi.yaml` | Live API response | Field returned by API, absent from spec |
 | Cache | `cache_config.yaml` | Live Redis key list | Key declared in config, missing from live cache |
 
-Touchstone detects each ghost, proposes a validated fix using an LLM grounded in the diff context, and — on human approval — applies it atomically and verifies the result. Every step is audited. Every fix is proven before it closes.
+Touchstone detects each ghost, proposes a fix, validates it against a strict rule set, and — on human approval — applies it and verifies the result. Every step is audited. Every fix is proven before it closes.
+
+---
+
+## Skeleton Crew entry
+
+The skeleton is `core/` — 6 files (5 modules + `__init__.py`). Three applications (`schema-drift`, `contract-observer`, and `poltergeist`) run on top of it. The apps contain no core code and wire their own adapters; `core/` was extended once during the build (batch apply and human authorization for Contract Observer), and `test_skeleton.py` keeps it domain-free. Two mandatory apps satisfy the Skeleton Crew entry.
+
+**What the skeleton is:** `core/interfaces.py` defines seven base protocols (`InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, `Verifier`) plus two optional capability protocols (`BatchExecutor`, `RollbackSupport`). The remaining four files implement state management, caching, persistence, and the orchestrator. Domain-specific validators and models live in `adapters/`, not in `core/`.
+
+**What the apps are:** Each app wires domain adapters to the orchestrator via `main.py`, plus a `config.json` (domain, accent, title), a `README.md`, and a `run.sh`. All domain logic lives in `adapters/`; `core/` owns only the workflow and state machine.
+
+**Extensibility proof — fourth domain, zero core changes:** `tests/test_fourth_domain.py` implements a complete in-memory `config` domain — its own `InputSource`, `SourceAdapter`, `Comparator`, `Resolver`, `Validator`, `Executor`, and `Verifier` — and runs the full lifecycle (detect → resolve → validate → execute → verify → persist) without importing from any existing adapter package and without modifying a single line in `core/`. If `core/` needed a change to support a new domain, the test would catch it.
+
+**AST-enforced boundary:** `test_skeleton.py` uses Python's `ast` module — not raw text search, so renaming a variable cannot slip past it — to enforce four rules on every test run:
+- Exact file set in `core/` (no domain files creeping in)
+- No module in `core/` imports from `adapters/`, `agents/`, or `apps/`
+- No `sqlglot` import anywhere in `core/` (domain library — forbidden)
+- No Compare node in `core/` where `.domain` is compared to a string literal (no domain branching)
+
+**Verification:**
+
+```bash
+python -m pytest tests/test_skeleton.py tests/test_fourth_domain.py tests/test_apps_structure.py -v
+```
+
+**Test suite:** 651 passed, 12 skipped offline (no credentials); 658 passed, 5 skipped with a Neon `DATABASE_URL`. The 5 end-to-end tests run only right after a re-seed.
 
 ---
 
@@ -52,160 +52,138 @@ Touchstone detects each ghost, proposes a validated fix using an LLM grounded in
 
 ### App 1 — Schema Drift · *The Crypt* · port 8001
 
-Compares SQLAlchemy model declarations against a live Postgres schema. Ghosts are columns, tables, indexes, and type mismatches that exist in one side but not the other.
+Compares SQLAlchemy model declarations against a live Postgres schema. Ghosts are columns, tables, indexes, and type mismatches that exist on one side but not the other.
 
 **Demo drift cases (pre-seeded in Neon DB):**
 
-| Ghost | Kind | Policy | Badge |
-|---|---|---|---|
-| `users.age` declared `INTEGER`, live `BIGINT` | `TYPE_CHANGED` (narrowing) | REVIEW_REQUIRED | 🕯 SÉANCE NEEDED |
-| `ix_orders_user_id` declared, missing from live DB | `INDEX_MISSING` | AUTO-FIX | 👻 HAUNTING |
-| `users.email` declared `VARCHAR(255)`, live `VARCHAR(50)` | `TYPE_CHANGED` (widening) | AUTO-FIX | 👻 HAUNTING |
+| Ghost | Kind | Badge after Hunt Ghosts |
+|---|---|---|
+| `ix_orders_user_id` declared, missing from live DB | `INDEX_MISSING` · Missing Specter | 👻 HAUNTING (auto-fix) |
+| `users.email` declared `VARCHAR(255)`, live `VARCHAR(50)` | `TYPE_CHANGED` (widening) · Type Wraith | 👻 HAUNTING (auto-fix) |
+| `users.age` declared `INTEGER`, live `BIGINT` | `TYPE_CHANGED` (narrowing) · Type Wraith | 🕯 SÉANCE NEEDED |
+| `ix_users_email` in live DB, not declared | `INDEX_EXTRA` · Phantom Index | 🕯 SÉANCE NEEDED |
 
-Judges can click **Exorcise** to apply a fix directly to the Neon DB. Click **↺ Reset Demo** to re-seed drift and start over.
-
----
+Clicking **Exorcise** applies the fix directly to the Neon DB. **↺ Reset Demo** re-seeds the drift.
 
 ### App 2 — Contract Observer · *The Séance* · port 8002
 
-Probes a live API and compares each response against the declared `openapi.yaml`. Ghosts are fields that appear in the live response but not the spec (Shadow Fields), and fields declared in the spec that the live API no longer returns (Vanished Fields).
+Probes a live API and compares each response against the declared `openapi.yaml`. Ghosts are fields the live API returns that the spec doesn't declare (Shadow Fields), and fields the spec declares that the API no longer returns (Vanished Fields).
 
 **Demo drift cases (live on Render):**
 
-| Ghost | Kind | Badge | Action |
+| Ghost | Kind | Badge | Exorcise opens |
 |---|---|---|---|
-| `account_status` returned by `/users`, not in spec | `FIELD_EXTRA` → Shadow Field | ⛓ BOUND | Opens PR on `openapi.yaml` |
-| `sku` returned by `/products`, not in spec | `FIELD_EXTRA` → Shadow Field | ⛓ BOUND | Opens PR on `openapi.yaml` |
-| `loyalty_tier` declared in spec, not returned by `/users` | `FIELD_MISSING` → Vanished Field | 🕯 SÉANCE NEEDED | Opens PR on `main.py` |
+| `account_status` returned by `/users`, not in spec | `FIELD_EXTRA` · Shadow Field | ⛓ BOUND | PR on `openapi.yaml` |
+| `sku` returned by `/products`, not in spec | `FIELD_EXTRA` · Shadow Field | ⛓ BOUND | PR on `openapi.yaml` |
+| `loyalty_tier` declared in spec, not returned by `/users` | `FIELD_MISSING` · Vanished Field | 🕯 SÉANCE NEEDED | PR on `main.py` |
 
-The live API is deployed at **[touchstone-demo-target-repo.onrender.com](https://touchstone-demo-target-repo.onrender.com)** (Render free tier — may take ~30s to wake on first request). The declared spec lives in **[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**.
+The live API runs at **[touchstone-demo-target-repo.onrender.com](https://touchstone-demo-target-repo.onrender.com)** (Render free tier — may take ~30s to wake). The declared spec lives in **[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**.
 
-Judges can click **Exorcise** on any drift card to open a GitHub PR. All drifts of the same kind are batched into **one PR per file** — Shadow Fields → one PR on `openapi.yaml`, Vanished Fields → one PR on `main.py`. Clicking Exorcise on an already-open touchstone PR returns the existing PR (idempotent). **Reset Demo** closes all open touchstone PRs so the next run produces a fresh PR.
-
----
+All drifts of the same kind are batched into **one PR per file**. Clicking Exorcise again returns the already-open PR (idempotent). **↺ Reset Demo** closes open Touchstone PRs so the next run produces a fresh one.
 
 ### App 3 — The Poltergeist · *Redis Cache Drift Detector* · port 8003
 
-Compares declared Redis cache keys in `cache_config.yaml` against keys that actually exist in the live cache. Ghosts are keys that should exist but don't (KEY_MISSING), and keys that exist in the live cache but were never declared (UNDECLARED_KEY).
+Compares the keys declared in `cache_config.yaml` against the keys that actually exist in the live Redis cache.
 
-**Demo drift cases (live on Render):**
+**Demo drift cases (live on Render + Upstash):**
 
-| Ghost | Kind | Policy | Badge |
-|---|---|---|---|
-| `products:list` declared, absent from live cache | `KEY_MISSING` | AUTO-FIX | 👻 HAUNTING |
-| `debug:session_dump` present in live cache, not declared | `UNDECLARED_KEY` | AUTO-FIX | 👻 HAUNTING |
+| Ghost | Kind | Badge |
+|---|---|---|
+| `products:list` declared, absent from live cache | `KEY_MISSING` · Missing Cache Specter | 👻 HAUNTING (auto-fix) |
+| `debug:session_dump` in live cache, never declared | `UNDECLARED_KEY` · Phantom Cache Key | ⛓ BOUND |
 
-Judges can click **Exorcise** on either ghost. `KEY_MISSING` → warms the key via `/cache/warm`. `UNDECLARED_KEY` → deletes the key via `/cache/delete`. Verifier confirms the action took effect before marking RESOLVED. Click **↺ Reset Demo** to restore both drift cases.
-
----
-
-## Architecture — the skeleton
-
-The skeleton is `core/` — 6 files (5 modules + `__init__.py`). It implements the compare-verify workflow and knows nothing about any specific domain.
-
-```
-core/
-├── interfaces.py    ← 7 base protocols: InputSource, SourceAdapter, Comparator,
-│                       Resolver, Validator, Executor, Verifier
-│                       + 2 optional: BatchExecutor, RollbackSupport
-├── models.py        ← GhostState (7 states), Difference, ChangeProposal,
-│                       Resolution, ExecutionResult, VerificationResult,
-│                       ApplyOutcome, RollbackEvent, Report
-├── cache.py         ← JSON-backed resolution cache; written only after apply+verify succeeds;
-│                       keyed by Difference.signature with cache_version, validator_contract,
-│                       prompt_hash; 7-day TTL (expires_at); null proposals never cached
-├── persistence.py   ← atomic report store (temp + fsync + rename)
-└── orchestrator.py  ← state machine: run() / apply_one() / apply_batch() / rollback()
-```
-
-Domain-specific models and validators live in their adapters, not core:
-- `adapters/postgres/models.py` — `SQLChange`, `FilePatch`
-- `adapters/postgres/validator.py` — `SQLValidator`, operation matrix, safety rules
-
-Each domain adapter implements the 7 base protocols. The skeleton calls the protocols; it never imports from adapters.
-
-```
-adapters/postgres/    ← Schema Drift (complete)
-adapters/openapi/     ← Contract Observer (complete)
-adapters/redis/       ← The Poltergeist (complete)
-
-apps/schema-drift/    ← mandatory app 1 — The Crypt
-apps/contract-observer/ ← mandatory app 2 — The Séance
-apps/poltergeist/     ← third app — The Poltergeist
-apps/shared/ui/       ← one Halloween-themed template + RENDERERS registry
-```
-
-Adding a domain requires implementing the adapter protocols. It never requires touching `core/`.
+Exorcise on `KEY_MISSING` warms the key via `/cache/warm`; on `UNDECLARED_KEY` it deletes the key via `/cache/delete` (a human must authorize the deletion). The verifier confirms each action before marking RESOLVED. **↺ Reset Demo** restores both cases.
 
 ---
 
-## State machine
+## Demo
 
-Seven states × eight events = 56 cells. Every cell is defined in [`design.md`](.kiro/specs/touchstone/design.md) (state diagram and transition table); `tests/test_state_transitions.py` tests them.
+> **Live URLs:** to be added once the apps are deployed (task 11.2). Until then, run them locally — see [Setup](#setup).
 
-| State | Meaning |
-|---|---|
-| `PENDING` | Difference found; resolution not yet proposed |
-| `REVIEW_REQUIRED` | Non-auto-fixable; waiting for human decision |
-| `BLOCKED` | Structurally rejected by the validator |
-| `RESOLVED` | Applied and verified |
-| `STILL_PRESENT` | Applied but verifier found the ghost persists |
-| `EXECUTION_FAILED` | Executor rejected or timed out |
-| `SUPERSEDED` | Reserved — sibling patch conflict (defined in model and UI, not yet produced by any code path) |
+Target repos are declared in **`repos.json`** at the repo root. Touchstone fetches declared sources from their GitHub raw URLs at runtime — no cloning. The header's **repo selector** shows Touchstone is built to monitor more than one repo.
+
+**Schema Drift (http://localhost:8001).** Click **↺ Reset Demo**, then **Hunt Ghosts**. Four cards appear. The Missing Specter and the `users.email` Type Wraith are 👻 HAUNTING — the validator has accepted their SQL. The `users.age` narrowing and the Phantom Index wait at 🕯 SÉANCE NEEDED. Click **⚡ Exorcise** on any card: the SQL runs on Neon, the verifier re-reads the schema, and the card moves to ✝ LAID TO REST.
+
+**Contract Observer (http://localhost:8002).** Click **Hunt Ghosts**. Shadow Fields and a Vanished Field appear. Click **⚡ Exorcise** on a Shadow Field: the LLM writes the spec patch, a second model checks it, and a pull request opens on the demo repo, with a **View PR ↗** link.
+
+**The Poltergeist (http://localhost:8003).** Click **Hunt Ghosts**. Exorcise the Missing Cache Specter to warm the key, then the Phantom Cache Key to delete it.
+
+> **Replaying the demo:** after Reset Demo, Schema Drift and The Poltergeist replay every exorcised ghost from the cache with no LLM call (marked CACHED). Contract Observer's scan also repeats without an LLM call, but its Exorcise always generates a fresh patch with the LLM and opens a new GitHub PR, so it is never replayed from cache.
+
+> **Security note:** Schema Drift fetches and executes `models.py` from the configured `models_url` (a GitHub raw URL). Anyone who can push to that branch can run arbitrary code on the Touchstone server. For production use, pin the URL to a specific commit SHA (`/blob/<sha>/models.py`) rather than a branch (`/blob/main/models.py`), and treat the target repo's write access as equivalent to server access.
 
 ---
 
-## Flow
+## How it works
+
+### Flow
 
 ```
 1. Read targets    (repos.json → declared source URL + live environment URL)
 2. Read both sides (SourceAdapter normalizes each side into a State)
 3. Compare         (domain Comparator classifies each gap as a Difference)
 4. Resolve         (Resolver returns a ChangeProposal per ghost)
-                     · database → LLM (ultra) generates SQL fix
-                     · api      → lightweight metadata proposal only; LLM runs at step 7
-                     · cache    → deterministic CACHE_WARM/CACHE_DELETE; no LLM
+                     · database → LLM (ultra) generates SQL, grounded in Context7 docs
+                     · api      → field metadata only; the LLM runs at step 7
+                     · cache    → deterministic CACHE_WARM / CACHE_DELETE; no LLM
 5. Validate        (domain Validator enforces safety rules; rejects if violated)
 6. Authorize       (human reviews the proposal in the UI → clicks Exorcise)
-                     · human_authorized=True allows REVIEW_REQUIRED and BLOCKED diffs through
+                     · human_authorized=True lets REVIEW_REQUIRED and BLOCKED through
 7. Execute         (Executor applies the fix)
                      · database → SQLExecutor runs DDL against Postgres
-                     · api      → ContractExecutor fetches file from GitHub, calls LLM
-                                  to generate patched content, validates with ultra(),
-                                  opens PR; draft PR if validation fails twice
+                     · api      → ContractExecutor generates the patch with the LLM,
+                                  checks it, opens a GitHub PR
                      · cache    → CacheExecutor calls /cache/warm or /cache/delete
 8. Verify          (Verifier re-reads live state → RESOLVED / STILL_PRESENT / EXECUTION_FAILED)
 ```
 
 **LLM proposes. Validator decides. Human authorizes. That order never changes.**
 
-For API domain the LLM runs at step 7 (execute time), not step 4 — so what is validated and what is committed are always the same content.
+### Architecture
 
----
+```
+core/
+├── interfaces.py    ← the 7 + 2 protocols (see Skeleton Crew entry)
+├── models.py        ← GhostState (7 states), Difference, ChangeProposal,
+│                       Resolution, ExecutionResult, VerificationResult,
+│                       ApplyOutcome, RollbackEvent, Report
+├── cache.py         ← JSON-backed resolution cache; written only after apply+verify succeeds;
+│                       keyed by Difference.signature with cache_version, validator_contract,
+│                       prompt_hash; 7-day TTL; null proposals never cached
+├── persistence.py   ← atomic report store (temp + fsync + rename)
+└── orchestrator.py  ← state machine: run() / apply_one() / apply_batch() / rollback()
 
-## Models — AWS Bedrock Mantle
+adapters/postgres/    ← Schema Drift          apps/schema-drift/       ← mandatory app 1 — The Crypt
+adapters/openapi/     ← Contract Observer     apps/contract-observer/  ← mandatory app 2 — The Séance
+adapters/redis/       ← The Poltergeist       apps/poltergeist/        ← third app
+                                              apps/shared/ui/          ← one template + RENDERERS registry
+```
 
-All LLM calls route through **[AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)** — a single OpenAI-compatible endpoint (`https://bedrock-mantle.us-east-1.api.aws/v1`) that exposes Qwen3, DeepSeek, and NVIDIA models under one API key. The client is in `agents/mantle_client.py`, adapted from the same pattern used in [GhostVendor](https://github.com/NithinBR-AI/ghostvendor).
+Each domain adapter implements the protocols, including its own validator (`adapters/postgres/validator.py` holds `SQLValidator` and the operation matrix). The skeleton calls the protocols; it never imports from adapters.
 
-| App | Domain | Model | Why |
-|---|---|---|---|
-| App 1 — Schema Drift | `database` | **Qwen3-235B** (`qwen.qwen3-235b-a22b-2507`) via `ultra()` | SQL fix proposals require multi-step reasoning: trace the diff context, verify the identifier is safe to use unquoted, produce exactly one DDL statement matching the target name. The 235B MoE handles all three in one pass reliably. |
-| App 2 — Contract Observer | `api` | **DeepSeek v3.2** (`deepseek.v3.2`) via `deepseek_pro()` + **Qwen3-235B** via `ultra()` | At resolve time `MantleResolver` returns a lightweight `ChangeProposal` with field metadata only — no LLM call yet. At execute time (Exorcise), `ContractExecutor` fetches the target file from GitHub, calls `deepseek_pro()` to generate the patched content, then calls `ultra()` to validate it before opening a PR. What is validated equals what is committed. |
-| App 3 — The Poltergeist | `cache` | **No LLM** (`MockResolver`) | Cache key warming is fully deterministic — the executor warms a missing key via `/cache/warm?key=<key>`. No reasoning is needed; `MockResolver` satisfies the resolver protocol without making any network calls. |
+### State machine
 
-**Fallback chain:** `ultra()` falls back to Nemotron Super (`nvidia.nemotron-super-3-120b`) on transient Mantle error. `deepseek_pro()` falls back to Qwen3-235B. Both are on the same Mantle endpoint — the fallback is a model name swap only.
+Seven states × eight events = 56 cells. Every cell is defined in [`design.md`](.kiro/specs/touchstone/design.md) (state diagram and transition table); `tests/test_state_transitions.py` and `tests/test_properties.py` test them.
 
-**Temperature:** `0.0` on all calls — fix proposals must be deterministic. The same ghost must always produce the same SQL or rationale so the prompt SHA-256 is a stable cache key.
-
-**No key → no problem:** If `MANTLE_API_KEY` is not set, `MantleResolver` automatically falls back to `MockResolver` and logs a warning. The apps start and scan normally; only the fix proposals are canned rather than LLM-generated.
+| State | Badge | Meaning |
+|---|---|---|
+| `PENDING` | 👻 HAUNTING | A validated fix is ready; Exorcise applies it |
+| `REVIEW_REQUIRED` | 🕯 SÉANCE NEEDED | Not auto-fixable; a human must review and authorize |
+| `BLOCKED` | ⛓ BOUND | Rejected by policy or the validator; only an explicit human Exorcise may proceed |
+| `RESOLVED` | ✝ LAID TO REST | Applied and verified |
+| `STILL_PRESENT` | 😱 STILL HAUNTING | Applied, but the verifier found the ghost persists |
+| `EXECUTION_FAILED` | 💀 RITUAL FAILED | The executor rejected the change or timed out |
+| `SUPERSEDED` | 🌫 FADED | Reserved — defined in the model and UI, not yet produced by any code path |
 
 ---
 
 ## Ghost classification
 
+The **Policy** column is how the comparator classifies a ghost. The card can end up in a different state once the validator checks the proposed fix: for example, an `INDEX_EXTRA` with a proposed `DROP INDEX` shows 🕯 SÉANCE NEEDED, because the human may still authorize it.
+
 ### Database (Schema Drift)
 
-| Kind | Condition | Auto-fix | Policy |
+| Kind | Condition | Fix | Policy |
 |---|---|---|---|
 | `INDEX_MISSING` | non-unique index | `CREATE INDEX` | AUTO-FIX |
 | `INDEX_MISSING` | unique index | — | REVIEW_REQUIRED |
@@ -223,18 +201,18 @@ Widening pairs (auto-approved): `smallint→integer`, `integer→bigint`, `real�
 |---|---|---|
 | `FIELD_EXTRA` | Shadow Field | BLOCKED — PR-based fix to `openapi.yaml` |
 | `FIELD_MISSING` | Vanished Field | REVIEW_REQUIRED — PR-based fix to `main.py` |
-| `TYPE_MISMATCH` | Type Clash | REVIEW_REQUIRED — manual review |
+| `TYPE_MISMATCH` | — | REVIEW_REQUIRED — manual review |
 | `PATH_MISSING` | Lost Endpoint | BLOCKED |
 | `PATH_EXTRA` | Phantom Endpoint | BLOCKED |
 
-API contract changes are never auto-applied to a live system. The executor opens a GitHub PR.
+API contract changes are never applied to a live system. The executor opens a GitHub PR.
 
 ### Cache keys (The Poltergeist)
 
 | Kind | UI label | Policy |
 |---|---|---|
-| `KEY_MISSING` | Missing Key | AUTO-FIX — warms the key via `/cache/warm?key=<key>` |
-| `UNDECLARED_KEY` | Shadow Key | AUTO-FIX — deletes the key via `/cache/delete?key=<key>` |
+| `KEY_MISSING` | Missing Cache Specter | AUTO-FIX — warms the key via `/cache/warm?key=<key>` |
+| `UNDECLARED_KEY` | Phantom Cache Key | BLOCKED — deletes the key via `/cache/delete?key=<key>` once a human authorizes |
 
 ---
 
@@ -244,44 +222,53 @@ API contract changes are never auto-applied to a live system. The executor opens
 - **Validator is the safety boundary** — not the LLM, not keyword matching. The domain validator enforces the operation matrix structurally.
 - **Redaction** — token-based, applied before persistence and before the resolver sees the data. Errors stored as code/class/summary — never raw exception text.
 - **Atomic persistence** — report store uses temp file + fsync + rename. No partial writes on crash.
+- **Outbound HTTP** — every request Touchstone makes (API probes, cache status and warmup, Context7, and the `models.py` download) goes through the shared SSRF guard in `adapters/ssrf.py`, with `trust_env=False` (no proxy env vars) and no automatic redirects.
 
 ### Schema Drift (database)
 - **Operation matrix** — only recognized operation kinds are accepted; every other SQL node is blocked.
 - **Target binding** — validator extracts table/column/index from the SQL AST and compares against `Difference.target`; a mismatch blocks regardless of resolver confidence.
 - **Connection-level timeout** — 30s via `options="-c statement_timeout=30000"` at connect time; never via `SET`.
-- **USING clause / expression index / partial index** — structurally rejected.
-- **CREATE INDEX is exactly the declared index** — name must be `ix_<table>_<cols>`, columns in the declared order, plain B-tree (no `USING hash`/`gin`), default sort order (no `DESC` / `NULLS FIRST`). These rules come from tech.md; property-based testing showed the validator was not enforcing them (see below).
+- **USING clause / expression index / partial index** — structurally rejected. `SET`, `DELETE` and `TRUNCATE` stay forbidden even with human authorization.
+- **CREATE INDEX is exactly the declared index** — name must be `ix_<table>_<cols>`, columns in the declared order, plain B-tree (no `USING hash`/`gin`), default sort order (no `DESC` / `NULLS FIRST`). These rules come from tech.md; property-based testing showed the validator was not enforcing them (see [How Kiro was used](#property-based-testing-pbt)).
 
 ### Contract Observer (API)
-- **Two-stage validation.** The orchestrator-level `ContractValidator` runs at scan time (step 5) on a lightweight metadata proposal that contains only field metadata — no patched content yet. It performs structural pre-checks (operation == FILE_PATCH, file_name present, target matches diff). The resolver intentionally does not call the LLM at scan time because that would slow down Compare. The result is always BLOCKED until the human authorizes. When the human clicks Exorcise, `ContractExecutor.execute_batch()` calls `deepseek_pro()` to generate the patched content and then validates it with `ultra()` before opening a PR. **`ultra()` inside `execute_batch` is the patch validation boundary for the API domain — not the orchestrator-level validator.**
+- **Two-stage validation.** At scan time there is no patch yet, so `ContractValidator` only checks the proposal's structure (operation is `FILE_PATCH`, file name present, target matches) and the ghost stays BLOCKED until a human authorizes. At Exorcise, `ContractExecutor` generates the patch with `deepseek_pro()` and validates it with `ultra()` before opening a PR — **that `ultra()` check is the patch validation boundary for the API domain.** If it fails twice, a **draft** PR opens with a warning instead.
 - **SSRF protection** — before every request, every resolved address (including IPv4-mapped IPv6) is checked against the exact blocked-range list in tech.md, and anything multicast or not globally routable is refused. The same guard covers Context7 calls.
-- **`follow_redirects=False`** — redirects are not auto-followed. Same-host redirects are manually followed (max 5 hops) with SSRF revalidation on each hop.
+- **`follow_redirects=False`** — redirects are not auto-followed. Same-host redirects are followed manually (max 5 hops) with SSRF revalidation on each hop; cross-host redirects are skipped.
 - **`trust_env=False`** — no proxy env vars.
 - **No live mutations** — the executor opens a GitHub PR; it never patches the live API.
 
 ---
 
+## Models — AWS Bedrock Mantle
+
+All LLM calls route through **[AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)** — a single OpenAI-compatible endpoint (`https://bedrock-mantle.us-east-1.api.aws/v1`) that exposes Qwen3, DeepSeek, and NVIDIA models under one API key. The client is in `agents/mantle_client.py`, adapted from the same pattern used in [GhostVendor](https://github.com/NithinBR-AI/ghostvendor).
+
+| App | Model | Why |
+|---|---|---|
+| App 1 — Schema Drift | **Qwen3-235B** (`qwen.qwen3-235b-a22b-2507`) via `ultra()` | SQL fix proposals need multi-step reasoning: trace the diff context, check the identifier is safe unquoted, produce exactly one DDL statement matching the target. |
+| App 2 — Contract Observer | **DeepSeek v3.2** (`deepseek.v3.2`) via `deepseek_pro()` + **Qwen3-235B** via `ultra()` | At Exorcise, `deepseek_pro()` writes the patched file and `ultra()` checks it (see [Safety boundaries](#contract-observer-api)). No LLM runs at scan time. |
+| App 3 — The Poltergeist | **No LLM** (`MockResolver`) | Warming or deleting a key is fully deterministic. |
+
+**Fallback chain:** `ultra()` falls back to Nemotron Super (`nvidia.nemotron-super-3-120b`) on transient Mantle error. `deepseek_pro()` falls back to Qwen3-235B. Both are on the same Mantle endpoint — the fallback is a model name swap only.
+
+**Temperature:** `0.0` on all calls, so the same ghost produces the same proposal and replays stay consistent.
+
+**No key → no problem:** If `MANTLE_API_KEY` is not set, `MantleResolver` falls back to `MockResolver` and logs a warning. The apps start and scan normally; only the fix proposals are canned rather than LLM-generated.
+
+---
+
 ## Key Design Decisions
 
-**Core is the authority.** `core/` owns the state machine, cache, and persistence. All domain logic — including validators — lives in adapters. `core/` never imports from adapters. This is enforced structurally by `test_skeleton.py` using Python's `ast` module on every test run: it walks the AST of every `core/` file and asserts no imports from project packages, no `sqlglot` imports, and no Compare nodes where `.domain` is compared to a string literal. Raw text search is not used — the check is at the AST level so renaming a variable cannot accidentally pass. The constraint means adapters can be replaced or added without touching the shared workflow.
+**Cache written only after apply + verify.** The resolution cache (`core/cache.py`) is never written at resolve time — only after `apply_one()` succeeds and the verifier confirms the ghost is gone. Null proposals are never cached. Cached resolutions are proven fixes, not guesses, and they still pass through the validator on every replay.
 
-**Validator is the safety boundary — not the LLM.** The LLM proposes; a domain validator enforces. The boundary sits at different layers per domain: for the database domain, `SQLValidator` runs at scan time and uses `sqlglot` AST analysis to check the SQL against the operation matrix before the human even sees it. For the API domain, `ultra()` inside `ContractExecutor.execute_batch()` is the patch validation boundary — the orchestrator-level `ContractValidator` performs only structural pre-checks at scan time (the LLM hasn't run yet, so there is no patch to validate). For the cache domain, `CacheValidator` performs deterministic operation + target checks at scan time with no LLM involved at all.
+**API fixes are PRs, never live mutations.** `ContractExecutor` calls the GitHub API, not a file writer. The verifier re-reads the OpenAPI spec; until the PR is merged, the ghost stays open.
 
-**Target binding.** For database fixes, the validator extracts the table/column/index name from the SQL AST and compares it to `Difference.target`. A mismatch blocks regardless of model confidence. The LLM cannot create an index on a different table by omitting the target from its rationale.
+**Batch by kind, one PR per file.** Three `FIELD_EXTRA` drifts become one PR on `openapi.yaml`, not three conflicting PRs on the same file. `FIELD_EXTRA` and `FIELD_MISSING` produce separate PRs because they patch different files. `apply_batch()` in the orchestrator delegates to `BatchExecutor.execute_batch()` for this.
 
-**Cache written only after apply + verify.** The resolution cache (`core/cache.py`) is never written at resolve time. It's only written after `apply_one()` succeeds and `VerificationResult.resolved=True`. Null `proposed_change` entries are never cached. This means cached resolutions are proven — not speculative.
+**Human authorization unlocks REVIEW_REQUIRED and BLOCKED.** Exorcise always sends `human_authorized=True`: the human has seen the proposal and chosen to apply it. The validator still runs — it only stops gating on auto-fixability. EXECUTION_FAILED is the one state that cannot be retried.
 
-**API fixes are PRs, never live mutations.** The Contract Observer executor opens a GitHub PR — it never patches the live API or writes to disk. This is enforced architecturally: `ContractExecutor.execute()` calls the GitHub API, not a local file writer. The verifier re-reads the OpenAPI spec and checks whether the drift field is now present; if the PR has not yet been merged, the ghost stays open.
-
-**Batch by kind, one PR per file.** When multiple API drifts of the same kind exist (e.g., three `FIELD_EXTRA` drifts), the executor groups them into one PR on `openapi.yaml` — not three separate PRs that would conflict on the same file. `FIELD_EXTRA` and `FIELD_MISSING` produce separate PRs (they patch different files). Idempotent: if an open `touchstone/*` PR with the same title prefix already exists, its URL is returned immediately.
-
-**Domain-aware prompts, temperature 0.** Each domain gets a different system prompt (`_DB_SYSTEM_PROMPT` for SQL fix proposals, `_API_SYSTEM_PROMPT` for generating patched file content, `_CACHE_SYSTEM_PROMPT` for cache drift rationale). Temperature is `0.0` on all calls — the same ghost must always produce the same output so the prompt SHA-256 is a stable cache key.
-
-**Human authorization unlocks REVIEW_REQUIRED and BLOCKED.** The UI always passes `human_authorized=True` when the user clicks Exorcise. The human has seen the proposal and chosen to apply it — this unlocks both REVIEW_REQUIRED and BLOCKED diffs. The only terminal state that cannot be retried is EXECUTION_FAILED. SET, DELETE, and TRUNCATE remain forbidden at the SQL validator level regardless of authorization.
-
-**Draft PR on double validation failure.** For API patches, `ultra()` validates the patched content after `deepseek_pro()` generates it. If ultra flags invalid on both attempts, `ContractExecutor` opens a **draft** PR with a warning body instead of blocking — the human can review and fix the patch manually before merging.
-
-**`apply_batch()` for multi-diff execution.** The orchestrator supports `apply_batch(ids)` which groups eligible diffs and delegates to `BatchExecutor.execute_batch()` if the executor supports it. Contract Observer uses this to batch all FIELD_EXTRA diffs into one GitHub PR instead of opening one per diff.
+**Draft PR on double validation failure.** If `ultra()` rejects the generated patch twice, `ContractExecutor` opens a draft PR with a warning body instead of blocking, so a human can fix the patch before merging.
 
 ---
 
@@ -385,137 +372,43 @@ No Kiro powers were used. Context7 is configured as a plain MCP server, not as a
 
 ---
 
-## Demo
+## Scope & Constraints
 
-Target repos are declared in **`repos.json`** at the repo root. No env var, no cloning. Touchstone fetches declared sources from configured GitHub raw URLs at runtime. The UI shows a **repo selector** in the header — judges can see that Touchstone is built to monitor multiple repos.
-
-> **Replaying the demo:** after Reset Demo, Schema Drift and The Poltergeist replay every exorcised ghost from the cache with no LLM call (marked CACHED). Contract Observer's scan also repeats without an LLM call, but its Exorcise always generates a fresh patch with the LLM and opens a new GitHub PR, so it is never replayed from cache.
-
-> **Security note:** Schema Drift fetches and executes `models.py` from the configured `models_url` (a GitHub raw URL). Anyone who can push to that branch can run arbitrary code on the Touchstone server. For production use, pin the URL to a specific commit SHA (`/blob/<sha>/models.py`) rather than a branch (`/blob/main/models.py`), and treat the target repo's write access as equivalent to server access.
-
-```bash
-# Restore Schema Drift demo state (or use the Reset Demo button in the UI)
-python fixtures/seed.py $DATABASE_URL
-
-# Run tests. Tests load .env, so if DATABASE_URL is set there they run against Neon.
-python -m pytest tests/ -q
-# offline (no credentials):        625 passed, 12 skipped
-# with Neon DATABASE_URL in .env:   632 passed, 5 skipped (e2e tests need a fresh seed)
-
-# Run Postgres integration tests
-DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v
-
-# WARNING: with a real DATABASE_URL, test_sql_execution.py widens users.email on the
-# demo database, which removes that ghost. Re-seed (or click Reset Demo) afterwards.
-# The property tests only touch throwaway pbt_* tables and drop them.
-```
+| Constraint | Detail |
+|---|---|
+| **No automatic database rollback** | Schema changes are not reverted automatically. The report keeps the originally observed state and the executed SQL for manual recovery; no inverse statement is generated. |
+| **One user per app** | Each app process holds one orchestrator and one active report. Correct for a demo; concurrent users would share state. |
+| **Contract Observer Exorcise is live** | Every Exorcise generates a fresh patch with the LLM and opens a real GitHub PR, so it is never replayed from cache. The scan itself is deterministic. |
+| **`models.py` is executed** | Schema Drift imports the declared models from a GitHub raw URL. Write access to that repo is effectively code execution on the server (see the security note in [Demo](#demo)). |
+| **Postgres `public` schema only** | The SQL validator rejects any other schema. Identifiers are compared case-insensitively. |
+| **Context7 grounding is database-only** | API and cache fixes are not grounded in documentation. |
+| **SUPERSEDED is reserved** | The state exists in the model and UI, but no code path produces it yet. Contract Observer's one-PR-per-file batching avoids the sibling-conflict case it was meant for. |
 
 ---
 
-## Project structure
+## What's Next
 
-```
-touchstone/
-├── core/                                 # 5 modules + __init__.py — no imports from outside core/
-│   ├── interfaces.py
-│   ├── models.py
-│   ├── cache.py
-│   ├── persistence.py
-│   └── orchestrator.py
-├── repos.json                            # target repos registry
-├── adapters/
-│   ├── remote_source.py                  # fetches files from GitHub raw URLs
-│   ├── postgres/                         # schema-drift domain (complete)
-│   │   ├── models.py                     # SQLChange, FilePatch (adapter-level models)
-│   │   ├── validator.py                  # SQLValidator, operation matrix, safety rules
-│   │   ├── normalize.py
-│   │   ├── intended.py
-│   │   ├── actual.py
-│   │   ├── comparator.py
-│   │   ├── executor.py
-│   │   └── verifier.py
-│   ├── openapi/                          # contract-observer domain (complete)
-│   │   ├── validator.py                  # ContractValidator, payload + target checks
-│   │   ├── ssrf.py
-│   │   ├── intended.py
-│   │   ├── actual.py
-│   │   ├── comparator.py
-│   │   ├── executor.py
-│   │   └── verifier.py
-│   └── redis/                            # poltergeist domain (complete)
-│       ├── validator.py                  # CacheValidator, operation + target checks
-│       ├── actual.py
-│       ├── intended.py
-│       ├── comparator.py
-│       ├── executor.py
-│       └── verifier.py
-├── agents/
-│   ├── resolver.py                       # MantleResolver (Bedrock/Mantle LLM) + MockResolver
-│   ├── mantle_client.py                  # Mantle OpenAI-compatible client (ultra/deepseek_pro, temp=0)
-│   ├── prompts.py                        # domain-aware system prompts (database/api/cache)
-│   ├── context7.py                       # Context7 REST: PostgreSQL docs for the database prompt
-│   └── redaction.py                      # token-based redaction + SafeError
-├── apps/
-│   ├── shared/ui/                        # one shared Halloween-themed template
-│   │   ├── index.html
-│   │   ├── app.js
-│   │   └── style.css
-│   ├── schema-drift/                     # mandatory app 1 — The Crypt (complete)
-│   │   ├── main.py
-│   │   ├── config.json
-│   │   ├── README.md
-│   │   └── run.sh
-│   ├── contract-observer/               # mandatory app 2 — The Séance (complete)
-│   │   ├── main.py
-│   │   ├── config.json
-│   │   ├── README.md
-│   │   └── run.sh
-│   └── poltergeist/                     # third app — The Poltergeist (complete)
-│       ├── main.py
-│       ├── config.json
-│       ├── README.md
-│       └── run.sh
-├── fixtures/
-│   ├── seed.py                           # seeds Neon DB with drift cases
-│   ├── cases.json                        # drift cases for demo + cache seeding
-│   └── docker-compose.yml               # local Postgres 16 alternative
-├── scripts/
-│   └── run_comparator_test.py            # helper for comparator-test hook
-├── cli.py                                # CLI: touchstone compare / touchstone report
-├── pyproject.toml
-├── tests/
-│   ├── test_skeleton.py                  # AST-enforced: exact core/ file set, no external imports, no sqlglot, no domain branching
-│   ├── test_fourth_domain.py             # extensibility proof: full lifecycle with in-memory config domain, zero core changes
-│   ├── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 4 files each
-│   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes
-│   ├── test_normalize.py                 # type normaliser
-│   ├── test_validator_sql.py             # operation matrix + target binding + widening
-│   ├── test_state_transitions.py         # 56-cell state machine
-│   ├── test_rollback.py                  # DB refusal + rollback event recording
-│   ├── test_cache_reproducibility.py     # cache hit / miss / provenance
-│   ├── test_orchestrator_mock.py         # end-to-end with fake infrastructure
-│   ├── test_resolver.py                  # MockResolver
-│   ├── test_mantle_resolver.py           # MantleResolver: routing, prompts, retry, fallback
-│   ├── test_context7.py                  # Context7 docs grounding (faked HTTP)
-│   ├── test_executor_api.py              # ContractExecutor batch, idempotency, demo reset
-│   ├── test_ssrf.py                      # SSRF guard
-│   ├── test_properties.py                # property-based tests (Hypothesis, Req 41)
-│   ├── test_comparator_api.py            # OpenAPI comparator
-│   ├── test_redaction.py                 # token-based redaction
-│   ├── test_comparator_cache.py          # Redis cache comparator
-│   ├── test_comparator_pg.py             # Postgres comparator (requires DATABASE_URL)
-│   ├── test_executor_pg.py               # Postgres executor unit tests
-│   ├── test_verifier_pg.py               # Postgres verifier unit tests
-│   ├── test_postgres_e2e.py              # Postgres end-to-end (requires DATABASE_URL)
-│   └── test_sql_execution.py             # real Postgres SQL execution (requires DATABASE_URL)
-├── .kiro/
-│   ├── specs/touchstone/                 # requirements.md, design.md, tasks.md
-│   ├── steering/                         # product.md, tech.md, kiro-features.md
-│   ├── hooks/                            # new-adapter, comparator-test, demo-case-cache
-│   ├── agents/                           # validator-reviewer.md
-│   └── settings/mcp.json                # Context7 MCP (pinned version)
-└── .github/workflows/                    # CI (not yet implemented)
-```
+Touchstone works end-to-end on three domains: real Postgres, a live API on Render, and live Redis on Upstash, with every fix validated, authorized and verified. What's left is widening what it can see and taking it from a demo to a team tool.
+
+### Stage 2 — Wider Drift Coverage
+
+- **More schema ghosts** — nullability, default and constraint drift (the UI already has labels for Null Shade, Altered Omen and Broken Ward)
+- **SUPERSEDED handling** — when one fix makes a sibling ghost obsolete, mark it FADED instead of leaving it to fail
+- **Docs grounding for API patches** — fetch OpenAPI documentation through Context7 before `deepseek_pro()` writes a spec patch
+- **More databases** — MySQL and SQLite adapters behind the same protocols, with no change to `core/`
+
+### Stage 3 — CI & Automation
+
+- **Drift check on every PR** — a GitHub Action that runs a compare when `models.py`, migrations or `openapi.yaml` change, and posts the ghosts as a PR comment (never applies)
+- **Scheduled scans** — nightly compare against each repo in `repos.json`, with a report link when new ghosts appear
+- **Replayable Contract Observer** — cache the generated patch alongside the file's SHA, so an unchanged spec replays without a new LLM call
+
+### Stage 4 — Production
+
+- **Multi-user sessions** — one orchestrator per session or report instead of one per process
+- **Authorized apply** — bearer-token auth on `/apply`, `/rollback` and `/report`, with the principal recorded in the audit log
+- **Safer intended schemas** — pin `models_url` to commit SHAs, or load models in a sandboxed process
+- **Persistent cache and reports** — a shared store instead of per-process JSON files, so redeploys keep proven fixes
 
 ---
 
@@ -562,7 +455,24 @@ bash apps/contract-observer/run.sh
 
 # The Poltergeist — Redis Cache Drift (port 8003)
 bash apps/poltergeist/run.sh
+
+# Restore Schema Drift demo state (same as the Reset Demo button)
+python fixtures/seed.py $DATABASE_URL
 ```
+
+### Running tests
+
+```bash
+# Tests load .env, so if DATABASE_URL is set there they run against Neon.
+python -m pytest tests/ -q
+# offline (no credentials):        651 passed, 12 skipped
+# with Neon DATABASE_URL in .env:   658 passed, 5 skipped (e2e tests need a fresh seed)
+
+# Postgres integration tests only
+DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v
+```
+
+> **Warning:** with a real `DATABASE_URL`, `test_sql_execution.py` widens `users.email` on the demo database, which removes that ghost. Re-seed (or click Reset Demo) afterwards. The property tests only touch throwaway `pbt_*` tables and drop them.
 
 ### CLI
 
@@ -570,6 +480,104 @@ bash apps/poltergeist/run.sh
 touchstone compare --target ix_orders_user_id
 touchstone compare --target users.email
 touchstone report
+```
+
+---
+
+## Project structure
+
+```
+touchstone/
+├── core/                                 # 5 modules + __init__.py — no imports from outside core/
+│   ├── interfaces.py
+│   ├── models.py
+│   ├── cache.py
+│   ├── persistence.py
+│   └── orchestrator.py
+├── repos.json                            # target repos registry
+├── adapters/
+│   ├── remote_source.py                  # downloads models.py etc. (SSRF-checked, no redirects)
+│   ├── ssrf.py                           # SSRF guard shared by every domain and Context7
+│   ├── postgres/                         # schema-drift domain
+│   │   ├── models.py                     # SQLChange, FilePatch (adapter-level models)
+│   │   ├── validator.py                  # SQLValidator, operation matrix, safety rules
+│   │   ├── normalize.py
+│   │   ├── intended.py
+│   │   ├── actual.py
+│   │   ├── comparator.py
+│   │   ├── executor.py
+│   │   └── verifier.py
+│   ├── openapi/                          # contract-observer domain
+│   │   ├── validator.py                  # ContractValidator, payload + target checks
+│   │   ├── intended.py
+│   │   ├── actual.py
+│   │   ├── comparator.py
+│   │   ├── executor.py
+│   │   └── verifier.py
+│   └── redis/                            # poltergeist domain
+│       ├── validator.py                  # CacheValidator, operation + target checks
+│       ├── actual.py
+│       ├── intended.py
+│       ├── comparator.py
+│       ├── executor.py
+│       └── verifier.py
+├── agents/
+│   ├── resolver.py                       # MantleResolver (Bedrock/Mantle LLM) + MockResolver
+│   ├── mantle_client.py                  # Mantle OpenAI-compatible client (ultra/deepseek_pro, temp=0)
+│   ├── prompts.py                        # domain-aware system prompts (database/api/cache)
+│   ├── context7.py                       # Context7 REST: PostgreSQL docs for the database prompt
+│   └── redaction.py                      # token-based redaction + SafeError
+├── apps/
+│   ├── shared/ui/                        # one shared Halloween-themed template
+│   │   ├── index.html
+│   │   ├── app.js
+│   │   └── style.css
+│   ├── schema-drift/                     # mandatory app 1 — The Crypt
+│   ├── contract-observer/                # mandatory app 2 — The Séance
+│   └── poltergeist/                      # third app — The Poltergeist
+│       # each app: main.py, config.json, README.md, run.sh
+├── fixtures/
+│   ├── seed.py                           # seeds Neon DB with drift cases
+│   ├── cases.json                        # drift cases for demo + cache seeding
+│   └── docker-compose.yml                # local Postgres 16 alternative
+├── scripts/
+│   └── run_comparator_test.py            # helper for comparator-test hook
+├── cli.py                                # CLI: touchstone compare / touchstone report
+├── pyproject.toml
+├── tests/
+│   ├── test_skeleton.py                  # AST-enforced: exact core/ file set, no external imports, no sqlglot, no domain branching
+│   ├── test_fourth_domain.py             # extensibility proof: full lifecycle with in-memory config domain, zero core changes
+│   ├── test_apps_structure.py            # Skeleton Crew proof: 3 apps, 4 files each
+│   ├── test_sqlglot_ast_assumptions.py   # pinned AST shapes
+│   ├── test_normalize.py                 # type normaliser
+│   ├── test_validator_sql.py             # operation matrix + target binding + widening
+│   ├── test_state_transitions.py         # 56-cell state machine
+│   ├── test_rollback.py                  # DB refusal + rollback event recording
+│   ├── test_cache_reproducibility.py     # cache hit / miss / provenance
+│   ├── test_demo_repeatability.py        # each app's demo replays identically (Req 39)
+│   ├── test_orchestrator_mock.py         # end-to-end with fake infrastructure
+│   ├── test_resolver.py                  # MockResolver
+│   ├── test_mantle_resolver.py           # MantleResolver: routing, prompts, retry, fallback
+│   ├── test_context7.py                  # Context7 docs grounding (faked HTTP)
+│   ├── test_executor_api.py              # ContractExecutor batch, idempotency, demo reset
+│   ├── test_ssrf.py                      # SSRF guard
+│   ├── test_remote_source.py             # models.py download: SSRF, no redirects, no proxies
+│   ├── test_properties.py                # property-based tests (Hypothesis, Req 41)
+│   ├── test_comparator_api.py            # OpenAPI comparator
+│   ├── test_redaction.py                 # token-based redaction
+│   ├── test_comparator_cache.py          # Redis cache comparator
+│   ├── test_comparator_pg.py             # Postgres comparator (in-memory schemas)
+│   ├── test_executor_pg.py               # Postgres executor unit tests
+│   ├── test_verifier_pg.py               # Postgres verifier unit tests
+│   ├── test_postgres_e2e.py              # Postgres end-to-end (requires DATABASE_URL)
+│   └── test_sql_execution.py             # real Postgres SQL execution (requires DATABASE_URL)
+├── .kiro/
+│   ├── specs/touchstone/                 # requirements.md, design.md, tasks.md
+│   ├── steering/                         # product.md, tech.md, kiro-features.md
+│   ├── hooks/                            # new-adapter, comparator-test, demo-case-cache
+│   ├── agents/                           # validator-reviewer.md
+│   └── settings/mcp.json                 # Context7 MCP (pinned version)
+└── .github/workflows/                    # CI (planned — see What's Next)
 ```
 
 ---

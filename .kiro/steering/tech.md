@@ -63,7 +63,9 @@ docker compose -f fixtures/docker-compose.yml up
 ## Structure rules
 - `core/` — 6 files, frozen after week 2
 - `adapters/<domain>/` — intended.py, actual.py, comparator.py, executor.py,
-  verifier.py, validator.py (plus normalize.py for Postgres; ssrf.py for openapi)
+  verifier.py, validator.py (plus normalize.py for Postgres)
+- `adapters/ssrf.py` — SSRF guard shared by every domain (and agents/context7.py);
+  domain folders never import from each other
 - `apps/shared/ui/` — one template: index.html, app.js, style.css
 - `apps/<app-name>/` — main.py, config.json, README.md, run.sh
 - `fixtures/` — seed.py, cases.json, docker-compose.yml

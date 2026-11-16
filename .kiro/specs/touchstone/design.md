@@ -16,7 +16,8 @@ touchstone/
 │   └── cache.py
 ├── adapters/
 │   ├── postgres/{intended,actual,normalize,comparator,executor,verifier,models,validator}.py
-│   ├── openapi/{intended,actual,comparator,executor,verifier,ssrf,validator}.py
+│   ├── ssrf.py                 # SSRF guard shared by every domain
+│   ├── openapi/{intended,actual,comparator,executor,verifier,validator}.py
 │   └── redis/{intended,actual,comparator,executor,verifier,validator}.py
 ├── agents/
 │   ├── resolver.py

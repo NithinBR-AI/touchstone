@@ -43,7 +43,7 @@ from dotenv import load_dotenv
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from adapters.openapi import ssrf
+from adapters import ssrf
 from adapters.postgres.executor import SQLExecutor
 from adapters.postgres.normalize import (
     UnsupportedTypeError,

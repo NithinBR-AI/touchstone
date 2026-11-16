@@ -6,7 +6,7 @@ SSRF guard tests. All cases validated without network calls.
 
 import pytest
 
-from adapters.openapi.ssrf import SSRFError, validate
+from adapters.ssrf import SSRFError, validate
 
 # ----- valid URLs --------------------------------------------------------
 

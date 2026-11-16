@@ -25,6 +25,7 @@ from typing import Any
 
 import httpx
 
+from adapters.ssrf import validate as ssrf_validate
 from core.models import State
 
 MAX_WARMUP_SECS = 60
@@ -42,9 +43,10 @@ _CLIENT = httpx.Client(
 )
 
 
-def _warmup(base_url: str) -> None:
+def warmup(base_url: str) -> None:
     """Ping GET /health until 200 or MAX_WARMUP_SECS elapsed."""
     health_url = base_url.rstrip("/") + "/health"
+    ssrf_validate(health_url)  # tech.md: SSRF check before every outbound request
     deadline = time.monotonic() + MAX_WARMUP_SECS
     while time.monotonic() < deadline:
         try:
@@ -63,7 +65,7 @@ def load_from_url(cache_status_url: str) -> State:
     """
     parsed = urllib.parse.urlparse(cache_status_url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
-    _warmup(base_url)
+    warmup(base_url)
 
     resp = _CLIENT.get(cache_status_url, headers={"Accept": "application/json"})
     resp.raise_for_status()

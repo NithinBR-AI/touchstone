@@ -41,7 +41,7 @@ import httpx
 from agents.redaction import redact_value
 from core.models import State
 
-from .ssrf import validate as ssrf_validate
+from adapters.ssrf import validate as ssrf_validate
 
 MAX_WARMUP_SECS = 60
 _WARMUP_INTERVAL = 5

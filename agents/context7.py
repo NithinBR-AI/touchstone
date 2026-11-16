@@ -28,8 +28,8 @@ import urllib.parse
 
 import httpx
 
-from adapters.openapi.ssrf import SSRFError
-from adapters.openapi.ssrf import validate as ssrf_validate
+from adapters.ssrf import SSRFError
+from adapters.ssrf import validate as ssrf_validate
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 from core.models import ComparisonTarget, Difference, VerificationResult
 
 from .intended import load_from_url
-from .ssrf import SSRFError
+from adapters.ssrf import SSRFError
 
 
 class ContractVerifier:

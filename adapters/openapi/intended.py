@@ -36,7 +36,7 @@ import yaml
 
 from core.models import State
 
-from .ssrf import validate as ssrf_validate
+from adapters.ssrf import validate as ssrf_validate
 
 
 def _resolve_ref(ref: str, components: dict[str, Any]) -> dict[str, Any]:

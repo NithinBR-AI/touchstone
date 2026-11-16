@@ -740,9 +740,16 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ## Notes
 
-- Current test count (2026-11-15): **625 passed, 12 skipped offline** (credentials
+- Current test count (2026-11-15): **651 passed, 12 skipped offline** (credentials
   blanked inside Python; PowerShell `$env:X = ""` deletes the variable and .env
-  reloads it). **632 passed, 5 skipped with Neon**; the 5 e2e tests need a fresh seed.
+  reloads it). **658 passed, 5 skipped with Neon** (632 measured before the 26
+  offline-only demo-repeatability and remote-source tests were added); the 5 e2e
+  tests need a fresh seed.
+- Outbound HTTP hardening (2026-11-15): SSRF guard moved to `adapters/ssrf.py` and
+  shared by every domain (no cross-domain imports); Poltergeist warmup now SSRF-checked;
+  `adapters/remote_source.py` (the models.py download Schema Drift executes) switched
+  from urllib to httpx with SSRF check, `trust_env=False`, no redirects, and no temp
+  file left on failure. tests/test_remote_source.py (12). Verified live in all three apps.
 - A full run with Neon modifies the demo DB (test_sql_execution widens users.email).
   Re-seed / Reset Demo afterwards. Property tests only use throwaway pbt_* tables.
 - Real Neon run (2026-11-11): test_postgres_e2e + test_sql_execution → 9 passed, 1 skipped.

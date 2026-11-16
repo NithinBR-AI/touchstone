@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
+import urllib.parse
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,7 +21,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from adapters.redis.actual import _CLIENT
+from adapters.redis.actual import _CLIENT, warmup
 from adapters.redis.actual import load_from_url as load_actual
 from adapters.redis.comparator import CacheComparator
 from adapters.redis.executor import CacheExecutor
@@ -197,7 +198,10 @@ def demo_reset():
     """Restore drift state via /cache/warm on the target app."""
     global _latest_report_id
     try:
-        resp = _CLIENT.post(_cache_warm_url(), timeout=30.0)
+        warm_url = _cache_warm_url()
+        parsed = urllib.parse.urlparse(warm_url)
+        warmup(f"{parsed.scheme}://{parsed.netloc}")
+        resp = _CLIENT.post(warm_url, timeout=30.0)
         resp.raise_for_status()
     except Exception as exc:
         raise HTTPException(500, detail=f"cache warm failed: {type(exc).__name__}") from exc

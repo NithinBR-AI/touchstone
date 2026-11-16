@@ -1,5 +1,5 @@
 """
-adapters/openapi/ssrf.py — Req 10
+adapters/ssrf.py — Req 10 (shared by every domain)
 
 SSRF guard: validates that a URL is safe to fetch before we make the request.
 Blocks private/loopback/link-local addresses, IPv4-mapped IPv6, cloud metadata

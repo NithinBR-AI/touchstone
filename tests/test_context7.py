@@ -11,7 +11,7 @@ import ssl
 
 import pytest
 
-from adapters.openapi.ssrf import SSRFError
+from adapters.ssrf import SSRFError
 from agents import context7
 from agents.prompts import prompt_sha256
 from agents.resolver import LOW_CONFIDENCE_NOTE, MantleResolver
