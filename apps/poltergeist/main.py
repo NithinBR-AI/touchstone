@@ -29,6 +29,7 @@ from adapters.redis.executor import CacheExecutor
 from adapters.redis.intended import load_from_url as load_intended
 from adapters.redis.validator import CacheValidator
 from adapters.redis.verifier import CacheVerifier
+from adapters.ssrf import validate as ssrf_validate
 from agents.resolver import MockResolver
 from core.cache import Cache
 from core.models import ComparisonTarget
@@ -136,6 +137,7 @@ def get_config():
     return {
         **CONFIG,
         "latest_report_id": _latest_report_id,
+        "needs_wake": True,
         "active_repo": _active_repo["id"],
         "repos": [
             {"id": r["id"], "name": r["name"], "github": r.get("github", "")}
@@ -203,6 +205,23 @@ def apply(req: ApplyRequest):
 @app.post("/rollback")
 def rollback(req: RollbackRequest):
     raise HTTPException(400, detail="Rollback not supported for cache domain")
+
+
+@app.get("/demo/wake")
+def demo_wake():
+    """
+    One short ping to the target app's /health. Returns within ~5 s so no
+    browser request is held open while a Render free-tier service wakes;
+    the UI polls this until awake=true, then calls /compare.
+    """
+    parsed = urllib.parse.urlparse(_cache_status_url())
+    url = f"{parsed.scheme}://{parsed.netloc}/health"
+    try:
+        ssrf_validate(url)
+        awake = _CLIENT.get(url, timeout=5.0).status_code == 200
+    except Exception:
+        awake = False
+    return {"awake": awake}
 
 
 @app.post("/demo/reset")

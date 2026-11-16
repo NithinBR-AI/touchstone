@@ -33,12 +33,14 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 _active_repo: dict = next((r for r in REPOS if r.get("default")), REPOS[0])
 
 # ----- adapter wiring ------------------------------------------------
+from adapters.openapi.actual import _CLIENT
 from adapters.openapi.actual import probe as probe_actual
 from adapters.openapi.comparator import ContractComparator
 from adapters.openapi.executor import ContractExecutor
 from adapters.openapi.intended import load_from_url as load_intended
 from adapters.openapi.validator import ContractValidator
 from adapters.openapi.verifier import ContractVerifier
+from adapters.ssrf import validate as ssrf_validate
 from agents.resolver import MantleResolver
 from core.cache import Cache
 from core.models import ApplyOutcome, ComparisonTarget, GhostState
@@ -140,6 +142,7 @@ def get_config():
     return {
         **CONFIG,
         "latest_report_id": _latest_report_id,
+        "needs_wake": True,
         "active_repo": _active_repo["id"],
         "repos": [
             {"id": r["id"], "name": r["name"], "github": r.get("github", "")}
@@ -229,6 +232,22 @@ def apply(req: ApplyRequest):
             difference_id=req.difference_id, state=trigger_diff.state
         )
     return _serialise_outcome(response_outcome)
+
+
+@app.get("/demo/wake")
+def demo_wake():
+    """
+    One short ping to the target API's /health. Returns within ~5 s so no
+    browser request is held open while a Render free-tier service wakes;
+    the UI polls this until awake=true, then calls /compare.
+    """
+    url = _api_base_url().rstrip("/") + "/health"
+    try:
+        ssrf_validate(url)
+        awake = _CLIENT.get(url, timeout=5.0).status_code == 200
+    except Exception:
+        awake = False
+    return {"awake": awake}
 
 
 @app.post("/demo/reset")

@@ -490,6 +490,28 @@ function renderCards(report) {
   }
 }
 
+// ----- wake the target service -------------------------------
+// Apps whose live state comes from a Render free-tier service set
+// needs_wake in /config. Instead of holding one long /compare request open
+// while that service wakes, poll the short /demo/wake endpoint first.
+const WAKE_TIMEOUT_MS  = 150000;
+const WAKE_INTERVAL_MS = 3000;
+
+async function wakeTarget(btn) {
+  if (!CONFIG.needs_wake) return;
+  const started = Date.now();
+  while (Date.now() - started < WAKE_TIMEOUT_MS) {
+    try {
+      const res = await fetch("/demo/wake");
+      if (res.ok && (await res.json()).awake) return;
+    } catch (_) { /* a failed poll is retried on the next tick */ }
+    const secs = Math.round((Date.now() - started) / 1000);
+    if (btn) btn.innerHTML = `<span class="spinner"></span>Waking the spirits… ${secs}s`;
+    await new Promise(r => setTimeout(r, WAKE_INTERVAL_MS));
+  }
+  throw new Error("The target service did not wake up. Try again in a minute.");
+}
+
 // ----- API calls ---------------------------------------------
 async function apiCompare() {
   const btn = document.getElementById("btn-compare");
@@ -498,6 +520,8 @@ async function apiCompare() {
   showRitual();
 
   try {
+    await wakeTarget(btn);
+    if (btn) btn.innerHTML = '<span class="spinner"></span>Hunting…';
     const res = await fetch("/compare", { method: "POST" });
     if (!res.ok) throw new Error(`/compare returned ${res.status}`);
     const report = await res.json();
@@ -704,6 +728,8 @@ async function apiReset() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Resetting…'; }
 
   try {
+    await wakeTarget(btn);
+    if (btn) btn.innerHTML = '<span class="spinner"></span>Resetting…';
     const res = await fetch("/demo/reset", { method: "POST" });
     if (!res.ok) throw new Error(`/demo/reset returned ${res.status}`);
 
