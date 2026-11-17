@@ -13,7 +13,6 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
-import time
 import urllib.parse
 from pathlib import Path
 
@@ -216,36 +215,13 @@ def demo_wake():
     the UI polls this until awake=true, then calls /compare.
     """
     parsed = urllib.parse.urlparse(_cache_status_url())
-    return _ping_health(f"{parsed.scheme}://{parsed.netloc}/health")
-
-
-def _ping_health(url: str) -> dict:
-    """
-    GET *url* once and report the outcome. On failure, only the status code,
-    the exception class name and a redirect's target host are returned;
-    never raw exception text (tech.md: error evidence rules).
-    """
-    started = time.monotonic()
-    status: int | None = None
-    error: str | None = None
-    redirect_host: str | None = None
+    url = f"{parsed.scheme}://{parsed.netloc}/health"
     try:
         ssrf_validate(url)
-        resp = _CLIENT.get(url, timeout=5.0)
-        status = resp.status_code
-        if 300 <= status < 400:
-            redirect_host = (
-                urllib.parse.urlparse(resp.headers.get("location", "")).netloc or None
-            )
-    except Exception as exc:
-        error = type(exc).__name__
-    return {
-        "awake": status == 200,
-        "status": status,
-        "error": error,
-        "redirect_host": redirect_host,
-        "elapsed_ms": int((time.monotonic() - started) * 1000),
-    }
+        awake = _CLIENT.get(url, timeout=5.0).status_code == 200
+    except Exception:
+        awake = False
+    return {"awake": awake}
 
 
 @app.post("/demo/reset")

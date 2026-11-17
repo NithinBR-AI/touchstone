@@ -502,20 +502,13 @@ const WAKE_INTERVAL_MS = 3000;
 async function wakeTarget(btn) {
   if (!CONFIG.needs_wake) return;
   const started = Date.now();
-  let reason = "";
   while (Date.now() - started < WAKE_TIMEOUT_MS) {
     try {
       const res = await fetch("/demo/wake");
-      if (res.ok) {
-        const w = await res.json();
-        if (w.awake) return;
-        reason = w.error || (w.status ? `HTTP ${w.status}` : "");
-      } else {
-        reason = `HTTP ${res.status}`;
-      }
-    } catch (_) { reason = "network"; /* retried on the next tick */ }
+      if (res.ok && (await res.json()).awake) return;
+    } catch (_) { /* a failed poll is retried on the next tick */ }
     const secs = Math.round((Date.now() - started) / 1000);
-    if (btn) btn.innerHTML = `<span class="spinner"></span>Waking the spirits… ${secs}s${reason ? ` (${esc(reason)})` : ""}`;
+    if (btn) btn.innerHTML = `<span class="spinner"></span>Waking the spirits… ${secs}s`;
     await new Promise(r => setTimeout(r, WAKE_INTERVAL_MS));
   }
   throw new Error("The target service did not wake up. Try again in a minute.");
