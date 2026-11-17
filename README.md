@@ -402,7 +402,7 @@ No Kiro powers were used. Context7 is configured as a plain MCP server, not as a
 
 ## What's Next
 
-Touchstone works end-to-end on three domains: real Postgres, a live API on Render, and live Redis on Upstash, with every fix validated, authorized and verified. What's left is widening what it can see and taking it from a demo to a team tool.
+Touchstone works end-to-end on three domains: real Postgres, a live API on Vercel, and live Redis on Upstash, with every fix validated, authorized and verified. What's left is widening what it can see and taking it from a demo to a team tool.
 
 ### Stage 2 — Wider Drift Coverage
 
