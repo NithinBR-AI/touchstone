@@ -61,7 +61,7 @@ def warmup(base_url: str) -> None:
 def load_from_url(cache_status_url: str) -> State:
     """
     Fetch /cache/status from the live target app and return an actual State.
-    *cache_status_url* = e.g. https://touchstone-demo-target-repo.onrender.com/cache/status
+    *cache_status_url* = e.g. https://touchstone-demo-target-repo.vercel.app/cache/status
     """
     parsed = urllib.parse.urlparse(cache_status_url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"

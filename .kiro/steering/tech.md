@@ -156,7 +156,7 @@ Target repos are declared in `repos.json` at the project root. No env var needed
     "github": "NithinBR-AI/touchstone-demo-target-repo",
     "models_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/models.py",
     "openapi_url": "https://raw.githubusercontent.com/NithinBR-AI/touchstone-demo-target-repo/main/openapi.yaml",
-    "api_base_url": "https://touchstone-demo-target-repo.onrender.com",
+    "api_base_url": "https://touchstone-demo-target-repo.vercel.app",
     "default": true
   }
 ]

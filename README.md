@@ -83,7 +83,7 @@ Probes a live API and compares each response against the declared `openapi.yaml`
 | `sku` returned by `/products`, not in spec | `FIELD_EXTRA` · Shadow Field | ⛓ BOUND | PR on `openapi.yaml` |
 | `loyalty_tier` declared in spec, not returned by `/users` | `FIELD_MISSING` · Vanished Field | 🕯 SÉANCE NEEDED | PR on `main.py` |
 
-The live API runs at **[touchstone-demo-target-repo.onrender.com](https://touchstone-demo-target-repo.onrender.com)** (Render free tier — may take about a minute to wake on the first request). The declared spec lives in **[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**.
+The live API runs at **[touchstone-demo-target-repo.vercel.app](https://touchstone-demo-target-repo.vercel.app/health)** as a Vercel serverless function, so it has no long cold start. The declared spec lives in **[NithinBR-AI/touchstone-demo-target-repo](https://github.com/NithinBR-AI/touchstone-demo-target-repo)**.
 
 All drifts of the same kind are batched into **one PR per file**. Clicking Exorcise again returns the already-open PR (idempotent). **↺ Reset Demo** closes open Touchstone PRs so the next run produces a fresh one.
 
@@ -112,7 +112,7 @@ Each app is deployed on its own:
 | Contract Observer · *The Séance* | **[touchstone-contract-observer.onrender.com](https://touchstone-contract-observer.onrender.com)** |
 | The Poltergeist | **[touchstone-poltergeist.onrender.com](https://touchstone-poltergeist.onrender.com)** |
 
-> **First load can take about a minute.** The apps and the demo target API run on Render's free tier and sleep when idle. The first visit, or the first Hunt Ghosts after a quiet spell, wakes them; after that, scans are fast. To run locally instead, see [Setup](#setup).
+> **First load can take about a minute.** The three apps run on Render's free tier and sleep when idle; the first visit wakes them, and after that scans are fast. The demo target API runs on Vercel and has no long cold start. To run locally instead, see [Setup](#setup).
 
 Target repos are declared in **`repos.json`** at the repo root. Touchstone fetches declared sources from their GitHub raw URLs at runtime — no cloning. The header's **repo selector** shows Touchstone is built to monitor more than one repo.
 
@@ -492,7 +492,7 @@ docker build -f apps/schema-drift/Dockerfile -t touchstone-schema-drift .
 docker run --rm -p 8001:8000 --env-file .env touchstone-schema-drift
 ```
 
-On the free tier each service sleeps after 15 minutes without traffic and takes about a minute to wake; its fix cache and reports reset on every restart. The Séance and The Poltergeist also wait up to 120 seconds for the demo target API to wake before scanning. No keep-alive pinger is used: Render grants 750 free instance hours a month per workspace, and keeping four services awake around the clock would use them up in about eight days and suspend every app.
+On the free tier each service sleeps after 15 minutes without traffic and takes about a minute to wake; its fix cache and reports reset on every restart. The demo target API moved from Render to Vercel: a sleeping free Render service answered requests from the other Render apps with an immediate 502 and never woke, so The Séance and The Poltergeist could not reach it after a quiet spell. On Vercel it runs as a serverless function, and the apps' wake check (`/demo/wake`) normally succeeds on the first try. No keep-alive pinger is used: Render grants 750 free instance hours a month per workspace, and keeping the services awake around the clock would use them up and suspend every app.
 
 ### Running tests
 
