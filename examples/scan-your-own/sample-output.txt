@@ -1,0 +1,59 @@
+Real output of the Touchstone CLI, recorded 2026-11-18.
+
+Command (read-only: compare reads models.py and the database catalog and never writes):
+  $env:MODELS_PATH = "examples\scan-your-own\models.py"
+  touchstone compare
+
+Database: the demo Neon Postgres (DATABASE_URL from .env). models.py in this folder
+is the demo's declared schema plus three changes the demo does not cover:
+users.phone (new column), products.name widened to String(200), and a new reviews table.
+All three were detected, each with the state the operation matrix assigns.
+users.age and ix_users_email are the demo's own drift. The demo's users.email and
+ix_orders_user_id ghosts were absent because they had already been fixed on Neon.
+
+---------------------------------------------------------------------------
+Found 5 difference(s):
+
+  [PENDING          ] TYPE_CHANGED                    target=products.name
+               table: products
+               column: name
+               original_actual_type: varchar(100)
+               intended_type: varchar(200)
+               policy: auto_fixable
+               safe_fix: True
+
+  [BLOCKED          ] TABLE_MISSING                   target=reviews
+               table: reviews
+               policy: blocked
+               safe_fix: False
+
+  [REVIEW_REQUIRED  ] TYPE_CHANGED                    target=users.age
+               table: users
+               column: age
+               original_actual_type: bigint
+               intended_type: integer
+               policy: review_required
+               safe_fix: False
+
+  [REVIEW_REQUIRED  ] COLUMN_MISSING                  target=users.phone
+               table: users
+               column: phone
+               intended_type: varchar(20)
+               nullable: True
+               has_default: False
+               policy: review_required
+               safe_fix: False
+
+  [BLOCKED          ] INDEX_EXTRA                     target=ix_users_email
+               table: users
+               columns: ['email']
+               policy: blocked
+               safe_fix: False
+
+---------------------------------------------------------------------------
+$ touchstone compare --target users.phone
+Found 1 difference(s):
+
+  [REVIEW_REQUIRED  ] COLUMN_MISSING                  target=users.phone
+               table: users
+               ...

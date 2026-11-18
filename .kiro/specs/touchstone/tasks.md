@@ -741,6 +741,28 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       Disabling Cache.get makes the cache tests fail (checked).
   - _Req 39_
 
+### 12b. Post-build fixes (2026-11-18)
+
+- [x] 12b.1 Unreachable target is not a lost endpoint (Req 10.6)
+      Probe timeout 10 s. A path that times out, fails to connect, answers 5xx
+      or redirects goes to `data["not_observed"]` and never becomes
+      PATH_MISSING; a 4xx answer still does. If no probed path answers,
+      `probe()` raises `TargetUnreachable` and `/compare` returns 503 with a
+      plain message; the UI shows it. tests/test_actual_api.py (10). PASS.
+  - _Req 10_
+- [x] 12b.2 CLI runs again and has tests
+      `touchstone` could not start (`cli.py` was not packaged: added
+      `py-modules = ["cli"]`), and `compare` crashed because the comparator
+      returns a list. Fixed; `--target` now filters before counting; `.env`
+      loads from the working directory. tests/test_cli.py (5). PASS.
+  - _Req 1, 28_
+- [x] 12b.3 "Scan your own database" proof
+      examples/scan-your-own/models.py (demo schema + 3 new changes) scanned
+      against Neon with `touchstone compare`; all 3 found with the matrix
+      state. Real output in examples/scan-your-own/sample-output.txt; README
+      section "Scan your own database".
+  - _Req 1, 4_
+
 ### 13. Submission (Week 5)
 
 - [ ] 13.1 2-min video (Act 1–5 per design.md)

@@ -25,9 +25,9 @@ from pathlib import Path
 def _load_env() -> None:
     """Load .env from the project root (best-effort)."""
     try:
-        from dotenv import load_dotenv
+        from dotenv import find_dotenv, load_dotenv
 
-        load_dotenv()
+        load_dotenv(find_dotenv(usecwd=True))
     except ImportError:
         pass
 
@@ -79,17 +79,16 @@ def cmd_compare(args: argparse.Namespace) -> int:
         print(f"ERROR loading schema: {exc}", file=sys.stderr)
         return 1
 
-    comparator = SchemaComparator()
-    report = comparator.compare(intended, actual)
+    differences = SchemaComparator().compare(intended, actual)
+    if target:
+        differences = [d for d in differences if d.target == target]
 
-    if not report.differences:
+    if not differences:
         print("No differences found.")
         return 0
 
-    print(f"Found {len(report.differences)} difference(s):\n")
-    for diff in report.differences:
-        if target and diff.target != target:
-            continue
+    print(f"Found {len(differences)} difference(s):\n")
+    for diff in differences:
         print(f"  [{diff.state.value:17s}] {diff.kind:30s}  target={diff.target}")
         if diff.context:
             for k, v in diff.context.items():

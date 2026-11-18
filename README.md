@@ -50,7 +50,7 @@ The skeleton is `core/` — 6 files (5 modules + `__init__.py`). Three applicati
 python -m pytest tests/test_skeleton.py tests/test_fourth_domain.py tests/test_apps_structure.py -v
 ```
 
-**Test suite:** 661 passed, 12 skipped offline (no credentials); 668 passed, 5 skipped with a Neon `DATABASE_URL`, or 672 passed, 1 skipped right after a re-seed (the end-to-end tests need fresh drift to act on).
+**Test suite:** 666 passed, 12 skipped offline (no credentials); 673 passed, 5 skipped with a Neon `DATABASE_URL`, or 677 passed, 1 skipped right after a re-seed (the end-to-end tests need fresh drift to act on).
 
 ---
 
@@ -500,8 +500,8 @@ On the free tier each service sleeps after 15 minutes without traffic and takes 
 ```bash
 # Tests load .env, so if DATABASE_URL is set there they run against Neon.
 python -m pytest tests/ -q
-# offline (no credentials):        661 passed, 12 skipped
-# with Neon DATABASE_URL in .env:   668 passed, 5 skipped; 672 passed, 1 skipped right after a re-seed
+# offline (no credentials):        666 passed, 12 skipped
+# with Neon DATABASE_URL in .env:   673 passed, 5 skipped; 677 passed, 1 skipped right after a re-seed
 
 # Postgres integration tests only
 DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v
@@ -512,10 +512,27 @@ DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_
 ### CLI
 
 ```bash
-touchstone compare --target ix_orders_user_id
-touchstone compare --target users.email
+touchstone compare                          # every database ghost
+touchstone compare --target users.email     # one target
 touchstone report
 ```
+
+`touchstone compare` is read-only: it reads the declared models and the database catalog, prints each gap with its state, and never writes. Fixes go through the web app, where they are validated, authorized and verified.
+
+### Scan your own database
+
+Point the CLI at any Postgres and any SQLAlchemy `models.py` with two environment variables:
+
+```powershell
+pip install -e .
+$env:DATABASE_URL = "postgresql://user:pass@host/db?sslmode=require"
+$env:MODELS_PATH  = "C:\path\to\your\models.py"   # overrides repos.json
+touchstone compare
+```
+
+`MODELS_PATH` is executed as Python when it is read, so only use a models file you trust.
+
+**Tried it:** [`examples/scan-your-own/models.py`](examples/scan-your-own/models.py) is the demo schema plus three changes the demo doesn't cover (a new column, a widened column, a new table). Scanned against the demo Neon database, all three came back with the state the operation matrix assigns: the widening as auto-fixable, the nullable column as review-only, the missing table as blocked. The real output is in [`examples/scan-your-own/sample-output.txt`](examples/scan-your-own/sample-output.txt).
 
 ---
 
@@ -575,6 +592,8 @@ touchstone/
 │   ├── seed.py                           # seeds Neon DB with drift cases
 │   ├── cases.json                        # drift cases for demo + cache seeding
 │   └── docker-compose.yml                # local Postgres 16 alternative
+├── examples/
+│   └── scan-your-own/                    # models.py + real CLI output ("Scan your own database")
 ├── docs/
 │   ├── architecture.html                 # architecture diagram (source)
 │   └── architecture.png                  # architecture diagram (image, shown above)

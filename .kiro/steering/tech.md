@@ -72,6 +72,9 @@ docker compose -f fixtures/docker-compose.yml up
   (each app deploys on its own: its Dockerfile copies core/ + its own adapter
   folder only; built from the repo root; render.yaml = one service per app)
 - `fixtures/` — seed.py, cases.json, docker-compose.yml
+- `cli.py` — `touchstone compare` / `touchstone report` (read-only database
+  scan); packaged via `py-modules = ["cli"]` in pyproject.toml
+- `examples/scan-your-own/` — a sample models.py and the real CLI output
 - `.kiro/` — committed, never gitignored
 
 ## SQL operation matrix (the safety boundary)

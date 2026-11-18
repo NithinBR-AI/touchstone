@@ -35,6 +35,9 @@ dev = [
 [project.scripts]
 touchstone = "cli:main"
 
+[tool.setuptools]
+py-modules = ["cli"]  # the `touchstone` command imports cli:main
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["core*", "adapters*", "agents*", "apps*"]

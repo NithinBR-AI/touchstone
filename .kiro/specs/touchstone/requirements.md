@@ -119,6 +119,10 @@ properties. Skip `x-` keys.
 5. `--allow-local` flag permits `127.0.0.1` and `::1` only. Off by default.
 6. Record `status_code`, top-level keys, fully redacted raw request, fully
    redacted raw response body (8KB post-redaction). Timeout 10s → `UNREACHABLE`.
+   Implemented (2026-11-18): a path that times out, fails to connect,
+   answers 5xx or redirects is recorded as not observed and never becomes
+   PATH_MISSING; a 4xx answer still does. If no declared path answers,
+   the scan reports the target as unreachable and shows no ghosts.
 7. Never send mutating requests without `--allow-mutating`.
 8. Observation is a sample, not a proof. Report displays the evidence.
 
