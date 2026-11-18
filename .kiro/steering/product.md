@@ -8,7 +8,7 @@ deterministically, proposes one fix per difference via a single LLM agent,
 validates each proposal against an operation matrix, and applies approved
 fixes with evidence-backed re-verification.
 
-Ghosts are the gaps — tables, fields, and dependencies that exist in one
+Ghosts are the gaps — tables, fields, and cache keys that exist in one
 state but not the other.
 
 ## The skeleton and its applications
