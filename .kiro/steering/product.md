@@ -13,9 +13,9 @@ state but not the other.
 
 ## The skeleton and its applications
 
-**The skeleton** is `core/` — 7 files, ~600 lines, frozen at the end of
-week 2. It implements a 10-step compare-verify workflow and knows nothing
-about any specific domain.
+**The skeleton** is `core/` — 6 files, ~1,280 lines. It implements a
+10-step compare-verify workflow and knows nothing about any specific domain;
+`tests/test_skeleton.py` enforces that on every test run.
 
 **The applications** are built on top of the skeleton. Each lives in its own
 folder under `apps/` and contains FastAPI endpoint handlers, serialisation
@@ -36,8 +36,14 @@ Touchstone finds the gap — and proves every fix.
 
 ## Non-negotiable principles
 
-1. **Core frozen at end of week 2**, after the Schema Drift app passes
-   end-to-end with a working (mock) resolver in the loop.
+1. **Core stays domain-free** (updated 2026-11-17). The original plan froze
+   `core/` at the end of week 2 (commit `87cbacb`). That freeze was dropped
+   when Contract Observer needed batch apply and human authorization
+   (task 10.4). The rule that replaced it: `core/` may change only in
+   domain-agnostic ways, enforced by `tests/test_skeleton.py` (exact file set;
+   no imports from adapters, agents or apps; no sqlglot; no branching on a
+   domain string). Adding a domain must not need a core change, proven by
+   `tests/test_fourth_domain.py` and by The Poltergeist.
 
 2. **LLM proposes; validator decides; human authorizes.** The validator
    independently enforces safety via a structural operation matrix.

@@ -12,14 +12,15 @@
 | DB driver | psycopg 3.x |
 | HTTP client | httpx (verify version supports `sni_hostname` extension) |
 | Target DB | Postgres 16 (Docker local, Neon for demo) |
-| LLM | AWS Bedrock (Claude), temperature 0 |
+| LLM | AWS Bedrock Mantle (OpenAI-compatible endpoint), temperature 0. Qwen3-235B (`qwen.qwen3-235b-a22b-2507`) via `ultra()` for SQL proposals and patch checks; DeepSeek v3.2 (`deepseek.v3.2`) via `deepseek_pro()` for API patches. Fallbacks: Nemotron Super for `ultra()`, Qwen3-235B for `deepseek_pro()`. Client: `agents/mantle_client.py` |
 | MCP | Context7, **pinned version** (not `@latest`) |
 | Packaging | pyproject.toml, editable install |
 
 ## Forbidden
 - React, Vite, webpack, any frontend build step
 - Streamlit, node_modules, vector databases
-- Any change to `core/` after the week-2 freeze
+- Any change to `core/` that adds domain knowledge (enforced by
+  `tests/test_skeleton.py`; the week-2 freeze was dropped, see product.md)
 - `pip install` executed by the tool
 - `git checkout` / `git reset` / `git restore` in any executor
 - Environment-wide package enumeration
@@ -61,7 +62,7 @@ docker compose -f fixtures/docker-compose.yml up
 - Tests mirror module structure under `tests/`
 
 ## Structure rules
-- `core/` — 6 files, frozen after week 2
+- `core/` — 6 files, domain-free (enforced by `tests/test_skeleton.py`)
 - `adapters/<domain>/` — intended.py, actual.py, comparator.py, executor.py,
   verifier.py, validator.py (plus normalize.py for Postgres)
 - `adapters/ssrf.py` — SSRF guard shared by every domain (and agents/context7.py);

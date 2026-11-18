@@ -2,16 +2,17 @@
 # Kiro Features Steering — Touchstone
 
 ## The claim
-One lean skeleton (`core/`, ~600 lines) plus two mandatory applications (and
-one optional) built on top. Adding a domain requires a comparator + adapter
+One lean skeleton (`core/`, 6 files, ~1,280 lines) plus two mandatory
+applications and a third (The Poltergeist) built on top. Adding a domain requires a comparator + adapter
 code; the hook scaffolds plumbing. One shared UI template.
 
 ## 1. Agent Hooks (`.kiro/hooks/`)
-Three hooks. **Verify exact schema (trigger names, matcher placement, action
-payload field) against installed Kiro version on day 1 before relying on
-them.** The v4.4.2 files represent the current documented format
-(`trigger` string, `matcher` sibling, `PostFileSave` for saves) but were not
-fired in the target Kiro version yet.
+Three hooks, all verified firing in Kiro IDE (updated 2026-11-18). What we
+learned: the trigger names are `PostFileSave` and `PostFileCreate`
+(`FileSave`/`FileCreate` never fire); on Windows the matcher must accept both
+slashes (`adapters[\\/].+[\\/]comparator\.py$`); command hooks receive
+`{session_id, hook_event_name, cwd, file_path}` as JSON on stdin; hooks load
+at session start and fire on edits made by the Kiro agent, not on manual saves.
 
 - **new-adapter** (file created in `adapters/**/comparator.py`) — scaffolds
   app folder, config, test stub, README, renderer stub. Does NOT modify
@@ -23,9 +24,9 @@ fired in the target Kiro version yet.
   demo case will produce a stable `Difference.signature` cache key. Read-only:
   the cache itself is written only after apply+verify (Req 15/33).
 
-**Day-1 verification task:** create a throwaway `adapters/test/comparator.py`,
-trigger each hook manually, confirm it fires and receives the expected
-payload. Adjust trigger names/matcher syntax/payload field names to match.
+**Evidence:** `new-adapter` scaffolded `apps/test/` from a throwaway
+`adapters/test/comparator.py` (removed afterwards); each `comparator-test` run
+appends a line to `.kiro/hook-runs.log`, which is committed.
 
 ## 2. MCP — Context7
 Resolver fetches library docs before proposing a fix. **Package version is
@@ -46,9 +47,10 @@ One spec, three adapter requirement groups, one app structure.
 ## 5. Custom Agent — Validator Reviewer
 `.kiro/agents/validator-reviewer.md` — YAML frontmatter with `name` and
 `description`; body contains role, process, input contract, constraints.
-Runs in parallel to the deterministic validator. **Advisory only** — the
-deterministic validator's status is authoritative. Its verdict is recorded
-in the report; disagreements are surfaced but never override.
+A development-time reviewer invoked from Kiro chat; no app calls it at
+runtime and its verdict is not stored in Touchstone reports. **Advisory
+only** — the deterministic validator is authoritative; a disagreement shows
+up in Kiro chat and never overrides it.
 
 Input contract:
 ```json
@@ -88,9 +90,9 @@ tests/test_properties.py using hypothesis verifies:
 8. What a reviewer should verify
 
 ```
-git log --oneline core/          # freeze commit + no others
-git diff core/                   # empty after all apps
-ls apps/                         # 2–3 app folders + shared/
+pytest tests/test_skeleton.py tests/test_fourth_domain.py   # core/ is domain-free; a 4th domain needs no core change
+git log --oneline core/          # history, incl. the dropped week-2 freeze (87cbacb)
+ls apps/                         # 3 app folders + shared/
 cat .kiro/steering/product.md    # rules written first
 ```
 

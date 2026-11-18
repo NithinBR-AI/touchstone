@@ -32,6 +32,7 @@ Thumbs.db
 
 # Logs
 *.log
+!.kiro/hook-runs.log
 logs/
 
 # App runtime artifacts (reports + LLM cache — regenerated at runtime)
