@@ -20,6 +20,13 @@ Probes a live API and builds a core.models.State whose data dict has the shape:
 Schema is inferred from the actual JSON response body (best-effort).
 Only 2xx responses are recorded. Only GET endpoints are probed.
 
+Unreachable paths (Req 10.6): a path that times out (10 s), fails to connect,
+answers 5xx, or answers with a redirect was not observed, so it is recorded in
+data["not_observed"] and is NOT reported as missing. A 4xx answer is a real
+observation and still counts as missing. If no probed path could be observed,
+probe() raises TargetUnreachable instead of returning a State that would make
+every declared path look like a lost endpoint.
+
 The /health warm-up: before probing any path, GET {base_url}/health is called
 with up to MAX_WARMUP_SECS of retries to wake the server (Render free tier).
 
@@ -44,6 +51,12 @@ from core.models import State
 
 MAX_WARMUP_SECS = 120
 _WARMUP_INTERVAL = 5
+PROBE_TIMEOUT_SECS = 10.0  # Req 10.6: timeout 10 s -> UNREACHABLE
+
+
+class TargetUnreachable(RuntimeError):
+    """No declared endpoint of the target API could be observed."""
+
 
 _SSL_CTX = _ssl.create_default_context()
 _SSL_CTX.load_default_certs()
@@ -90,7 +103,11 @@ def _fetch_json(url: str) -> tuple[int, Any]:
     for _ in range(5):
         ssrf_validate(current_url)
         try:
-            resp = _CLIENT.get(current_url, headers={"Accept": "application/json"})
+            resp = _CLIENT.get(
+                current_url,
+                headers={"Accept": "application/json"},
+                timeout=PROBE_TIMEOUT_SECS,
+            )
         except Exception:
             return 0, None
         if resp.status_code in (301, 302, 303, 307, 308):
@@ -142,6 +159,8 @@ def probe(base_url: str, paths: dict[str, Any]) -> State:
 
     base = base_url.rstrip("/")
     result: dict[str, Any] = {}
+    not_observed: dict[str, dict[str, Any]] = {}
+    probed = 0
 
     for path, path_item in paths.items():
         if "get" not in path_item:
@@ -156,13 +175,20 @@ def probe(base_url: str, paths: dict[str, Any]) -> State:
             probe_path = probe_path.replace(f"{{{param}}}", "1")
 
         url = base + probe_path
+        probed += 1
         try:
             status, body = _fetch_json(url)
         except Exception:
-            continue
+            status, body = 0, None
 
-        if not (200 <= status < 300):
+        if status == 0 or status >= 500:
+            not_observed[path] = {"status": status, "reason": "UNREACHABLE"}
             continue
+        if 300 <= status < 400:
+            not_observed[path] = {"status": status, "reason": "REDIRECT"}
+            continue
+        if not (200 <= status < 300):
+            continue  # 4xx: a real answer; the endpoint is genuinely not there
 
         # Redact before schema inference — no sensitive data in stored State
         body = redact_value(body)
@@ -177,4 +203,9 @@ def probe(base_url: str, paths: dict[str, Any]) -> State:
 
         result[path] = {"get": {"responses": {str(status): {"schema": schema}}}}
 
-    return State(domain="api", data={"paths": result, "source": base_url})
+    if probed and len(not_observed) == probed:
+        raise TargetUnreachable(f"none of {probed} declared endpoints answered")
+    return State(
+        domain="api",
+        data={"paths": result, "not_observed": not_observed, "source": base_url},
+    )

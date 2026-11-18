@@ -33,7 +33,7 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 _active_repo: dict = next((r for r in REPOS if r.get("default")), REPOS[0])
 
 # ----- adapter wiring ------------------------------------------------
-from adapters.openapi.actual import _CLIENT
+from adapters.openapi.actual import _CLIENT, TargetUnreachable
 from adapters.openapi.actual import probe as probe_actual
 from adapters.openapi.comparator import ContractComparator
 from adapters.openapi.executor import ContractExecutor
@@ -188,6 +188,13 @@ def compare():
     global _latest_report_id
     try:
         report = orch.run()
+    except TargetUnreachable as exc:
+        # Req 10.6: no declared endpoint answered; report no ghosts at all
+        raise HTTPException(
+            503,
+            detail="The target API is unreachable: no declared endpoint answered. "
+            "Try again in a minute.",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             503, detail=f"compare failed: {type(exc).__name__}"

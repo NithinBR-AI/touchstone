@@ -91,11 +91,16 @@ class ContractComparator:
     def compare(self, intended: State, actual: State) -> list[Difference]:
         i_paths: dict[str, Any] = intended.data.get("paths", {})
         a_paths: dict[str, Any] = actual.data.get("paths", {})
+        # Req 10.6: paths that timed out, failed, answered 5xx or redirected were
+        # not observed; absence of evidence is not a missing endpoint.
+        not_observed: dict[str, Any] = actual.data.get("not_observed", {})
         diffs: list[Difference] = []
 
         for path in sorted(i_paths):
             # Skip single-item path-param endpoints — probed via collection endpoint
             if "{" in path:
+                continue
+            if path in not_observed:
                 continue
             if path not in a_paths:
                 diffs.append(

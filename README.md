@@ -50,7 +50,7 @@ The skeleton is `core/` — 6 files (5 modules + `__init__.py`). Three applicati
 python -m pytest tests/test_skeleton.py tests/test_fourth_domain.py tests/test_apps_structure.py -v
 ```
 
-**Test suite:** 651 passed, 12 skipped offline (no credentials); 658 passed, 5 skipped with a Neon `DATABASE_URL`. The 5 end-to-end tests run only right after a re-seed.
+**Test suite:** 661 passed, 12 skipped offline (no credentials); 668 passed, 5 skipped with a Neon `DATABASE_URL`, or 672 passed, 1 skipped right after a re-seed (the end-to-end tests need fresh drift to act on).
 
 ---
 
@@ -251,6 +251,7 @@ API contract changes are never applied to a live system. The executor opens a Gi
 - **`follow_redirects=False`** — redirects are not auto-followed. Same-host redirects are followed manually (max 5 hops) with SSRF revalidation on each hop; cross-host redirects are skipped.
 - **`trust_env=False`** — no proxy env vars.
 - **No live mutations** — the executor opens a GitHub PR; it never patches the live API.
+- **Unreachable is not missing (Req 10.6).** Each probe has a 10 s timeout. A path that times out, fails to connect, answers 5xx or redirects is recorded as not observed and never becomes a Lost Endpoint ghost; only a real 4xx answer does. If no declared endpoint answers, Hunt Ghosts reports "The target API is unreachable" and shows no ghosts.
 
 ---
 
@@ -333,7 +334,7 @@ Three hooks in `.kiro/hooks/`. File hooks fire when the Kiro agent creates or sa
 Scaffolds the full application plumbing when a new domain comparator is created: `apps/<domain>/main.py`, `config.json`, `README.md`, `run.sh`, a renderer stub in the shared UI `RENDERERS` registry, and a comparator test file. The hook prompt explicitly prohibits modifying `core/`. Verified by creating `adapters/test/comparator.py`: the agent scaffolded `apps/test/`, a test file, a renderer stub and a README section, and left `core/` untouched. The scaffold was then removed.
 
 **`comparator-test`** (trigger: `PostFileSave` on `adapters/**/comparator.py`)
-Runs the matching comparator test suite when the agent saves a comparator. Maps the domain folder to its test file: `postgres` → `tests/test_comparator_pg.py`, `openapi` → `tests/test_comparator_api.py`, `redis` → `tests/test_comparator_cache.py`. Each run appends a line to `.kiro/hook-runs.log`, e.g. `tests/test_comparator_pg.py exit=0 10 passed`, because Kiro does not show a save hook's command output in chat.
+Runs the matching comparator test suite when the agent saves a comparator. Maps the domain folder to its test file: `postgres` → `tests/test_comparator_pg.py`, `openapi` → `tests/test_comparator_api.py`, `redis` → `tests/test_comparator_cache.py`. Each run appends a line to `.kiro/hook-runs.log` (committed as evidence), e.g. `tests/test_comparator_pg.py exit=0 10 passed`, because Kiro does not show a save hook's command output in chat.
 
 **`demo-case-cache`** (trigger: `PostFileSave` on `fixtures/cases.json`)
 Checks every demo case will produce a stable `Difference.signature` cache key: required fields, a kind the comparator emits, the comparator's target format, the context fields the validator binds against, and an expected state consistent with the operation matrix. Read-only — cache entries are written only by `apply_one()` after verification succeeds. Verified by editing a case description; the agent reported PASS for case-01 to case-03 and wrote no files.
@@ -499,8 +500,8 @@ On the free tier each service sleeps after 15 minutes without traffic and takes 
 ```bash
 # Tests load .env, so if DATABASE_URL is set there they run against Neon.
 python -m pytest tests/ -q
-# offline (no credentials):        651 passed, 12 skipped
-# with Neon DATABASE_URL in .env:   658 passed, 5 skipped (e2e tests need a fresh seed)
+# offline (no credentials):        661 passed, 12 skipped
+# with Neon DATABASE_URL in .env:   668 passed, 5 skipped; 672 passed, 1 skipped right after a re-seed
 
 # Postgres integration tests only
 DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v

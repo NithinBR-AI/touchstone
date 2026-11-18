@@ -525,7 +525,11 @@ async function apiCompare() {
     await wakeTarget(btn);
     if (btn) btn.innerHTML = '<span class="spinner"></span>Hunting…';
     const res = await fetch("/compare", { method: "POST" });
-    if (!res.ok) throw new Error(`/compare returned ${res.status}`);
+    if (!res.ok) {
+      let detail = "";
+      try { detail = (await res.json()).detail || ""; } catch (_) { /* not JSON */ }
+      throw new Error(detail || `/compare returned ${res.status}`);
+    }
     const report = await res.json();
     REPORT = report;
     rememberReport(REPORT.id);
