@@ -11,18 +11,18 @@ Core never inspects ChangeProposal.payload contents — that is adapter knowledg
 
 Domain routing (MantleResolver):
   database → ultra() → QWEN 235B — SQL fix proposals
-  api      → deepseek_pro() — file patch proposals; LLM called at resolve time
-             so validated content equals executed content (safety requirement).
+  api      → metadata ChangeProposal (file + fields), no LLM at scan time;
+             the patch is written at Exorcise time by ContractExecutor.
   cache    → deterministic ChangeProposal built from Difference — no LLM.
   other    → ultra() as default
 
-App 2 (Contract Observer) note:
-  The LLM is called here at resolve time, not at PR creation time.
-  The executor receives the validated patched_content from the ChangeProposal
-  payload — no second LLM call in execute_batch(). This ensures what is
-  validated and authorized equals what is committed to GitHub.
-  If the GitHub file fetch or LLM call fails at resolve time, proposed_change
-  is None — the diff becomes REVIEW_REQUIRED, never reaching execution.
+App 2 (Contract Observer) note — two-stage validation:
+  Stage 1 (here + ContractValidator): the proposal names the one file the kind
+  may patch and the fields to change; the validator binds both to the
+  difference. Kinds with no file mapping get proposed_change=None.
+  Stage 2 (ContractExecutor, at Exorcise): DeepSeek writes the patch, Qwen
+  checks it, and a PR opens; a twice-rejected patch opens as a draft PR and
+  counts as a failure. A human merges every PR.
 
 Rules:
   · Only the Difference's domain/kind/target/context reach the prompt.
@@ -292,17 +292,13 @@ class MantleResolver:
 
     Domain routing:
       database → ultra() → QWEN 235B  (SQL fix proposals)
-      api      → deepseek_pro()        (file patch proposals, called at resolve time)
+      api      → metadata proposal; patch written at Exorcise (ContractExecutor)
       cache    → deterministic ChangeProposal (no LLM)
       other    → ultra() as default
 
     If MANTLE_API_KEY is not set, falls back to MockResolver behaviour.
 
-    App 2 safety note:
-      LLM is called here at resolve time. GitHub file is fetched here.
-      If either fails, proposed_change=None → diff becomes REVIEW_REQUIRED.
-      The executor reads patched_content from the validated proposal payload —
-      no second LLM call. What is validated equals what is committed.
+    App 2 safety note: see the module docstring (two-stage validation).
     """
 
     def __init__(self) -> None:

@@ -4,18 +4,28 @@ adapters/openapi/executor.py — Req 21, 23
 Executor for API contract drift. API fixes are applied as a GitHub PR on the
 target repo (Option B). The executor:
 
-  1. Reads patched_content from the validated ChangeProposal payload
-     (LLM was called at resolve time — validated content equals executed content)
-  2. Fetches the target file sha from the repo default branch via GitHub API
-  3. Creates a new branch + commits the change via GitHub API
+  1. Receives only proposals that ContractValidator accepted: metadata naming
+     the one file the difference kind may patch and the fields to change
+  2. Fetches that file from the default branch and asks DeepSeek for the patch;
+     Qwen checks it (two attempts)
+  3. Creates a new branch + commits the patch via the GitHub API
   4. Opens a pull request — idempotent (returns existing PR if already open)
+
+This is stage two of two-stage validation: the deterministic validator decides
+which file and which fields may change; the model check judges the patch
+itself; a human reviews and merges the PR. Nothing reaches the live API or the
+default branch before the merge.
+
+If Qwen rejects the patch twice, a DRAFT PR is still opened so a human can
+review it, but the result is a failure (error_code PATCH_UNVALIDATED), never a
+success.
 
 Implements BatchExecutor protocol: groups diffs by kind, one PR per kind.
 
 Batching rules:
   FIELD_EXTRA  → one PR patching openapi.yaml with ALL undocumented fields.
   FIELD_MISSING → one PR patching main.py with ALL missing fields.
-  Other kinds  → no automated PR; returns success=True with review note.
+  Other kinds  → no automated PR; returns success=False (NOT_AUTO_FIXABLE).
 
 Idempotency: if an open PR on a touchstone/* branch with the same title prefix
   already exists, its URL is returned immediately.
@@ -67,9 +77,8 @@ class ContractExecutor:
     Executor protocol implementation for the OpenAPI contract domain.
     Also implements BatchExecutor protocol.
 
-    Reads patched_content from each diff's ChangeProposal payload.
-    The LLM was called at resolve time (MantleResolver._resolve_api);
-    the content was validated by ContractValidator before reaching here.
+    Proposals arrive already validated (metadata: file and fields). The patch
+    itself is generated and model-checked here, at Exorcise time.
     """
 
     def __init__(self, repo: str, token: str | None = None):
@@ -87,7 +96,6 @@ class ContractExecutor:
     ) -> list[ExecutionResult]:
         """
         Batch execute: group by kind, produce one PR per kind.
-        Reads patched_content from each resolution's ChangeProposal payload.
         Returns one ExecutionResult per input item.
         """
         if not items:
@@ -160,8 +168,8 @@ class ContractExecutor:
             results.append(
                 ExecutionResult(
                     difference_id=d.id,
-                    success=True,
-                    error_code="REVIEW_REQUIRED",
+                    success=False,
+                    error_code="NOT_AUTO_FIXABLE",
                     error_summary=f"kind={d.kind} requires manual review; no automated PR",
                 )
             )
@@ -284,6 +292,14 @@ class ContractExecutor:
 
             pr = self._open_pr(branch=branch, title=title, body=body, draft=is_draft)
             pr_url = pr.get("html_url", "")
+            if is_draft:
+                # Draft PRs are for human review only: the automated check
+                # failed, so this is not a successful execution.
+                return (
+                    pr_url,
+                    "PATCH_UNVALIDATED",
+                    f"Patch failed the model check twice; draft PR opened for review: {pr_url}",
+                )
             return pr_url, "", f"PR opened: {pr_url}"
 
         except urllib.error.HTTPError as exc:

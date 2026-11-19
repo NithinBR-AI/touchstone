@@ -363,10 +363,11 @@ def test_verifier_accepts_comparison_target():
         state=GhostState.BLOCKED,
         context={"path": "/users", "field": "leaked", "method": "get", "status": "200"},
     )
-    # No openapi_url in context — should return resolved=True with a trust note, not raise
+    # A PR is not a re-verification: evidence must say the PR is open and unmerged
     result = verifier.verify(target, diff)
     assert result.resolved is True
-    assert "trusting execution" in result.evidence.get("reason", "")
+    assert result.evidence["reason"] == "pr_opened_not_merged"
+    assert result.evidence["live_system_reread"] is False
 
 
 def test_safe_fix_always_false():

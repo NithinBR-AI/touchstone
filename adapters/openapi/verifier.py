@@ -1,17 +1,18 @@
 """
 adapters/openapi/verifier.py — Req 23
 
-Verifier for API contract drift. Since API fixes are applied as PRs (not
-in-place), verification checks whether the target repo's openapi.yaml on the
-default branch now declares the previously-drifted fields.
+Verifier for API contract drift.
+
+API fixes are pull requests, not in-place changes: the fix only reaches the
+default branch when a human merges the PR. So this verifier does not claim the
+gap is gone. It records that a PR was opened and is waiting for review, and the
+evidence says so plainly. A re-scan after the merge confirms the fix: the ghost
+no longer appears.
 """
 
 from __future__ import annotations
 
-from adapters.ssrf import SSRFError
 from core.models import ComparisonTarget, Difference, VerificationResult
-
-from .intended import load_from_url
 
 
 class ContractVerifier:
@@ -23,94 +24,21 @@ class ContractVerifier:
         difference: Difference,
     ) -> VerificationResult:
         """
-        Re-fetch the OpenAPI spec and check whether the drift is resolved.
-
-        openapi_url is taken from target.context["openapi_url"].
-
-        For FIELD_EXTRA: the field should now appear in the spec.
-        For FIELD_MISSING: the field should now appear in the response (re-probe needed
-            — but we only check the spec here; full re-probe is expensive).
+        Called only after the executor opened a validated (non-draft) PR.
+        resolved=True means "fix proposed as a PR"; the evidence records that it
+        is not merged yet, and that the live system has not been re-read.
         """
         openapi_url = (target.context or {}).get("openapi_url", "")
-        if not openapi_url:
-            return VerificationResult(
-                difference_id=difference.id,
-                resolved=True,
-                evidence={
-                    "reason": "no openapi_url in target context — trusting execution"
-                },
-            )
-
-        # API fixes are applied as PRs — the fix lands on the default branch only
-        # after the PR is merged. Trust execution success as verification for now;
-        # a re-scan after merge will show the drift resolved.
-        # This prevents the diff from going STILL_PRESENT when the PR is merely open.
         return VerificationResult(
             difference_id=difference.id,
             resolved=True,
             evidence={
-                "reason": "pr_opened — verification deferred to post-merge rescan"
+                "reason": "pr_opened_not_merged",
+                "note": (
+                    "The fix is an open pull request. It takes effect when a human "
+                    "merges it; a re-scan after the merge confirms the ghost is gone."
+                ),
+                "live_system_reread": False,
+                "openapi_url": openapi_url,
             },
-        )
-
-        try:
-            state = load_from_url(openapi_url)
-        except SSRFError as exc:
-            return VerificationResult(
-                difference_id=difference.id,
-                resolved=False,
-                evidence={"reason": "ssrf_blocked", "error": str(exc)},
-            )
-        except Exception as exc:
-            return VerificationResult(
-                difference_id=difference.id,
-                resolved=False,
-                evidence={"reason": "fetch_failed", "error": str(exc)},
-            )
-
-        ctx = difference.context
-        path = ctx.get("path", "")
-        field = ctx.get("field", "")
-        method = ctx.get("method", "get")
-        status = ctx.get("status", "200")
-
-        paths = state.data.get("paths", {})
-        path_item = paths.get(path, {})
-        op = path_item.get(method, {})
-        schema = op.get("responses", {}).get(status, {}).get("schema", {})
-
-        # Flatten array schema
-        if schema.get("type") == "array":
-            schema = schema.get("items", {})
-
-        declared_fields = set(schema.get("properties", {}).keys())
-
-        if difference.kind == "FIELD_EXTRA":
-            is_resolved = field in declared_fields
-            return VerificationResult(
-                difference_id=difference.id,
-                resolved=is_resolved,
-                evidence={
-                    "field": field,
-                    "in_spec_now": is_resolved,
-                    "declared_fields": sorted(declared_fields),
-                },
-            )
-
-        if difference.kind == "FIELD_MISSING":
-            is_resolved = field in declared_fields
-            return VerificationResult(
-                difference_id=difference.id,
-                resolved=is_resolved,
-                evidence={
-                    "field": field,
-                    "in_spec_now": is_resolved,
-                },
-            )
-
-        # For other kinds (PATH_MISSING etc.) we just trust the execution result
-        return VerificationResult(
-            difference_id=difference.id,
-            resolved=True,
-            evidence={"kind": difference.kind, "trusted_execution": True},
         )

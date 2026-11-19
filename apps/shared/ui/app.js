@@ -598,7 +598,8 @@ async function apiApply(diffId) {
     // Show PR popup BEFORE re-render — trigger when PR was opened (file_path_ref set)
     const prUrl = outcome.execution && outcome.execution.file_path_ref;
     if (isBatchKind && prUrl) {
-      showPrPopup(prUrl, triggerDiff.kind, batchIds.length);
+      const isDraft = outcome.execution.error_code === "PATCH_UNVALIDATED";
+      showPrPopup(prUrl, triggerDiff.kind, batchIds.length, isDraft);
     }
 
     renderCards(REPORT);
@@ -679,9 +680,16 @@ function showApplyDialog(diffId) {
   document.getElementById("dialog-backdrop").classList.remove("hidden");
 }
 
-function showPrPopup(prUrl, kind, count) {
+function showPrPopup(prUrl, kind, count, isDraft = false) {
   const kindLabel = kind === "FIELD_EXTRA" ? "Shadow Field" : "Vanished Field";
   const file = kind === "FIELD_EXTRA" ? "openapi.yaml" : "main.py";
+  const plural = count > 1 ? "s" : "";
+  const headline = isDraft
+    ? `⚠ Draft PR for ${count} ${kindLabel} ghost${plural}`
+    : `✝ ${count} ${kindLabel} ghost${plural} bound`;
+  const message = isDraft
+    ? `The automated check rejected the patch twice, so this is a <strong style="color:#f97316">draft</strong> PR on <strong style="color:#f97316">${file}</strong> for you to review. The ghost${plural} stay unresolved.`
+    : `A PR has been raised on <strong style="color:#f97316">${file}</strong>.<br>Once it is merged, the ghost${plural} will be laid to rest.`;
 
   // Remove any existing popup first
   document.querySelectorAll(".pr-popup").forEach(el => el.remove());
@@ -690,12 +698,11 @@ function showPrPopup(prUrl, kind, count) {
   popup.className = "pr-popup";
   popup.style.cssText = "position:fixed;bottom:32px;right:32px;z-index:9999;max-width:380px;background:#1a1a2e;border:1px solid #f97316;border-radius:10px;padding:20px 24px;box-shadow:0 0 32px rgba(0,0,0,.8),0 0 12px #f97316;";
   popup.innerHTML = `
-    <div style="font-family:monospace;font-size:13px;font-weight:600;color:#4ade80;margin-bottom:10px;">
-      ✝ ${count} ${kindLabel} ghost${count > 1 ? "s" : ""} bound
+    <div style="font-family:monospace;font-size:13px;font-weight:600;color:${isDraft ? "#fbbf24" : "#4ade80"};margin-bottom:10px;">
+      ${headline}
     </div>
     <div style="font-size:12px;color:#aaa;line-height:1.6;margin-bottom:14px;">
-      A PR has been raised on <strong style="color:#f97316">${file}</strong>.<br>
-      Once it is merged, the ghost${count > 1 ? "s" : ""} will be laid to rest.
+      ${message}
     </div>
     ${prUrl ? `<a style="display:inline-block;margin-right:8px;margin-bottom:8px;padding:6px 12px;background:#f97316;color:#000;border-radius:6px;text-decoration:none;font-size:11px;font-family:monospace;" href="${esc(prUrl)}" target="_blank" rel="noopener">View PR ↗</a>` : ""}
     <button style="padding:6px 12px;background:transparent;border:1px solid #555;color:#aaa;border-radius:6px;cursor:pointer;font-size:11px;font-family:monospace;" id="pr-popup-dismiss">Dismiss</button>`;

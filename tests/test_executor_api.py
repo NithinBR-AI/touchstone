@@ -68,13 +68,13 @@ class TestExecutionResultFields:
         assert "GITHUB_TOKEN" in result.error_summary
 
     def test_review_required_kind_returns_valid_result(self):
-        """Non-batchable kinds return success=True with REVIEW_REQUIRED code."""
+        """Non-batchable kinds are a failure (NOT_AUTO_FIXABLE), never a fake success."""
         ex = _make_executor()
         d = _diff("PATH_MISSING", field="")
         with patch("adapters.openapi.executor._gh_request", return_value=[]):
             result = ex.execute(_stub_resolution(d), d)
-        assert result.success is True
-        assert result.error_code == "REVIEW_REQUIRED"
+        assert result.success is False
+        assert result.error_code == "NOT_AUTO_FIXABLE"
         assert result.difference_id  # not empty
 
     def test_field_extra_success_sets_file_path_ref(self):
@@ -230,7 +230,7 @@ class TestBatching:
         assert "https://github.com/owner/repo/pull/2" in pr_urls
 
     def test_other_kinds_get_review_required(self):
-        """Non-batchable kinds return success=True with REVIEW_REQUIRED, no GH call."""
+        """Non-batchable kinds fail with NOT_AUTO_FIXABLE and make no GitHub call."""
         ex = _make_executor()
         diffs = [
             _diff("PATH_MISSING", "/orders", ""),
@@ -240,8 +240,8 @@ class TestBatching:
             results = ex.execute_batch(_items(diffs))
 
         mock_gh.assert_not_called()
-        assert all(r.success is True for r in results)
-        assert all(r.error_code == "REVIEW_REQUIRED" for r in results)
+        assert all(r.success is False for r in results)
+        assert all(r.error_code == "NOT_AUTO_FIXABLE" for r in results)
 
     def test_empty_batch_returns_empty(self):
         ex = _make_executor()
