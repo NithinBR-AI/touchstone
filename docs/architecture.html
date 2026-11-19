@@ -519,7 +519,7 @@
           <div class="stage-icon icon-verify">✝</div>
           <div class="stage-info">
             <div class="stage-name">Verify</div>
-            <div class="stage-desc">Re-reads the live system and re-runs the comparison. Only a ghost that is truly gone is RESOLVED — and only then is its fix written to the cache. The report is saved atomically after every state change.</div>
+            <div class="stage-desc">Re-reads the live system and re-runs the comparison (database, cache). Only a ghost that is truly gone is RESOLVED — and only then is its fix written to the cache. API fixes are PRs: the evidence records the PR as open, not merged. The report is saved atomically after every state change.</div>
             <div class="stage-tools">core protocol: <span>Verifier</span> · core <span class="spirit">VerificationResult + evidence</span> · <span>Persistence</span> · <span>Cache</span></div>
           </div>
         </div>
@@ -659,7 +659,7 @@
       <div class="tool-emoji">🔀</div>
       <div class="tool-info">
         <div class="tool-name">GitHub Pull Requests</div>
-        <div class="tool-desc">One PR per file · idempotent<br>draft PR if validation fails twice</div>
+        <div class="tool-desc">One PR per file · idempotent<br>draft PR (a failure) if the check fails twice</div>
         <div class="svc-badge app2">THE SÉANCE</div>
       </div>
     </div>

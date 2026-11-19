@@ -53,7 +53,10 @@ Touchstone finds the gap — and proves every fix.
    path confinement, hash locks, SSRF validation.
 
 4. **Every apply is verified with evidence.** VerificationResult carries the
-   exact state that was re-read. A boolean is not sufficient.
+   exact state that was re-read. A boolean is not sufficient. Exception, stated
+   plainly: API fixes are pull requests, so the API verifier records that the
+   PR is open and not merged (`pr_opened_not_merged`) instead of claiming a
+   re-read; a re-scan after the merge confirms the fix.
 
 5. **Rollback is an event, not a state transition.** File-domain rollback
    appends RollbackEvent. Database rollback is not supported — the report

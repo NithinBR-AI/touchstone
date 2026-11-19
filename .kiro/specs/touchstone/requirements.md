@@ -245,8 +245,10 @@ Skeleton Crew refactor. API and cache fixes are now applied by domain executors:
 The orchestrator-level `ContractValidator` runs at scan time (during `run()`)
 on a lightweight metadata-only `ChangeProposal` — no patched content is present
 yet because the LLM runs at execute time to avoid slowing down Compare. The
-validator performs structural pre-checks (operation == FILE_PATCH, file_name
-present, target matches diff) and always returns BLOCKED. The human unlocking
+validator binds the proposal to the difference (operation == FILE_PATCH,
+file_name is exactly the file mapped to the kind, target matches, at least one
+field named; FIELD_MISSING needs human authorization). Updated 2026-11-19:
+`apply_batch()` runs this gate per ghost before `execute_batch()`. The human unlocking
 BLOCKED via Exorcise triggers `ContractExecutor.execute_batch()`.
 
 `ultra()` inside `execute_batch` is the patch validation boundary for the API
@@ -261,7 +263,8 @@ does not exist at scan time.
 3. Validates the patched content via `ultra()` with a SCOPE-constrained prompt
    (validator told: check only the specific schema/function, not the whole file).
 4. Two-attempt retry; if both attempts fail ultra validation → opens a draft PR
-   with a warning body instead of a ready-to-merge PR.
+   with a warning body instead of a ready-to-merge PR. The outcome is a failure
+   (`PATCH_UNVALIDATED` → EXECUTION_FAILED), never a success.
 5. Commits patched content via GitHub API and opens a PR. Trailing newline
    normalised to match original file.
 6. `operationId` threaded from comparator → `Difference.context` → executor →

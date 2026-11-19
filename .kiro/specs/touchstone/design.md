@@ -176,7 +176,7 @@ Validator
 · API (adapters/openapi/validator.py — ContractValidator):
   Validates ChangeProposal payload has patched_content + file_path, operation
   is FILE_PATCH, target matches difference. ultra() validation at execute time
-  with SCOPE-constrained prompt. Two-attempt retry; draft PR on double failure.
+  with SCOPE-constrained prompt. Two-attempt retry; draft PR on double failure, reported as EXECUTION_FAILED.
 · Cache (adapters/redis/validator.py — CacheValidator):
   Validates operation is SET_KEY or CACHE_DELETE, target matches difference,
   payload has required fields. Deterministic — no LLM.

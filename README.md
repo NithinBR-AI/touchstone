@@ -50,7 +50,7 @@ The skeleton is `core/` — 6 files (5 modules + `__init__.py`). Three applicati
 python -m pytest tests/test_skeleton.py tests/test_fourth_domain.py tests/test_apps_structure.py -v
 ```
 
-**Test suite:** 666 passed, 12 skipped offline (no credentials); 673 passed, 5 skipped with a Neon `DATABASE_URL`, or 677 passed, 1 skipped right after a re-seed (the end-to-end tests need fresh drift to act on).
+**Test suite:** 688 passed, 12 skipped offline (no credentials); 695 passed, 5 skipped with a Neon `DATABASE_URL`, or 699 passed, 1 skipped right after a re-seed (the end-to-end tests need fresh drift to act on).
 
 ---
 
@@ -184,7 +184,7 @@ Seven states × eight events = 56 cells. Every cell is defined in [`design.md`](
 | `PENDING` | 👻 HAUNTING | A validated fix is ready; Exorcise applies it |
 | `REVIEW_REQUIRED` | 🕯 SÉANCE NEEDED | Not auto-fixable; a human must review and authorize |
 | `BLOCKED` | ⛓ BOUND | Rejected by policy or the validator; only an explicit human Exorcise may proceed |
-| `RESOLVED` | ✝ LAID TO REST | Applied and verified |
+| `RESOLVED` | ✝ LAID TO REST | Applied and verified by re-reading the live system (database, cache); for API drift, the fix is an open PR awaiting merge |
 | `STILL_PRESENT` | 😱 STILL HAUNTING | Applied, but the verifier found the ghost persists |
 | `EXECUTION_FAILED` | 💀 RITUAL FAILED | The executor rejected the change or timed out |
 | `SUPERSEDED` | 🌫 FADED | Reserved — defined in the model and UI, not yet produced by any code path |
@@ -246,7 +246,7 @@ API contract changes are never applied to a live system. The executor opens a Gi
 - **CREATE INDEX is exactly the declared index** — name must be `ix_<table>_<cols>`, columns in the declared order, plain B-tree (no `USING hash`/`gin`), default sort order (no `DESC` / `NULLS FIRST`). These rules come from tech.md; property-based testing showed the validator was not enforcing them (see [How Kiro was used](#property-based-testing-pbt)).
 
 ### Contract Observer (API)
-- **Two-stage validation.** At scan time there is no patch yet, so `ContractValidator` only checks the proposal's structure (operation is `FILE_PATCH`, file name present, target matches) and the ghost stays BLOCKED until a human authorizes. At Exorcise, `ContractExecutor` generates the patch with `deepseek_pro()` and validates it with `ultra()` before opening a PR — **that `ultra()` check is the patch validation boundary for the API domain.** If it fails twice, a **draft** PR opens with a warning instead.
+- **Two-stage validation.** The proposal is metadata only: the patch is written at Exorcise, so Hunt Ghosts stays fast. **Stage 1, deterministic:** `ContractValidator` decides *which file* and *which fields* may change. The operation must be `FILE_PATCH`, the file must be exactly the one mapped to the ghost's kind (`openapi.yaml` for Shadow Fields, `main.py` for Vanished Fields), the target must match, and at least one field must be named; Vanished Fields also need a human click. The orchestrator runs this gate for every ghost in a batch (`apply_batch()` uses the same gates as `apply_one()`), so a ghost with no proposal or a rejected one never reaches the executor. **Stage 2, model check:** `ContractExecutor` writes the patch with `deepseek_pro()` and checks it with `ultra()` before opening a PR. If `ultra()` rejects it twice, a **draft** PR still opens for a human, but the card shows 💀 RITUAL FAILED: it never counts as a success. **Stage 3, human:** a person reviews and merges every PR. For The Séance, ✝ LAID TO REST means the fix is an open PR, not that the live API was re-read; the verifier records `pr_opened_not_merged`, and a re-scan after the merge confirms the ghost is gone.
 - **SSRF protection** — before every request, every resolved address (including IPv4-mapped IPv6) is checked against the exact blocked-range list in tech.md, and anything multicast or not globally routable is refused. The same guard covers Context7 calls.
 - **`follow_redirects=False`** — redirects are not auto-followed. Same-host redirects are followed manually (max 5 hops) with SSRF revalidation on each hop; cross-host redirects are skipped.
 - **`trust_env=False`** — no proxy env vars.
@@ -277,13 +277,13 @@ All LLM calls route through **[AWS Bedrock Mantle](https://aws.amazon.com/bedroc
 
 **Cache written only after apply + verify.** The resolution cache (`core/cache.py`) is never written at resolve time — only after `apply_one()` succeeds and the verifier confirms the ghost is gone. Null proposals are never cached. Cached resolutions are proven fixes, not guesses, and they still pass through the validator on every replay.
 
-**API fixes are PRs, never live mutations.** `ContractExecutor` calls the GitHub API, not a file writer. The verifier re-reads the OpenAPI spec; until the PR is merged, the ghost stays open.
+**API fixes are PRs, never live mutations.** `ContractExecutor` calls the GitHub API, not a file writer. Nothing changes until a human merges the PR. The verifier does not re-read anything: it records that the PR is open and not merged (`pr_opened_not_merged`), and a re-scan after the merge confirms the fix.
 
-**Batch by kind, one PR per file.** Three `FIELD_EXTRA` drifts become one PR on `openapi.yaml`, not three conflicting PRs on the same file. `FIELD_EXTRA` and `FIELD_MISSING` produce separate PRs because they patch different files. `apply_batch()` in the orchestrator delegates to `BatchExecutor.execute_batch()` for this.
+**Batch by kind, one PR per file.** Three `FIELD_EXTRA` drifts become one PR on `openapi.yaml`, not three conflicting PRs on the same file. `FIELD_EXTRA` and `FIELD_MISSING` produce separate PRs because they patch different files. `apply_batch()` in the orchestrator runs the same per-ghost gates as `apply_one()` (proposal present, validator passes), then sends only the validated ghosts to `BatchExecutor.execute_batch()`.
 
 **Human authorization unlocks REVIEW_REQUIRED and BLOCKED.** Exorcise always sends `human_authorized=True`: the human has seen the proposal and chosen to apply it. The validator still runs — it only stops gating on auto-fixability. EXECUTION_FAILED is the one state that cannot be retried.
 
-**Draft PR on double validation failure.** If `ultra()` rejects the generated patch twice, `ContractExecutor` opens a draft PR with a warning body instead of blocking, so a human can fix the patch before merging.
+**Draft PR on double validation failure.** If `ultra()` rejects the generated patch twice, `ContractExecutor` still opens a draft PR with a warning body, so a human can fix the patch before merging. The outcome is a failure (`PATCH_UNVALIDATED`, 💀 RITUAL FAILED), never a success.
 
 ---
 
@@ -500,8 +500,8 @@ On the free tier each service sleeps after 15 minutes without traffic and takes 
 ```bash
 # Tests load .env, so if DATABASE_URL is set there they run against Neon.
 python -m pytest tests/ -q
-# offline (no credentials):        666 passed, 12 skipped
-# with Neon DATABASE_URL in .env:   673 passed, 5 skipped; 677 passed, 1 skipped right after a re-seed
+# offline (no credentials):        688 passed, 12 skipped
+# with Neon DATABASE_URL in .env:   695 passed, 5 skipped; 699 passed, 1 skipped right after a re-seed
 
 # Postgres integration tests only
 DATABASE_URL=<neon-url> python -m pytest tests/test_sql_execution.py tests/test_executor_pg.py -v

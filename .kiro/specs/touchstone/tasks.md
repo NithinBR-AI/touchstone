@@ -763,6 +763,20 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       section "Scan your own database".
   - _Req 1, 4_
 
+- [x] 12b.4 Batch apply runs the validator (external review, P0)
+      `apply_batch()` sent every eligible ghost to `execute_batch()`, including
+      ones with no proposal or a rejected one. Now it runs the same gates as
+      `apply_one()` per ghost. tests/test_orchestrator_batch.py (6). PASS.
+  - _Req 19, 21_
+- [x] 12b.5 Contract Observer reports honestly (external review)
+      ContractValidator binds file and fields to the ghost (it previously required
+      fields the metadata proposal never had, so every API ghost showed BLOCKED;
+      the Vanished Field now shows its designed REVIEW_REQUIRED state). Unhandled
+      kinds and twice-rejected patches are failures; draft PRs are kept for
+      review. The verifier records `pr_opened_not_merged`. Docstrings describe
+      the real two-stage design. tests/test_validator_api.py (16). PASS.
+  - _Req 21, 23_
+
 ### 13. Submission (Week 5)
 
 - [ ] 13.1 2-min video (Act 1–5 per design.md)
