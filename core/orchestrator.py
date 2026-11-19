@@ -273,23 +273,43 @@ class Orchestrator:
         if not eligible:
             return outcomes
 
-        resolution_stubs = {
-            diff.id: (
-                report.resolutions.get(diff.id)
-                or Resolution(
-                    difference_id=diff.id,
-                    difference_signature=diff.signature,
-                    proposed_change=None,
-                )
-            )
-            for diff in eligible
-        }
-
         if not isinstance(self.executor, BatchExecutor):
             for diff in eligible:
                 outcome = self.apply_one(diff.id, human_authorized=human_authorized)
                 outcomes.append(outcome)
             return outcomes
+
+        # Same gates as apply_one, per item: a proposal must exist and the
+        # validator must accept it. Only validated items reach the executor;
+        # refused items keep (or move to) the state the gate assigns.
+        resolution_stubs: dict[str, Resolution] = {}
+        validated: list[Difference] = []
+        for diff in eligible:
+            resolution = report.resolutions.get(diff.id)
+            if resolution is None or resolution.proposed_change is None:
+                diff.state = GhostState.REVIEW_REQUIRED
+                self._audit(report, diff.id, "apply_refused", "no proposal")
+                outcomes.append(
+                    ApplyOutcome(
+                        difference_id=diff.id, state=GhostState.REVIEW_REQUIRED
+                    )
+                )
+                continue
+            validation = self.validator.validate(
+                resolution.proposed_change, diff, human_authorized=human_authorized
+            )
+            if validation.status != "valid":
+                diff.state = validation.ghost_state
+                self._audit(report, diff.id, "apply_refused", validation.reason)
+                outcomes.append(ApplyOutcome(difference_id=diff.id, state=diff.state))
+                continue
+            resolution_stubs[diff.id] = resolution
+            validated.append(diff)
+
+        if not validated:
+            self.persistence.save(report)
+            return outcomes
+        eligible = validated
 
         batch_items = [(resolution_stubs[d.id], d) for d in eligible]
         try:
