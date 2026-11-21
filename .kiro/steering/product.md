@@ -13,13 +13,13 @@ state but not the other.
 
 ## The skeleton and its applications
 
-**The skeleton** is `core/` — 6 files, ~1,280 lines. It implements a
+**The skeleton** is `core/` — 6 files, ~1,300 lines. It implements a
 10-step compare-verify workflow and knows nothing about any specific domain;
 `tests/test_skeleton.py` enforces that on every test run.
 
 **The applications** are built on top of the skeleton. Each lives in its own
 folder under `apps/` and contains FastAPI endpoint handlers, serialisation
-helpers, and demo reset logic (~250 lines each). No domain logic lives in apps —
+helpers, and demo reset logic (~260–310 lines each). No domain logic lives in apps —
 all domain-specific behaviour is in `adapters/`.
 
 | App | Domain | Accent | Primary verb | Mandatory? |

@@ -6,6 +6,8 @@ Touchstone makes all three visible — and fixable — before they cause inciden
 
 **Kiroween 2026 — Skeleton Crew category** · Built with Qwen3 and DeepSeek models via [AWS Bedrock Mantle](https://aws.amazon.com/bedrock/)
 
+**Read more:** [How I built it in Kiro (blog, Medium)](https://medium.com/@brnithin33/steering-by-refusal-how-i-built-one-skeleton-and-three-ghost-hunters-in-kiro-4b12adfadcfa) · [LinkedIn post](https://lnkd.in/p/duA8AmAg)
+
 ![Touchstone architecture — one skeleton (core/), three apps](docs/architecture.png)
 
 *One skeleton, three apps: the `core/` pipeline is shared, and each app plugs in its own adapters. Interactive version: [`docs/architecture.html`](docs/architecture.html).*

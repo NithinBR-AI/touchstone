@@ -1,4 +1,4 @@
-﻿# Implementation Plan: Touchstone
+# Implementation Plan: Touchstone
 
 ## Overview
 
@@ -36,21 +36,21 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
 
 ### 1. Week-1 acceptance — green before week-2 freeze
 
-- [x] 1.0a State and API contracts — test_state_transitions.py (56 cells)
+- [x] 1.1 State and API contracts — test_state_transitions.py (56 cells)
       (66 tests: 56-cell matrix 7×8 + invariants; all pass)
-- [x] 1.0b SQL validation — test_validator_sql.py + test_sql_execution.py +
+- [x] 1.2 SQL validation — test_validator_sql.py + test_sql_execution.py +
       test_sqlglot_ast_assumptions.py + target binding + widening
       (validator_sql 33 tests pass; sql_execution skipped until DB available;
        ast_assumptions 23 tests pass; all target binding and widening covered)
-- [x] 1.0c File patch validation — test_validator_file.py (deleted)
+- [x] 1.3 File patch validation — test_validator_file.py (deleted)
       FilePatchValidator removed from core/validator.py. API patches are applied as GitHub
-    and  PRs by ContractExecutor (LLM-generated content via GitHub API). Cache fixes applied
+      PRs by ContractExecutor (LLM-generated content via GitHub API). Cache fixes applied
       by CacheExecutor via /cache/warm and /cache/delete. test_validator_file.py deleted.
   - _Req 17_
-- [x] 1.0d Rollback — test_rollback.py (file domain; DB unsupported; executor exception; double)
+- [x] 1.4 Rollback — test_rollback.py (file domain; DB unsupported; executor exception; double)
       (10 tests: DB refused, file resolved/still_present/state_unchanged, external edit,
        executor exception, double rollback, event recorded/fields; all pass)
-- [x] 1.0e Repeatability and caching — test_cache_reproducibility.py
+- [x] 1.5 Repeatability and caching — test_cache_reproducibility.py
       (11 tests: second run hits cache / responder not called, resolutions marked cached=True,
        semantic outcomes match by signature, UUIDs differ between runs,
        cache entries carry cache_version+validator_contract+prompt_hash+expires_at,
@@ -59,11 +59,11 @@ Incremental plan: core skeleton and Postgres path first, freeze core/, then two 
        null proposed_change never cached; all pass)
       Cache written ONLY after apply+verify (verification.resolved=True). Never at resolve
       time. Never for null proposals. 7-day TTL enforced.
-- [x] 1.0f Resolver in loop — mock resolver works end-to-end (fake infra; real Postgres pending task 2.19)
+- [x] 1.6 Resolver in loop — mock resolver works end-to-end (fake infra; real Postgres pending task 2.19)
       (test_orchestrator_mock.py: 5 tests — full loop resolves both ghosts, apply without effect
        is STILL_PRESENT, second apply refused, resolver failure blocks, second run hits cache;
        all pass; real Postgres path requires fixtures/ from task 2.18)
-- [x] 1.0g Scope and claims — audit submission copy
+- [x] 1.7 Scope and claims — audit submission copy
       Findings (as of 2026-11-11):
 
       PASS — core/ 7-file limit
@@ -498,7 +498,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
         handling, resolution fields (sha256, difference_id). All 20 pass.
       · Full suite: 437 passed, 6 skipped (live DB only). PASS.
   - _Req 15, 16_
-- [x] 7.1a Stale-report fix — App 1 (Schema Drift)
+- [x] 7.5 Stale-report fix — App 1 (Schema Drift)
       DONE 2026-11-13:
       · Removed `--reload` from apps/schema-drift/run.sh (and all other run.sh files).
         --reload kept stale orchestrator state alive across terminal restarts; removing
@@ -506,7 +506,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       · UI REPORT condition fixed: stale report_id from /config no longer renders phantom
         ghost cards when no compare has run in the current process.
   - _Req 28, 39_
-- [x] 7.1b Exorcise button on all 4 ghost card states — App 1
+- [x] 7.6 Exorcise button on all 4 ghost card states — App 1
       DONE 2026-11-13:
       · apps/shared/ui/app.js canApply() logic extended: REVIEW_REQUIRED and BLOCKED
         cards with a proposed_change.statement now show Exorcise (human_authorized path).
@@ -518,7 +518,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
         (including safe_fix=False) so the human can review the LLM proposal before
         clicking Exorcise.
   - _Req 14, 15, 26_
-- [x] 7.1c UNDECLARED_KEY made fixable — App 3 (The Poltergeist)
+- [x] 7.7 UNDECLARED_KEY made fixable — App 3 (The Poltergeist)
       DONE 2026-11-13:
       · adapters/redis/executor.py CacheExecutor.execute(): UNDECLARED_KEY now calls
         DELETE /cache/delete on the target cache app instead of returning NOT_AUTO_FIXABLE.
@@ -528,7 +528,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
         so executor can reach it in demo mode.
       · UI: both KEY_MISSING and UNDECLARED_KEY show Exorcise button (human_authorized).
   - _Req 21, 28_
-- [x] 7.1d Batch PR executor, LLM-at-execute-time, operationId threading — App 2 (Contract Observer)
+- [x] 7.8 Batch PR executor, LLM-at-execute-time, operationId threading — App 2 (Contract Observer)
       DONE 2026-11-13:
       · ContractExecutor.execute_batch() takes list[tuple[Resolution,Difference]]; groups by
         kind internally (FIELD_EXTRA → openapi.yaml, FIELD_MISSING → main.py).
@@ -545,7 +545,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       · apps/contract-observer/main.py /apply calls orch.apply_batch(same_kind_ids, human_authorized=True).
       · /demo/reset calls close_touchstone_prs() + invalidate_remote().
   - _Req 18, 19, 28_
-- [x] 7.1e Test suite cleanup + Skeleton Crew refactor — all 424 tests green
+- [x] 7.9 Test suite cleanup + Skeleton Crew refactor — all 424 tests green
       DONE 2026-11-13:
       · SQLChange, FilePatch moved from core/models to adapters/postgres/models (core unfrozen
         from non-essential models). SQLValidator moved from core/validator to
@@ -645,12 +645,12 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       accept DROP / non-widening changes (disagreement is surfaced, not an error).
   - _Req 15_
 - [x] 8.4 Fourth-domain extensibility proof — test_fourth_domain.py + README
-      VERIFIED: 25 tests covering full lifecycle with in-memory config domain: detect →
+      VERIFIED: 13 tests covering full lifecycle with in-memory config domain: detect →
       resolve → validate → execute → verify → persist. Validation rejection stops execution,
       authorization gate enforced, verification failure recorded as STILL_PRESENT, persistence
       saves after apply. Zero imports from existing adapter packages. Zero changes to core/.
       AST check confirms core/ contains no "config" domain string. README Skeleton Crew
-      section updated with extensibility proof and AST enforcement details. 449 passed total.
+      section updated with extensibility proof and AST enforcement details. 449 passed in the full suite at the time.
   - _Req 35_
 
 ### 9. PBT (Week 4)
@@ -696,7 +696,7 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 - [x] 10.4 ~~Confirm one freeze commit~~
       SUPERSEDED: core/ was extended post-freeze (apply_batch, human_authorized,
       FilePatchValidator removed). The freeze-commit discipline claim is dropped.
-      Skeleton Crew proof rests on test_skeleton.py (7 files + no external imports)
+      Skeleton Crew proof rests on test_skeleton.py (exact 6-file set + no external imports)
       which passes on every test run — not on git history.
   - _Req 1, 38_
 
@@ -741,34 +741,34 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
       Disabling Cache.get makes the cache tests fail (checked).
   - _Req 39_
 
-### 12b. Post-build fixes (2026-11-18)
+### 12 (cont.) Post-build fixes (2026-11-18)
 
-- [x] 12b.1 Unreachable target is not a lost endpoint (Req 10.6)
+- [x] 12.3 Unreachable target is not a lost endpoint (Req 10.6)
       Probe timeout 10 s. A path that times out, fails to connect, answers 5xx
       or redirects goes to `data["not_observed"]` and never becomes
       PATH_MISSING; a 4xx answer still does. If no probed path answers,
       `probe()` raises `TargetUnreachable` and `/compare` returns 503 with a
       plain message; the UI shows it. tests/test_actual_api.py (10). PASS.
   - _Req 10_
-- [x] 12b.2 CLI runs again and has tests
+- [x] 12.4 CLI runs again and has tests
       `touchstone` could not start (`cli.py` was not packaged: added
       `py-modules = ["cli"]`), and `compare` crashed because the comparator
       returns a list. Fixed; `--target` now filters before counting; `.env`
       loads from the working directory. tests/test_cli.py (5). PASS.
   - _Req 1, 28_
-- [x] 12b.3 "Scan your own database" proof
+- [x] 12.5 "Scan your own database" proof
       examples/scan-your-own/models.py (demo schema + 3 new changes) scanned
       against Neon with `touchstone compare`; all 3 found with the matrix
       state. Real output in examples/scan-your-own/sample-output.txt; README
       section "Scan your own database".
   - _Req 1, 4_
 
-- [x] 12b.4 Batch apply runs the validator (external review, P0)
+- [x] 12.6 Batch apply runs the validator (external review, P0)
       `apply_batch()` sent every eligible ghost to `execute_batch()`, including
       ones with no proposal or a rejected one. Now it runs the same gates as
       `apply_one()` per ghost. tests/test_orchestrator_batch.py (6). PASS.
   - _Req 19, 21_
-- [x] 12b.5 Contract Observer reports honestly (external review)
+- [x] 12.7 Contract Observer reports honestly (external review)
       ContractValidator binds file and fields to the ghost (it previously required
       fields the metadata proposal never had, so every API ghost showed BLOCKED;
       the Vanished Field now shows its designed REVIEW_REQUIRED state). Unhandled
@@ -779,26 +779,34 @@ Dependency Auditor CUT. Replaced by The Poltergeist (Redis cache key-existence d
 
 ### 13. Submission (Week 5)
 
-- [ ] 13.1 2-min video (Act 1–5 per design.md)
+- [x] 13.1 Demo video on YouTube
+      DONE: 3:00 (the Devpost limit; the plan said 2 min). Hero app The Crypt in
+      full, The Séance and The Poltergeist as evidence, then Kiro and the
+      fourth-domain test run live. Voiceover script in demo_transcript.md.
   - _Req 38_
-- [ ] 13.2 60-second vertical short
+- [x] 13.2 ~~60-second vertical short~~
+      DROPPED: not required by the hackathon rules.
   - _Req 38_
-- [ ] 13.3 Devpost write-up answering all Kiro questions (kiro-features.md §9)
+- [x] 13.3 Devpost write-up answering all Kiro questions (kiro-features.md §9)
+      DONE: submitted.
   - _Req 38_
-- [ ] 13.4 Blog post with Kiroween 2026 mention
+- [x] 13.4 Blog post with Kiroween 2026 mention
+      DONE: https://medium.com/@brnithin33/steering-by-refusal-how-i-built-one-skeleton-and-three-ghost-hunters-in-kiro-4b12adfadcfa
   - _Req 38_
-- [ ] 13.5 Social post starting with `#KiroweenHackathon26`
+- [x] 13.5 Social post starting with `#KiroweenHackathon26`
+      DONE: https://lnkd.in/p/duA8AmAg
   - _Req 38_
-- [ ] 13.6 Every MANDATORY requirement passes; optional listed in "What's next"
+- [x] 13.6 Every MANDATORY requirement passes; optional listed in "What's next"
+      DONE 2026-11-21: 688 passed / 12 skipped offline; 695 passed / 5 skipped
+      with Neon (699 / 1 right after a re-seed), across 30 test files.
   - _Req 38_
 
 ## Notes
 
-- Current test count (2026-11-15): **651 passed, 12 skipped offline** (credentials
-  blanked inside Python; PowerShell `$env:X = ""` deletes the variable and .env
-  reloads it). **658 passed, 5 skipped with Neon** (632 measured before the 26
-  offline-only demo-repeatability and remote-source tests were added); the 5 e2e
-  tests need a fresh seed.
+- Current test count (2026-11-21, 30 test files): **688 passed, 12 skipped offline**
+  (credentials blanked inside Python; PowerShell `$env:X = ""` deletes the variable
+  and .env reloads it). **695 passed, 5 skipped with Neon**, or **699 passed,
+  1 skipped** right after a re-seed (the e2e tests need fresh drift to act on).
 - Outbound HTTP hardening (2026-11-15): SSRF guard moved to `adapters/ssrf.py` and
   shared by every domain (no cross-domain imports); Poltergeist warmup now SSRF-checked;
   `adapters/remote_source.py` (the models.py download Schema Drift executes) switched
@@ -840,12 +848,12 @@ Each wave can be worked in parallel within it; each wave depends on all prior wa
       "id": 3,
       "label": "Core test suite + week-1 acceptance",
       "tasks": ["2.15", "2.16", "2.17", "2.18", "2.19", "2.20", "2.21", "2.22", "2.23",
-                "1.0a", "1.0b", "1.0c", "1.0d", "1.0e", "1.0f"]
+                "1.1", "1.2", "1.3", "1.4", "1.5", "1.6"]
     },
     {
       "id": 4,
       "label": "Freeze + scope audit",
-      "tasks": ["3.1", "3.2", "1.0g"]
+      "tasks": ["3.1", "3.2", "1.7"]
     },
     {
       "id": 5,
@@ -865,7 +873,7 @@ Each wave can be worked in parallel within it; each wave depends on all prior wa
     {
       "id": 8,
       "label": "Real resolver + orchestration",
-      "tasks": ["7.1", "7.1a", "7.1b", "7.1c", "7.1d", "7.1e", "7.2", "7.3", "7.4"]
+      "tasks": ["7.1", "7.5", "7.6", "7.7", "7.8", "7.9", "7.2", "7.3", "7.4"]
     },
     {
       "id": 9,

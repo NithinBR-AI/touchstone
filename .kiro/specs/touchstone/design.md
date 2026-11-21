@@ -43,7 +43,7 @@ touchstone/
 
 ```
 
-## App pattern (~250 lines — endpoints + serialisation + demo reset + wiring)
+## App pattern (~260–310 lines — endpoints + serialisation + demo reset + wiring)
 
 ```python
 import json

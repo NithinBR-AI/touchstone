@@ -44,7 +44,9 @@ Three-app submission shipped. Two mandatory apps satisfy Skeleton Crew.
    `adapters/redis/validator.py`.
 3. Core modules may import from other core modules.
 4. No module outside `core/` imported by any module inside `core/`.
-5. `git diff core/` empty after all apps complete.
+5. `core/` stays domain-free after all apps complete: `tests/test_skeleton.py`
+   (AST) passes on every run. The week-2 freeze was dropped (task 10.4); `core/`
+   was extended only in domain-agnostic ways.
 6. `tests/test_skeleton.py` asserts the exact file set, the no-external-import rule,
    no `sqlglot` imports in core/ (AST walk), and no domain-string comparisons in
    core/ (AST Compare node check). All checks use `ast.walk` — no raw text search.
@@ -406,7 +408,7 @@ Requirement 30: Applications in Separate Folders
 
 1. apps/schema-drift/ and apps/contract-observer/ — both MANDATORY.
 2. apps/poltergeist/ — SHIPPED third app (cache domain).
-3. Each app folder contains: main.py (~250 lines — FastAPI endpoints,
+3. Each app folder contains: main.py (~260–310 lines — FastAPI endpoints,
    serialisation helpers, demo reset, wiring of core + domain adapter),
    config.json, README.md, run.sh, and its own Dockerfile.
 4. main.py imports from core/ and its domain adapter. No domain logic.
@@ -518,7 +520,8 @@ Requirement 40: Skeleton Crew Structural Compliance
 
 1. At least two app folders under apps/, each containing runnable app.
 2. core/ as clearly identifiable shared skeleton (6 files, 5 substantive).
-3. git diff core/ empty after all apps.
+3. core/ stays domain-free after all apps (tests/test_skeleton.py, every run);
+   the freeze was dropped (task 10.4) and a third app was added with no core change.
 4. README "Skeleton Crew entry" section at top: what the skeleton is, what
    the apps are, fourth-domain extensibility proof, AST enforcement, test count.
 5. Apps share one UI template and differ only via config.

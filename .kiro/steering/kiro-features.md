@@ -2,7 +2,7 @@
 # Kiro Features Steering — Touchstone
 
 ## The claim
-One lean skeleton (`core/`, 6 files, ~1,280 lines) plus two mandatory
+One lean skeleton (`core/`, 6 files, ~1,300 lines) plus two mandatory
 applications and a third (The Poltergeist) built on top. Adding a domain requires a comparator + adapter
 code; the hook scaffolds plumbing. One shared UI template.
 
